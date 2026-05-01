@@ -21,6 +21,8 @@ type TenantContextType = {
     s3Bucket?: string;
     imgKitUrl?: string;
     s3Url?: string;
+    users?: Record<string, any>;
+    features?: Record<string, any>;
   } | null;
 };
 
@@ -54,7 +56,8 @@ export const TenantProvider = ({children}: Props) => {
         s3Bucket: settingsData?.s3Bucket,
         imgKitUrl: settingsData?.imgKitUrl,
         s3Url: settingsData?.s3Url,
-        
+        users: settingsData?.users,
+        features: settingsData?.features,
       });
       setTheme({
         primary: branding?.colors?.primary,

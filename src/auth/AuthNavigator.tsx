@@ -38,6 +38,9 @@ export function AuthNavigator({
     'neutral' | 'success' | 'error'
   >('neutral');
   const [selectedRole, setSelectedRole] = useState<string | null>(null);
+  const [selectedInvestorType, setSelectedInvestorType] = useState<
+    string | null
+  >(null);
   const [signupData, setSignupData] = useState<SignupDraft | null>(null);
   const [loginData, setLoginData] = useState<LoginRequestPayload | null>(null);
   const [otpFlow, setOtpFlow] = useState<'login' | 'signup' | null>(null);
@@ -67,8 +70,9 @@ export function AuthNavigator({
       return (
         <RoleSelectionScreen
           onLogin={() => onNavigate(AUTH_SCREENS.LOGIN)}
-          onNext={(role: string) => {
+          onNext={({role, investorType}) => {
             setSelectedRole(role);
+            setSelectedInvestorType(investorType || null);
             onNavigate(AUTH_SCREENS.SIGNUP);
           }}
         />
@@ -81,6 +85,7 @@ export function AuthNavigator({
           message={message}
           messageTone={messageTone}
           role={selectedRole || ''}
+          investorType={selectedInvestorType || undefined}
           onLogin={() => onNavigate(AUTH_SCREENS.LOGIN)}
           onContinue={data =>
             runSubmission(async () => {
@@ -91,6 +96,10 @@ export function AuthNavigator({
               const payload = {
                 ...data,
                 role: selectedRole || '',
+                investorType:
+                  selectedRole === 'investor'
+                    ? selectedInvestorType || undefined
+                    : undefined,
               };
 
               setOtpFlow('signup');
@@ -100,6 +109,8 @@ export function AuthNavigator({
                 type: 'email',
                 flow: 'signup',
                 fullName: payload.fullName,
+                role: payload.role,
+                investorType: payload.investorType,
               });
               setSignupData({
                 ...payload,
@@ -146,6 +157,8 @@ export function AuthNavigator({
                   type: 'email',
                   flow: 'signup',
                   fullName: signupData.fullName,
+                  role: signupData.role,
+                  investorType: signupData.investorType,
                 });
                 setMessage('OTP sent again.');
                 setMessageTone('success');

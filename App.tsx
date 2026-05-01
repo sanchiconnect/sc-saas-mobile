@@ -2,6 +2,7 @@ import React, {useState} from 'react';
 import {StatusBar, StyleSheet, useColorScheme} from 'react-native';
 import {SafeAreaProvider, SafeAreaView} from 'react-native-safe-area-context';
 
+import {FeedbackWidget} from './src/app/components/FeedbackWidget';
 import {HomeScreen} from './src/app/HomeScreen';
 import {AuthNavigator} from './src/auth/AuthNavigator';
 import {
@@ -12,7 +13,7 @@ import {
   SignupPayload,
 } from './src/auth/models/auth.models';
 import {authService} from './src/auth/services/auth.service';
-import {AuthScreen} from './src/auth/types';
+import {AUTH_SCREENS, AuthScreen} from './src/auth/types';
 import {TenantProvider} from './src/context/TenantProvider';
 
 function App() {
@@ -38,6 +39,11 @@ function App() {
     return authService.sendOtp(payload);
   };
 
+  const handleLogout = () => {
+    setSession(null);
+    setAuthScreen(AUTH_SCREENS.LOGIN);
+  };
+
   return (
     <TenantProvider>
       <SafeAreaProvider>
@@ -48,7 +54,7 @@ function App() {
           ]}>
           <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
           {session ? (
-            <HomeScreen session={session} onLogout={() => setSession(null)} />
+            <HomeScreen session={session} onLogout={handleLogout} />
           ) : (
             <AuthNavigator
               currentScreen={authScreen}
@@ -58,6 +64,7 @@ function App() {
               onSignup={handleSignup}
             />
           )}
+          <FeedbackWidget />
         </SafeAreaView>
       </SafeAreaProvider>
     </TenantProvider>

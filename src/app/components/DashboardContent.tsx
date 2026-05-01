@@ -125,11 +125,6 @@ export function DashboardContent({
           <Text style={styles.editorPlaceholder}>
             What's in your mind today?
           </Text>
-
-          <View
-            style={[styles.stickerCircle, {backgroundColor: primaryColor}]}>
-            <Icon name="robot-happy-outline" size={36} color="#ffffff" />
-          </View>
         </View>
       </View>
     </>
@@ -311,7 +306,6 @@ const styles = StyleSheet.create({
   },
   editorBody: {
     flex: 1,
-    justifyContent: 'space-between',
     minHeight: 150,
     paddingHorizontal: 6,
   },
@@ -319,13 +313,5 @@ const styles = StyleSheet.create({
     color: '#aab2cd',
     fontSize: 15,
     lineHeight: 22,
-  },
-  stickerCircle: {
-    alignItems: 'center',
-    alignSelf: 'flex-end',
-    borderRadius: 999,
-    height: 64,
-    justifyContent: 'center',
-    width: 64,
   },
 });

@@ -89,6 +89,9 @@ const normalizeRole = (role?: string) => {
   }
 };
 
+const normalizeInvestorType = (investorType?: string) =>
+  (investorType || '').trim().toLowerCase();
+
 const buildSession = (
   profile: ApiResponse | null,
   token: string | undefined,
@@ -350,9 +353,12 @@ export const authService = {
         throw new Error('Mobile number is required.');
       }
 
+      const userType = normalizeRole(payload.role);
+      const investorType = normalizeInvestorType(payload.investorType);
+
       const [emailCheck, mobileCheck] = await Promise.all([
-        verifyEmail(baseUrl, email),
-        verifyMobileNumber(baseUrl, payload.mobile.trim()),
+        verifyEmail(baseUrl, email, userType, investorType),
+        verifyMobileNumber(baseUrl, payload.mobile.trim(), userType, investorType),
       ]);
 
       if (isFailureResponse(emailCheck)) {
@@ -406,32 +412,63 @@ export const authService = {
     return session;
   },
 
+  async verifySignupMobile(
+    mobile: string,
+    role?: string,
+    investorType?: string,
+  ): Promise<string | null> {
+    const nextMobile = mobile.trim();
+
+    if (!nextMobile) {
+      return null;
+    }
+
+    const baseUrl = await resolveBaseUrl();
+    const response = await verifyMobileNumber(
+      baseUrl,
+      nextMobile,
+      normalizeRole(role),
+      normalizeInvestorType(investorType),
+    );
+
+    if (isFailureResponse(response)) {
+      return getErrorMessage(response) || 'This mobile number is already registered.';
+    }
+
+    return null;
+  },
+
   async signup(payload: SignupPayload) {
-    const {baseUrl, email, token, verifyData, session} =
+    const {baseUrl, email, token, verifyData} =
       await verifyOtpAndFetchProfile(payload, payload.fullName);
     const userType = normalizeRole(payload.role);
-
-    await requestJson<ApiResponse>(
+    const registerData = await requestJson<ApiResponse>(
       REGISTER_PATH,
       {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        headers: token
+          ? {
+              Authorization: `Bearer ${token}`,
+            }
+          : undefined,
         body: JSON.stringify({
           name: payload.fullName || payload.companyName || 'THUB User',
           emailAddress: email,
           countryCode: payload.countryCode || DEFAULT_COUNTRY_CODE,
           mobileNumber: Number(payload.mobile),
           userType,
-          investorType: userType === 'investor' ? 'organization' : '',
+          investorType:
+            userType === 'investor' ? payload.investorType || 'organization' : '',
           companyName: payload.companyName || 'THUB Organization',
-          organizationName: payload.companyName || 'THUB Organization',
+          organizationName:
+            payload.organizationName ||
+            payload.companyName ||
+            'THUB Organization',
           howDidYouFindUs: '',
           emailVerificationId:
             payload.emailVerificationId || getEmailVerificationId(verifyData) || '',
-          designation: '',
-          website: '',
+          designation: payload.designation || '',
+          website: payload.website || '',
           servicesLookingFor: [
             'fundraising',
             'tech_hiring',
@@ -447,7 +484,20 @@ export const authService = {
       },
       baseUrl,
     );
-   await fetchProfile(baseUrl, token);  
-    return session;
+    const sessionToken = getToken(registerData) || token;
+
+    if (sessionToken) {
+      const profile = await fetchProfile(baseUrl, sessionToken);
+
+      return buildSession(profile, sessionToken, {
+        email,
+        fullName: payload.fullName,
+      });
+    }
+
+    return buildSession(registerData, sessionToken, {
+      email,
+      fullName: payload.fullName,
+    });
   },
 };

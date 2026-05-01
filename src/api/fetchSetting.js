@@ -15,15 +15,25 @@ export const fetchSettingStyle = async (baseUrl) => {
   return await response.json();
 };
 
-export const verifyEmail = async (baseUrl, email) => {
-  const url = `${baseUrl}api/v1/public/auth/verify/email/${email}?userType=startup&investorType=`;
+export const verifyEmail = async (
+  baseUrl,
+  email,
+  userType = 'startup',
+  investorType = '',
+) => {
+  const url = `${baseUrl}api/v1/public/auth/verify/email/${email}?userType=${userType}&investorType=${investorType}`;
 
   const response = await fetch(url);
   return await response.json();
 };
 
-export const verifyMobileNumber = async (baseUrl, mobileNumber) => {
-  const url = `${baseUrl}api/v1/public/auth/verify/mobile/${mobileNumber}?userType=startup&investorType=`;
+export const verifyMobileNumber = async (
+  baseUrl,
+  mobileNumber,
+  userType = 'startup',
+  investorType = '',
+) => {
+  const url = `${baseUrl}api/v1/public/auth/verify/mobile/${mobileNumber}?userType=${userType}&investorType=${investorType}`;
 
   const response = await fetch(url);
   return await response.json();

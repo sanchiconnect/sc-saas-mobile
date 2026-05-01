@@ -2,6 +2,14 @@ export type AppSection =
   | 'dashboard'
   | 'connect'
   | 'program'
+  | 'community'
+  | 'business-challenges'
+  | 'actions'
+  | 'events'
+  | 'startup-booster-kit'
+  | 'resources'
+  | 'tickets'
+  | 'account-settings'
   | 'edit-profile';
 
 export type AppMenuSelection = {

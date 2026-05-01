@@ -16,10 +16,21 @@ import {Icon} from '../shared/components/Icon';
 import {DashboardContent} from './components/DashboardContent';
 import {SectionScreen} from './components/SectionScreen';
 import {SideMenu} from './components/SideMenu';
-import {connectItems, programItems} from './config/menus';
+import {
+  accountSettingItems,
+  actionItems,
+  businessChallengeItems,
+  communityItems,
+  connectItems,
+  eventItems,
+  programItems,
+  resourceItems,
+  startupBoosterKitItems,
+  ticketItems,
+} from './config/menus';
 import {EditProfileScreen} from './screens/EditProfileScreen';
 import {dashboardService} from './services/dashboard.service';
-import {AppMenuSelection, DashboardSummary} from './types';
+import {AppMenuSelection, AppSection, DashboardSummary, MenuItem} from './types';
 
 type HomeScreenProps = {
   session: AuthSession;
@@ -77,6 +88,78 @@ export function HomeScreen({session, onLogout}: HomeScreenProps) {
       : null;
   const userFirstName = session.user.fullName.split(' ')[0] || 'User';
   const primaryColor = theme?.primary || '#0b0aa3';
+
+  const sectionConfigs: Partial<
+    Record<
+      AppSection,
+      {
+        title: string;
+        subtitle: string;
+        items: MenuItem[];
+      }
+    >
+  > = {
+    connect: {
+      title: 'Connect',
+      subtitle:
+        'Build professional relationships across the ecosystem and switch between connection groups from one reusable view.',
+      items: connectItems,
+    },
+    program: {
+      title: 'Programs',
+      subtitle:
+        'Track applications, certificates, and program activity from a dedicated reusable program component.',
+      items: programItems,
+    },
+    community: {
+      title: 'Community Wall',
+      subtitle:
+        'Follow community conversations, highlights, and updates from one central collaboration space.',
+      items: communityItems,
+    },
+    'business-challenges': {
+      title: 'Business Challenges',
+      subtitle:
+        'Browse challenge opportunities, manage responses, and keep your innovation pipeline active.',
+      items: businessChallengeItems,
+    },
+    actions: {
+      title: 'My Actions',
+      subtitle:
+        'Track your pending tasks, follow-ups, and important action items in one place.',
+      items: actionItems,
+    },
+    events: {
+      title: 'Events',
+      subtitle:
+        'See upcoming events, registrations, and participation details from this reusable events view.',
+      items: eventItems,
+    },
+    'startup-booster-kit': {
+      title: 'Startup Booster Kit',
+      subtitle:
+        'Access startup support tools, curated kits, and practical growth resources from one screen.',
+      items: startupBoosterKitItems,
+    },
+    resources: {
+      title: 'Resources',
+      subtitle:
+        'Open resource collections, guides, and support material from a single resource hub.',
+      items: resourceItems,
+    },
+    tickets: {
+      title: 'Tickets',
+      subtitle:
+        'Review support tickets, issue history, and request status from this shared ticket area.',
+      items: ticketItems,
+    },
+    'account-settings': {
+      title: 'Account Settings',
+      subtitle:
+        'Manage personal account preferences, profile settings, and account-level controls here.',
+      items: accountSettingItems,
+    },
+  };
 
   if (isLoading) {
     return (
@@ -167,29 +250,18 @@ export function HomeScreen({session, onLogout}: HomeScreenProps) {
           />
         ) : null}
 
-        {selectedMenu.section === 'connect' ? (
+        {selectedMenu.section !== 'dashboard' &&
+        selectedMenu.section !== 'edit-profile' &&
+        sectionConfigs[selectedMenu.section] ? (
           <SectionScreen
             activeItem={selectedMenu.item}
-            items={connectItems}
+            items={sectionConfigs[selectedMenu.section]!.items}
             onSelectItem={item =>
-              setSelectedMenu({section: 'connect', item})
+              setSelectedMenu({section: selectedMenu.section, item})
             }
             primaryColor={primaryColor}
-            sectionSubtitle="Build professional relationships across the ecosystem and switch between connection groups from one reusable view."
-            sectionTitle="Connect"
-          />
-        ) : null}
-
-        {selectedMenu.section === 'program' ? (
-          <SectionScreen
-            activeItem={selectedMenu.item}
-            items={programItems}
-            onSelectItem={item =>
-              setSelectedMenu({section: 'program', item})
-            }
-            primaryColor={primaryColor}
-            sectionSubtitle="Track applications, certificates, and program activity from a dedicated reusable program component."
-            sectionTitle="Program"
+            sectionSubtitle={sectionConfigs[selectedMenu.section]!.subtitle}
+            sectionTitle={sectionConfigs[selectedMenu.section]!.title}
           />
         ) : null}
       </ScrollView>

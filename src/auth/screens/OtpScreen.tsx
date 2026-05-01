@@ -27,6 +27,7 @@ export function OtpScreen({
   const [otp, setOtp] = useState(['', '', '', '']);
   const inputs = useRef<Array<TextInput | null>>([]);
   const {globalSetting} = useContext(TenantContext);
+
   const logoBaseUrl = globalSetting?.imgKitUrl || globalSetting?.assetsImgKitUrl;
   const logoPath = globalSetting?.logo;
   const logoUri =
@@ -35,7 +36,18 @@ export function OtpScreen({
       : null;
 
   const handleChange = (value: string, index: number) => {
-    if (!/^[0-9]?$/.test(value)) {
+    if (!/^\d*$/.test(value)) return;
+
+    // ✅ Handle paste (multiple digits)
+    if (value.length > 1) {
+      const otpArray = value.slice(0, 4).split('');
+      setOtp(otpArray);
+
+      otpArray.forEach((digit, i) => {
+        inputs.current[i]?.setNativeProps({text: digit});
+      });
+
+      inputs.current[3]?.focus();
       return;
     }
 
@@ -43,8 +55,11 @@ export function OtpScreen({
     nextOtp[index] = value;
     setOtp(nextOtp);
 
+    // ✅ Move to next input
     if (value && index < nextOtp.length - 1) {
-      inputs.current[index + 1]?.focus();
+      setTimeout(() => {
+        inputs.current[index + 1]?.focus();
+      }, 50);
     }
   };
 
@@ -59,9 +74,7 @@ export function OtpScreen({
   const maskEmail = (currentEmail: string) => {
     const [name = '', domain = ''] = currentEmail.split('@');
 
-    if (!name || !domain) {
-      return currentEmail;
-    }
+    if (!name || !domain) return currentEmail;
 
     return `${name.slice(0, 2)}****@${domain}`;
   };
@@ -71,6 +84,7 @@ export function OtpScreen({
       <AppCard>
         <View style={styles.container}>
           {logoUri ? <Image source={{uri: logoUri}} style={styles.logo} /> : null}
+
           <Text style={styles.title}>Verify your OTP</Text>
 
           <Text style={styles.subtitle}>
@@ -86,8 +100,8 @@ export function OtpScreen({
                 messageTone === 'error'
                   ? styles.errorMessage
                   : messageTone === 'success'
-                    ? styles.successMessage
-                    : styles.neutralMessage,
+                  ? styles.successMessage
+                  : styles.neutralMessage,
               ]}>
               {message}
             </Text>
@@ -98,12 +112,15 @@ export function OtpScreen({
               <TextInput
                 key={index}
                 ref={ref => {
-                  inputs.current[index] = ref;
+                  if (ref) inputs.current[index] = ref;
                 }}
                 style={[styles.otpInput, digit ? styles.otpActive : null]}
                 keyboardType="number-pad"
                 maxLength={1}
                 value={digit}
+                autoFocus={index === 0} // ✅ autofocus first input
+                textContentType="oneTimeCode" // ✅ OTP autofill (iOS)
+                importantForAutofill="yes" // ✅ Android autofill
                 onChangeText={text => handleChange(text, index)}
                 onKeyPress={({nativeEvent}) => {
                   if (nativeEvent.key === 'Backspace') {

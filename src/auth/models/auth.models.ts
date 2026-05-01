@@ -1,10 +1,14 @@
 export type SignupDraft = {
   companyName: string;
+  organizationName?: string;
   fullName: string;
   email: string;
   mobile: string;
+  designation?: string;
+  website?: string;
   acceptedTerms: boolean;
   role?: string;
+  investorType?: string;
   emailVerificationId?: string;
 };
 
@@ -30,6 +34,8 @@ export type OtpRequestPayload = {
   type?: 'email' | 'mobile';
   flow?: 'login' | 'signup';
   fullName?: string;
+  role?: string;
+  investorType?: string;
 };
 
 export type OtpRequestResult = {

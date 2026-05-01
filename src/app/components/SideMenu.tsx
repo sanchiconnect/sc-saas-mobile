@@ -10,7 +10,18 @@ import {
 
 import {AuthSession} from '../../auth/models/auth.models';
 import {Icon} from '../../shared/components/Icon';
-import {connectItems, programItems} from '../config/menus';
+import {
+  accountSettingItems,
+  actionItems,
+  businessChallengeItems,
+  communityItems,
+  connectItems,
+  eventItems,
+  programItems,
+  resourceItems,
+  startupBoosterKitItems,
+  ticketItems,
+} from '../config/menus';
 import {AppMenuSelection, AppSection, MenuItem} from '../types';
 
 type TenantBranding = {
@@ -43,6 +54,17 @@ type ExpandableSectionProps = {
   onClose: () => void;
 };
 
+type SingleSectionProps = {
+  title: string;
+  section: AppSection;
+  icon: string;
+  item: MenuItem;
+  onSelectMenu: (selection: AppMenuSelection) => void;
+  primaryColor: string;
+  selectedMenu: AppMenuSelection;
+  onClose: () => void;
+};
+
 function ExpandableSection({
   title,
   section,
@@ -55,18 +77,34 @@ function ExpandableSection({
   onClose,
 }: ExpandableSectionProps) {
   const [isOpen, setIsOpen] = useState(isOpenByDefault);
+  const isSectionActive = selectedMenu.section === section;
 
   return (
     <View style={styles.sectionWrap}>
       <Pressable
         onPress={() => setIsOpen(current => !current)}
-        style={[styles.sectionHeader, {backgroundColor: primaryColor}]}>
-        <Icon name={icon} size={20} color="#ffffff" />
-        <Text style={styles.sectionTitle}>{title}</Text>
+        style={[
+          styles.sectionHeader,
+          isSectionActive
+            ? {backgroundColor: primaryColor, borderColor: primaryColor}
+            : styles.sectionHeaderInactive,
+        ]}>
+        <Icon
+          name={icon}
+          size={20}
+          color={isSectionActive ? '#ffffff' : '#64748b'}
+        />
+        <Text
+          style={[
+            styles.sectionTitle,
+            isSectionActive ? null : styles.sectionTitleInactive,
+          ]}>
+          {title}
+        </Text>
         <Icon
           name={isOpen ? 'chevron-up' : 'chevron-down'}
           size={22}
-          color="#ffffff"
+          color={isSectionActive ? '#ffffff' : '#64748b'}
         />
       </Pressable>
 
@@ -107,6 +145,43 @@ function ExpandableSection({
         </View>
       ) : null}
     </View>
+  );
+}
+
+function SingleSection({
+  title,
+  section,
+  icon,
+  item,
+  onSelectMenu,
+  primaryColor,
+  selectedMenu,
+  onClose,
+}: SingleSectionProps) {
+  const isActive =
+    selectedMenu.section === section && selectedMenu.item === item.label;
+
+  return (
+    <Pressable
+      onPress={() => {
+        onSelectMenu({section, item: item.label});
+        onClose();
+      }}
+      style={[
+        styles.singleSectionButton,
+        isActive
+          ? {backgroundColor: primaryColor, borderColor: primaryColor}
+          : styles.singleSectionInactive,
+      ]}>
+      <Icon name={icon} size={20} color={isActive ? '#ffffff' : '#64748b'} />
+      <Text
+        style={[
+          styles.singleSectionText,
+          isActive ? styles.singleSectionTextActive : null,
+        ]}>
+        {title}
+      </Text>
+    </Pressable>
   );
 }
 
@@ -225,7 +300,6 @@ export function SideMenu({
             section="connect"
             icon="account-group"
             items={connectItems}
-            isOpenByDefault
             onSelectMenu={onSelectMenu}
             onClose={onClose}
             primaryColor={primaryColor}
@@ -243,8 +317,96 @@ export function SideMenu({
             selectedMenu={selectedMenu}
           />
 
+          <SingleSection
+            title="Community Wall"
+            section="community"
+            icon={communityItems[0].icon || 'account-group-outline'}
+            item={communityItems[0]}
+            onSelectMenu={onSelectMenu}
+            onClose={onClose}
+            primaryColor={primaryColor}
+            selectedMenu={selectedMenu}
+          />
+
+          <SingleSection
+            title="Business Challenges"
+            section="business-challenges"
+            icon={businessChallengeItems[0].icon || 'briefcase-outline'}
+            item={businessChallengeItems[0]}
+            onSelectMenu={onSelectMenu}
+            onClose={onClose}
+            primaryColor={primaryColor}
+            selectedMenu={selectedMenu}
+          />
+
+          <ExpandableSection
+            title="My Actions"
+            section="actions"
+            icon="tools"
+            items={actionItems}
+            onSelectMenu={onSelectMenu}
+            onClose={onClose}
+            primaryColor={primaryColor}
+            selectedMenu={selectedMenu}
+          />
+
+          <SingleSection
+            title="Events"
+            section="events"
+            icon={eventItems[0].icon || 'calendar-month-outline'}
+            item={eventItems[0]}
+            onSelectMenu={onSelectMenu}
+            onClose={onClose}
+            primaryColor={primaryColor}
+            selectedMenu={selectedMenu}
+          />
+
+          <SingleSection
+            title="Startup Booster Kit"
+            section="startup-booster-kit"
+            icon={startupBoosterKitItems[0].icon || 'currency-usd'}
+            item={startupBoosterKitItems[0]}
+            onSelectMenu={onSelectMenu}
+            onClose={onClose}
+            primaryColor={primaryColor}
+            selectedMenu={selectedMenu}
+          />
+
+          <ExpandableSection
+            title="Resources"
+            section="resources"
+            icon="book-open-page-variant-outline"
+            items={resourceItems}
+            onSelectMenu={onSelectMenu}
+            onClose={onClose}
+            primaryColor={primaryColor}
+            selectedMenu={selectedMenu}
+          />
+
+          <SingleSection
+            title="Tickets"
+            section="tickets"
+            icon={ticketItems[0].icon || 'ticket-confirmation-outline'}
+            item={ticketItems[0]}
+            onSelectMenu={onSelectMenu}
+            onClose={onClose}
+            primaryColor={primaryColor}
+            selectedMenu={selectedMenu}
+          />
+
+          <SingleSection
+            title="Account Settings"
+            section="account-settings"
+            icon={accountSettingItems[0].icon || 'account-outline'}
+            item={accountSettingItems[0]}
+            onSelectMenu={onSelectMenu}
+            onClose={onClose}
+            primaryColor={primaryColor}
+            selectedMenu={selectedMenu}
+          />
+
           <Pressable style={styles.logoutButton} onPress={onLogout}>
-            <Icon name="logout" size={20} color="#dc2626" />
+            <Icon name="logout" size={18} color="#ffffff" />
             <Text style={styles.logoutText}>Logout</Text>
           </Pressable>
         </ScrollView>
@@ -406,14 +568,45 @@ const styles = StyleSheet.create({
   sectionWrap: {
     marginBottom: 12,
   },
-  sectionHeader: {
+  singleSectionButton: {
     alignItems: 'center',
-    borderTopLeftRadius: 14,
-    borderTopRightRadius: 14,
+    borderRadius: 14,
+    borderWidth: 1,
     flexDirection: 'row',
     gap: 12,
+    marginBottom: 12,
     minHeight: 50,
     paddingHorizontal: 16,
+  },
+  singleSectionInactive: {
+    backgroundColor: '#ffffff',
+    borderColor: '#e2e8f0',
+  },
+  singleSectionText: {
+    color: '#0f172a',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  singleSectionTextActive: {
+    color: '#ffffff',
+  },
+  sectionHeader: {
+    alignItems: 'center',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'transparent',
+    backgroundColor: '#ffffff',
+    marginBottom: 2,
+    minHeight: 50,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    gap: 12,
+  },
+  sectionHeaderInactive: {
+    borderColor: '#e2e8f0',
+  },
+  sectionTitleInactive: {
+    color: '#0f172a',
   },
   sectionTitle: {
     color: '#ffffff',
@@ -446,15 +639,18 @@ const styles = StyleSheet.create({
   },
   logoutButton: {
     alignItems: 'center',
+    backgroundColor: '#1b2140',
+    borderRadius: 12,
     flexDirection: 'row',
     gap: 10,
     justifyContent: 'center',
-    marginTop: 16,
-    minHeight: 48,
+    marginTop: 20,
+    minHeight: 46,
+    paddingHorizontal: 16,
   },
   logoutText: {
-    color: '#dc2626',
+    color: '#ffffff',
     fontSize: 15,
-    fontWeight: '700',
+    fontWeight: '600',
   },
 });
