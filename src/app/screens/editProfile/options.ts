@@ -41,14 +41,52 @@ export const TEAM_ROLES = [
   'Investor',
 ];
 
-// Lightweight cascading geography. Replace with API data when available.
-type Country = {
+export const FUNDING_STAGES = [
+  'Bootstrapped',
+  'Friends & Family',
+  'Seed/Angel Funded',
+  'Pre Series',
+  'Series A or beyond',
+  'Starting Stage',
+  'Incubation',
+  'No Funding',
+];
+
+export const INVESTMENT_MECHANISMS = [
+  'Convertible Notes',
+  'Debt',
+  'Digital Tokens',
+  'Equity',
+];
+
+export const REVENUE_STAGES = [
+  {label: 'Pre Revenue', value: 'pre_revenue'},
+  {label: 'Post Revenue', value: 'post_revenue'},
+];
+
+export const TIME_TO_COMMERCIALIZE_OPTIONS = [
+  '0-6 months',
+  '6-12 months',
+  '12-36 months',
+  'More than 36 months',
+];
+
+export const INVESTMENT_BANKER_OPTIONS = [
+  {label: 'Yes', value: 'yes'},
+  {label: 'No', value: 'no'},
+  {label: 'Maybe later', value: 'maybe'},
+];
+
+// Lightweight cascading geography fallback.
+export type Country = {
+  id?: number;
   code: string;
   name: string;
   states: State[];
 };
 
-type State = {
+export type State = {
+  id?: number;
   name: string;
   cities: string[];
 };
@@ -62,10 +100,12 @@ export const COUNTRIES: Country[] = [
     ],
   },
   {
+    id: 106,
     code: 'IN',
     name: 'India',
     states: [
       {
+        id: 1368,
         name: 'Telangana',
         cities: ['Hyderabad', 'Warangal', 'Karimnagar'],
       },
@@ -126,10 +166,20 @@ export const COUNTRIES: Country[] = [
 
 export const getCountryNames = () => COUNTRIES.map(c => c.name);
 
+export const getCountryIdByName = (
+  countryName: string,
+  countries: Country[] = COUNTRIES,
+) => countries.find(c => c.name === countryName)?.id;
+
 export const getStatesFor = (countryName: string) => {
   const country = COUNTRIES.find(c => c.name === countryName);
   return country ? country.states.map(s => s.name) : [];
 };
+
+export const getStateIdByName = (countryName: string, stateName: string) =>
+  COUNTRIES.find(c => c.name === countryName)?.states.find(
+    s => s.name === stateName,
+  )?.id;
 
 export const getCitiesFor = (countryName: string, stateName: string) => {
   const country = COUNTRIES.find(c => c.name === countryName);

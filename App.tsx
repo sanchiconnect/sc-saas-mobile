@@ -20,6 +20,10 @@ function App() {
   const isDarkMode = useColorScheme() === 'dark';
   const [session, setSession] = useState<AuthSession | null>(null);
   const [authScreen, setAuthScreen] = useState<AuthScreen>('login');
+  const [showWelcomePopup, setShowWelcomePopup] = useState(false);
+  const shouldShowFeedback =
+    session !== null ||
+    (authScreen !== AUTH_SCREENS.LOGIN && authScreen !== AUTH_SCREENS.SIGNUP);
 
   const handleLogin = async (payload: LoginPayload) => {
     const nextSession = await authService.login(payload);
@@ -30,6 +34,7 @@ function App() {
   const handleSignup = async (payload: SignupPayload) => {
     const nextSession = await authService.signup(payload);
     setSession(nextSession);
+    setShowWelcomePopup(true);
     return nextSession;
   };
 
@@ -54,7 +59,12 @@ function App() {
           ]}>
           <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
           {session ? (
-            <HomeScreen session={session} onLogout={handleLogout} />
+            <HomeScreen
+              session={session}
+              onLogout={handleLogout}
+              showWelcomePopup={showWelcomePopup}
+              onCloseWelcomePopup={() => setShowWelcomePopup(false)}
+            />
           ) : (
             <AuthNavigator
               currentScreen={authScreen}
@@ -64,7 +74,7 @@ function App() {
               onSignup={handleSignup}
             />
           )}
-          <FeedbackWidget />
+          {shouldShowFeedback ? <FeedbackWidget /> : null}
         </SafeAreaView>
       </SafeAreaProvider>
     </TenantProvider>

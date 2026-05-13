@@ -1,12 +1,14 @@
-import React, {useContext, useEffect, useMemo, useState} from 'react';
+import React, {useContext, useEffect, useState} from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import {launchImageLibrary} from 'react-native-image-picker';
 
 import {AppButton} from '../../shared/components/AppButton';
 import {Icon} from '../../shared/components/Icon';
@@ -14,13 +16,30 @@ import {colors} from '../../shared/theme/colors';
 import {TenantContext} from '../../context/TenantProvider';
 import {authService} from '../../auth/services/auth.service';
 import {BasicInfoForm} from './editProfile/BasicInfoForm';
+import {FinancialsForm} from './editProfile/FinancialsForm';
+import {Picker} from './editProfile/Picker';
+import {
+  COMPANY_SIZES,
+  COUNTRIES,
+  Country,
+  PRODUCT_STAGES,
+  TEAM_ROLES,
+  getCitiesFor,
+  getCountryIdByName,
+  getStateIdByName,
+  getStatesFor,
+} from './editProfile/options';
 import {
   buildBasicInfoPayload,
+  buildFinancialsPayload,
   extractProfile,
 } from './editProfile/extractProfile';
 import {
   BasicInfoForm as BasicInfoFormType,
+  FinancialsForm as FinancialsFormType,
+  EMPTY_LEADERSHIP,
   EMPTY_BASIC_INFO,
+  EMPTY_FINANCIALS,
 } from './editProfile/types';
 import type {EditProfileTab} from '../types';
 
@@ -29,12 +48,168 @@ type EditProfileScreenProps = {
   onBack: () => void;
 };
 
-const TABS: EditProfileTab[] = [
+type PickerKind =
+  | 'companySize'
+  | 'country'
+  | 'state'
+  | 'city'
+  | 'productStage'
+  | {kind: 'leadershipRole'; index: number};
+
+type LocationOption = {
+  id: number;
+  name: string;
+};
+
+type DomainOption = {
+  id: number;
+  name: string;
+  isActive?: boolean;
+  industrySubCategoryDomains?: Array<{id: number; name: string; isActive?: boolean}>;
+};
+
+type FinancialOption = {
+  id: number;
+  name: string;
+  isActive?: boolean;
+};
+
+type OngoingCommitment = {
+  id?: number | string;
+  investorName?: string;
+  amount?: string | number;
+};
+
+type StartupFormDefinition = {
+  uuid?: string;
+  formTitle?: string;
+  status?: boolean;
+  useFormAs?: string;
+  programs?: Array<{id?: number}> | null;
+};
+
+const BASE_TABS: EditProfileTab[] = [
   {key: 'basic', label: 'Basic Information', status: 'incomplete'},
   {key: 'industry', label: 'Industry / Technology', status: 'incomplete'},
   {key: 'financials', label: 'Financials', status: 'incomplete'},
   {key: 'pitch', label: 'Pitch Deck', status: 'incomplete'},
 ];
+
+const calculateProfileCompletion = (basicInfo: BasicInfoFormType) => {
+  const checks = [
+    Boolean(basicInfo.logoUrl),
+    Boolean(basicInfo.companyName.trim()),
+    Boolean(basicInfo.companySize),
+    basicInfo.isIncorporated !== null,
+    Boolean(basicInfo.country),
+    Boolean(basicInfo.state),
+    Boolean(basicInfo.city),
+    Boolean(basicInfo.elevatorPitch.trim()),
+    Boolean(basicInfo.companyBrief.trim()),
+    Boolean(basicInfo.productStage),
+    basicInfo.businessModels.length > 0,
+    basicInfo.leadership.length > 0,
+    Object.values(basicInfo.social).some(link => link.trim().length > 0),
+  ];
+
+  const completed = checks.filter(Boolean).length;
+  return Math.round((completed / checks.length) * 100);
+};
+
+const ensureBasicInfoDefaults = (
+  basicInfo: BasicInfoFormType,
+): BasicInfoFormType => ({
+  ...basicInfo,
+  leadership:
+    basicInfo.leadership.length > 0
+      ? basicInfo.leadership
+      : [{...EMPTY_LEADERSHIP, id: `${Date.now()}_leadership`}],
+});
+
+const COUNTRIES_API =
+  'https://api.thub.sanchidev.in/api/v1/public/global/countries';
+const STATES_API = 'https://api.thub.sanchidev.in/api/v1/public/global/states';
+const CITIES_API = 'https://api.thub.sanchidev.in/api/v1/public/global/cities';
+const CUSTOM_GLOBAL_API =
+  'https://api.thub.sanchidev.in/api/v1/public/global/custom/industries,technologies,industries_primary';
+
+const readLocationList = (payload: any): LocationOption[] => {
+  const list = payload?.data || payload?.results || payload || [];
+  if (!Array.isArray(list)) {
+    return [];
+  }
+
+  return list
+    .map(item => ({
+      id: Number(item?.id ?? item?.value ?? item?._id),
+      name: String(item?.name ?? item?.label ?? '').trim(),
+    }))
+    .filter(item => Number.isFinite(item.id) && Boolean(item.name));
+};
+
+const slugify = (value: string) =>
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+const buildEditTabs = (
+  basicInfo: BasicInfoFormType,
+  startupInfo: Record<string, any> | null,
+  forms: StartupFormDefinition[],
+): EditProfileTab[] => {
+  const isBasicComplete =
+    Boolean(basicInfo.companyName) &&
+    Boolean(basicInfo.companySize) &&
+    Boolean(basicInfo.country) &&
+    Boolean(basicInfo.productStage) &&
+    basicInfo.isIncorporated !== null;
+
+  const isIndustryComplete =
+    Array.isArray(startupInfo?.startupIndustries) &&
+    startupInfo.startupIndustries.length > 0 &&
+    Array.isArray(startupInfo?.startupTechnologies) &&
+    startupInfo.startupTechnologies.length > 0;
+
+  const isFinancialsComplete = Boolean(
+    startupInfo?.financials?.fundingStageId ||
+      startupInfo?.financials?.targetFundraise ||
+      startupInfo?.financials?.tentativeValuation,
+  );
+
+  const isPitchComplete = Boolean(
+    startupInfo?.pitchDeck?.elevatorPitch || startupInfo?.pitchDeck?.pitchDocument,
+  );
+
+  const baseTabs: EditProfileTab[] = BASE_TABS.map(tab => {
+    if (tab.key === 'basic') {
+      return {...tab, status: isBasicComplete ? 'complete' : 'incomplete'};
+    }
+    if (tab.key === 'industry') {
+      return {...tab, status: isIndustryComplete ? 'complete' : 'incomplete'};
+    }
+    if (tab.key === 'financials') {
+      return {...tab, status: isFinancialsComplete ? 'complete' : 'incomplete'};
+    }
+    if (tab.key === 'pitch') {
+      return {...tab, status: isPitchComplete ? 'complete' : 'incomplete'};
+    }
+    return tab;
+  });
+
+  const customTabs = forms
+    .filter(form => form?.status && form?.useFormAs === 'form' && form?.programs === null)
+    .map(form => ({
+      key: `custom-${form.uuid || slugify(form.formTitle || 'form')}`,
+      label: form.formTitle || 'Custom Form',
+      status: 'incomplete' as const,
+      custom: true,
+      formUuid: form.uuid,
+    }));
+
+  return [...baseTabs, ...customTabs];
+};
 
 export function EditProfileScreen({token, onBack}: EditProfileScreenProps) {
   const {theme, globalSetting} = useContext(TenantContext);
@@ -42,7 +217,7 @@ export function EditProfileScreen({token, onBack}: EditProfileScreenProps) {
   const logoBaseUrl =
     globalSetting?.imgKitUrl || globalSetting?.assetsImgKitUrl;
 
-  const [activeTab, setActiveTab] = useState(TABS[0].key);
+  const [activeTab, setActiveTab] = useState(BASE_TABS[0].key);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -50,18 +225,57 @@ export function EditProfileScreen({token, onBack}: EditProfileScreenProps) {
     text: string;
     tone: 'success' | 'error';
   } | null>(null);
-  const [profileCompletion, setProfileCompletion] = useState(0);
+  const [picker, setPicker] = useState<PickerKind | null>(null);
+  const [countryOptions, setCountryOptions] = useState<Country[]>(COUNTRIES);
+  const [stateOptions, setStateOptions] = useState<LocationOption[]>([]);
+  const [cityOptions, setCityOptions] = useState<LocationOption[]>([]);
+  const [industryOptions, setIndustryOptions] = useState<DomainOption[]>([]);
+  const [technologyOptions, setTechnologyOptions] = useState<DomainOption[]>([]);
+  const [primaryIndustryOptions, setPrimaryIndustryOptions] = useState<DomainOption[]>([]);
+  const [fundingStageOptions, setFundingStageOptions] = useState<FinancialOption[]>([]);
+  const [investmentMechanismOptions, setInvestmentMechanismOptions] = useState<
+    FinancialOption[]
+  >([]);
+  const [ongoingCommitments, setOngoingCommitments] = useState<
+    OngoingCommitment[]
+  >([]);
+  const [selectedIndustryIds, setSelectedIndustryIds] = useState<number[]>([]);
+  const [selectedTechnologyIds, setSelectedTechnologyIds] = useState<number[]>([]);
+  const [selectedPrimaryIndustryId, setSelectedPrimaryIndustryId] = useState<number | null>(null);
+  const [startupInfo, setStartupInfo] = useState<Record<string, any> | null>(null);
+  const [startupForms, setStartupForms] = useState<StartupFormDefinition[]>([]);
   const [basicInfo, setBasicInfo] =
     useState<BasicInfoFormType>(EMPTY_BASIC_INFO);
+  const [financialInfo, setFinancialInfo] =
+    useState<FinancialsFormType>(EMPTY_FINANCIALS);
 
   const loadProfile = async () => {
     setIsLoading(true);
     setLoadError(null);
     try {
-      const raw = await authService.getProfile(token);
+      const raw = await authService.getStartupInformation(token);
       const extracted = extractProfile(raw, logoBaseUrl);
-      setBasicInfo(extracted.basicInfo);
-      setProfileCompletion(extracted.profileCompletion);
+      const root = raw?.data || raw || null;
+      setStartupInfo(root);
+      setBasicInfo(ensureBasicInfoDefaults(extracted.basicInfo));
+      setFinancialInfo(extracted.financials);
+      setSelectedIndustryIds(
+        Array.isArray(root?.startupIndustries)
+          ? root.startupIndustries
+              .map((item: Record<string, any>) => Number(item?.id))
+              .filter((id: number) => Number.isFinite(id))
+          : [],
+      );
+      setSelectedTechnologyIds(
+        Array.isArray(root?.startupTechnologies)
+          ? root.startupTechnologies
+              .map((item: Record<string, any>) => Number(item?.id))
+              .filter((id: number) => Number.isFinite(id))
+          : [],
+      );
+      setSelectedPrimaryIndustryId(
+        Number(root?.startupIndustryPrimary?.id) || null,
+      );
     } catch (error) {
       setLoadError(
         error instanceof Error
@@ -75,15 +289,174 @@ export function EditProfileScreen({token, onBack}: EditProfileScreenProps) {
 
   useEffect(() => {
     let cancelled = false;
+
+    fetch(COUNTRIES_API)
+      .then(response => response.json())
+      .then(payload => {
+        if (cancelled) {
+          return;
+        }
+
+        const countries = readLocationList(payload).map(item => ({
+          id: item.id,
+          code: '',
+          name: item.name,
+          states: [],
+        }));
+
+        if (countries.length > 0) {
+          setCountryOptions(countries);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCountryOptions(COUNTRIES);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    Promise.all([
+      authService.getFundingStages(),
+      authService.getInvestmentMechanisms(),
+      authService.getOngoingCommitments(token).catch(() => ({data: []})),
+    ])
+      .then(([fundingStagesResponse, mechanismsResponse, commitmentsResponse]) => {
+        if (cancelled) {
+          return;
+        }
+
+        const fundingStages = Array.isArray(fundingStagesResponse?.data)
+          ? fundingStagesResponse.data
+          : [];
+        const mechanisms = Array.isArray(
+          mechanismsResponse?.data?.investment_mechanisms,
+        )
+          ? mechanismsResponse.data.investment_mechanisms
+          : [];
+        const commitments = Array.isArray(commitmentsResponse?.data)
+          ? commitmentsResponse.data
+          : [];
+
+        setFundingStageOptions(
+          fundingStages.filter((item: FinancialOption) => item?.isActive !== false),
+        );
+        setInvestmentMechanismOptions(
+          mechanisms.filter((item: FinancialOption) => item?.isActive !== false),
+        );
+        setOngoingCommitments(commitments);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setFundingStageOptions([]);
+          setInvestmentMechanismOptions([]);
+          setOngoingCommitments([]);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetch(CUSTOM_GLOBAL_API)
+      .then(response => response.json())
+      .then(payload => {
+        if (cancelled) {
+          return;
+        }
+
+        setIndustryOptions(
+          Array.isArray(payload?.data?.industries) ? payload.data.industries : [],
+        );
+        setTechnologyOptions(
+          Array.isArray(payload?.data?.technologies) ? payload.data.technologies : [],
+        );
+        setPrimaryIndustryOptions(
+          Array.isArray(payload?.data?.industries_primary)
+            ? payload.data.industries_primary
+            : Array.isArray(payload?.data?.industries)
+              ? payload.data.industries
+              : [],
+        );
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setIndustryOptions([]);
+          setTechnologyOptions([]);
+          setPrimaryIndustryOptions([]);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    authService
+      .getStartupFormList(token)
+      .then(raw => {
+        if (cancelled) return;
+        const forms = Array.isArray(raw?.data)
+          ? raw.data
+          : Array.isArray(raw)
+            ? raw
+            : [];
+        setStartupForms(forms);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setStartupForms([]);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
+  useEffect(() => {
+    let cancelled = false;
     setIsLoading(true);
     setLoadError(null);
     authService
-      .getProfile(token)
+      .getStartupInformation(token)
       .then(raw => {
         if (cancelled) return;
         const extracted = extractProfile(raw, logoBaseUrl);
-        setBasicInfo(extracted.basicInfo);
-        setProfileCompletion(extracted.profileCompletion);
+        setStartupInfo(raw?.data || raw || null);
+        setBasicInfo(ensureBasicInfoDefaults(extracted.basicInfo));
+        setFinancialInfo(extracted.financials);
+        const root = raw?.data || raw || {};
+        setSelectedIndustryIds(
+          Array.isArray(root?.startupIndustries)
+            ? root.startupIndustries
+                .map((item: Record<string, any>) => Number(item?.id))
+                .filter((id: number) => Number.isFinite(id))
+            : [],
+        );
+        setSelectedTechnologyIds(
+          Array.isArray(root?.startupTechnologies)
+            ? root.startupTechnologies
+                .map((item: Record<string, any>) => Number(item?.id))
+                .filter((id: number) => Number.isFinite(id))
+            : [],
+        );
+        setSelectedPrimaryIndustryId(
+          Number(root?.startupIndustryPrimary?.id) || null,
+        );
       })
       .catch(error => {
         if (cancelled) return;
@@ -101,25 +474,101 @@ export function EditProfileScreen({token, onBack}: EditProfileScreenProps) {
     };
   }, [token, logoBaseUrl]);
 
-  const tabs = useMemo<EditProfileTab[]>(() => {
-    const isBasicComplete =
-      Boolean(basicInfo.companyName) &&
-      Boolean(basicInfo.companySize) &&
-      Boolean(basicInfo.country) &&
-      Boolean(basicInfo.productStage) &&
-      basicInfo.isIncorporated !== null;
-    return TABS.map(tab =>
-      tab.key === 'basic'
-        ? {...tab, status: isBasicComplete ? 'complete' : 'incomplete'}
-        : tab,
-    );
-  }, [basicInfo]);
+  useEffect(() => {
+    const countryId = getCountryIdByName(basicInfo.country, countryOptions);
+
+    if (!countryId) {
+      setStateOptions([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    fetch(`${STATES_API}/${countryId}`)
+      .then(response => response.json())
+      .then(payload => {
+        if (cancelled) {
+          return;
+        }
+
+        setStateOptions(readLocationList(payload));
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setStateOptions([]);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [basicInfo.country, countryOptions]);
+
+  useEffect(() => {
+    const stateId =
+      stateOptions.find(option => option.name === basicInfo.state)?.id ||
+      getStateIdByName(basicInfo.country, basicInfo.state);
+
+    if (!stateId) {
+      setCityOptions([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    fetch(`${CITIES_API}/${stateId}`)
+      .then(response => response.json())
+      .then(payload => {
+        if (cancelled) {
+          return;
+        }
+
+        setCityOptions(readLocationList(payload));
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCityOptions([]);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [basicInfo.country, basicInfo.state, stateOptions]);
+
+  const tabs: EditProfileTab[] = buildEditTabs(
+    basicInfo,
+    {
+      ...startupInfo,
+      startupIndustries: selectedIndustryIds,
+      startupTechnologies: selectedTechnologyIds,
+    },
+    startupForms,
+  );
+
+  useEffect(() => {
+    if (!tabs.some(tab => tab.key === activeTab) && tabs.length > 0) {
+      setActiveTab(tabs[0].key);
+    }
+  }, [activeTab, tabs]);
+
+  const profileCompletion = calculateProfileCompletion(basicInfo);
 
   const updateBasic = <K extends keyof BasicInfoFormType>(
     key: K,
     value: BasicInfoFormType[K],
   ) => {
-    setBasicInfo(current => ({...current, [key]: value}));
+    setBasicInfo(current =>
+      ensureBasicInfoDefaults({...current, [key]: value}),
+    );
+    setSaveMessage(null);
+  };
+
+  const updateFinancial = <K extends keyof FinancialsFormType>(
+    key: K,
+    value: FinancialsFormType[K],
+  ) => {
+    setFinancialInfo(current => ({...current, [key]: value}));
     setSaveMessage(null);
   };
 
@@ -127,10 +576,47 @@ export function EditProfileScreen({token, onBack}: EditProfileScreenProps) {
     setIsSaving(true);
     setSaveMessage(null);
     try {
-      await authService.updateProfile(
-        token,
-        buildBasicInfoPayload(basicInfo),
-      );
+      if (activeTab === 'industry') {
+        await authService.updateIndustryTechnologyBusiness(token, {
+          industryDomainIds: selectedIndustryIds,
+          technologyDomainIds: selectedTechnologyIds,
+          industryDomainPrimaryId: selectedPrimaryIndustryId,
+          industrySubCategoryDomainIds: [],
+          otherIndustryDomains: [],
+          otherTechnologyDomains: [],
+        });
+        setStartupInfo(current =>
+          current
+            ? {
+                ...current,
+                startupIndustries: selectedIndustryIds,
+                startupTechnologies: selectedTechnologyIds,
+                startupIndustryPrimary: selectedPrimaryIndustryId,
+              }
+            : current,
+        );
+      } else if (activeTab === 'financials') {
+        const payload = buildFinancialsPayload(financialInfo);
+        await authService.updateFinancialsInformation(token, payload);
+        setStartupInfo(current =>
+          current
+            ? {
+                ...current,
+                isRaisingFunds: financialInfo.isRaisingFunds,
+                financials: {
+                  ...(current.financials || {}),
+                  ...payload.financials,
+                },
+              }
+            : current,
+        );
+      } else {
+        await authService.updateProfile(
+          token,
+          buildBasicInfoPayload(basicInfo),
+        );
+      }
+
       setSaveMessage({text: 'Saved successfully.', tone: 'success'});
     } catch (error) {
       setSaveMessage({
@@ -149,6 +635,249 @@ export function EditProfileScreen({token, onBack}: EditProfileScreenProps) {
     const currentIndex = tabs.findIndex(tab => tab.key === activeTab);
     const next = tabs[currentIndex + 1];
     if (next) setActiveTab(next.key);
+  };
+
+  const toggleLimitedSelection = (
+    current: number[],
+    id: number,
+    setter: (value: number[]) => void,
+    label: string,
+  ) => {
+    const exists = current.includes(id);
+    if (exists) {
+      setter(current.filter(item => item !== id));
+      return;
+    }
+
+    if (current.length >= 3) {
+      Alert.alert('Limit reached', `You can select maximum 3 ${label}.`);
+      return;
+    }
+
+    setter([...current, id]);
+  };
+
+  const handleLogoPress = async () => {
+    try {
+      if (typeof launchImageLibrary !== 'function') {
+        Alert.alert(
+          'Logo upload unavailable',
+          'Image picker is not ready yet. Please rebuild the app and try again.',
+        );
+        return;
+      }
+
+      const result = await launchImageLibrary({
+        mediaType: 'photo',
+        selectionLimit: 1,
+        includeBase64: false,
+      });
+
+      if (result.didCancel) {
+        return;
+      }
+
+      if (result.errorCode) {
+        Alert.alert(
+          'Logo upload failed',
+          result.errorMessage || 'Could not open the image picker.',
+        );
+        return;
+      }
+
+      const asset = result.assets?.[0];
+      if (!asset?.uri) {
+        Alert.alert('Logo upload failed', 'No image was selected.');
+        return;
+      }
+
+      const fileSize = asset.fileSize ?? 0;
+      const maxSize = 512 * 1024;
+      if (fileSize > maxSize) {
+        Alert.alert(
+          'Image too large',
+          'Please choose an image smaller than 512kb.',
+        );
+        return;
+      }
+
+      const type = (asset.type || '').toLowerCase();
+      if (
+        type &&
+        !['image/png', 'image/jpg', 'image/jpeg'].includes(type)
+      ) {
+        Alert.alert(
+          'Unsupported format',
+          'Please choose a png, jpg, or jpeg image.',
+        );
+        return;
+      }
+
+      updateBasic('logoUrl', asset.uri);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Could not select the image.';
+
+      if (
+        message.includes('launchImageLibrary') ||
+        message.includes('ImagePicker') ||
+        message.includes('null')
+      ) {
+        Alert.alert(
+          'Logo upload unavailable',
+          'The image picker native module needs a fresh app rebuild. Please restart the Android app and try again.',
+        );
+        return;
+      }
+
+      Alert.alert(
+        'Logo upload failed',
+        message,
+      );
+    }
+  };
+
+  const closePicker = () => setPicker(null);
+
+  const renderPicker = () => {
+    if (!picker) return null;
+
+    if (typeof picker === 'object' && picker.kind === 'leadershipRole') {
+      return (
+        <Picker
+          visible
+          title="Select role"
+          options={TEAM_ROLES}
+          selected={basicInfo.leadership[picker.index]?.role}
+          primaryColor={primaryColor}
+          onClose={closePicker}
+          onSelect={role => {
+            const member = basicInfo.leadership[picker.index];
+            if (!member) {
+              closePicker();
+              return;
+            }
+
+            const nextLeadership = basicInfo.leadership.map((entry, index) =>
+              index === picker.index ? {...entry, role} : entry,
+            );
+            updateBasic('leadership', nextLeadership);
+            closePicker();
+          }}
+        />
+      );
+    }
+
+    if (picker === 'companySize') {
+      return (
+        <Picker
+          visible
+          title="Choose a team size"
+          options={COMPANY_SIZES}
+          selected={basicInfo.companySize}
+          primaryColor={primaryColor}
+          onClose={closePicker}
+          onSelect={selection => {
+            updateBasic('companySize', selection);
+            closePicker();
+          }}
+        />
+      );
+    }
+
+    if (picker === 'country') {
+      return (
+        <Picker
+          visible
+          title="Choose a country"
+          options={countryOptions.map(country => country.name)}
+          selected={basicInfo.country}
+          primaryColor={primaryColor}
+          onClose={closePicker}
+          onSelect={selection => {
+            const selectedCountry =
+              countryOptions.find(country => country.name === selection) ||
+              null;
+            updateBasic('country', selection);
+            updateBasic('countryId', selectedCountry?.id ?? null);
+            updateBasic('state', '');
+            updateBasic('stateId', null);
+            updateBasic('city', '');
+            updateBasic('cityId', null);
+            closePicker();
+          }}
+        />
+      );
+    }
+
+    if (picker === 'state') {
+      const options =
+        stateOptions.length > 0
+          ? stateOptions.map(option => option.name)
+          : getStatesFor(basicInfo.country);
+
+      return (
+        <Picker
+          visible
+          title="Choose a state"
+          options={options}
+          selected={basicInfo.state}
+          primaryColor={primaryColor}
+          onClose={closePicker}
+          emptyMessage="Select a country first"
+          onSelect={selection => {
+            const selectedState =
+              stateOptions.find(option => option.name === selection) || null;
+            updateBasic('state', selection);
+            updateBasic('stateId', selectedState?.id ?? null);
+            updateBasic('city', '');
+            updateBasic('cityId', null);
+            closePicker();
+          }}
+        />
+      );
+    }
+
+    if (picker === 'city') {
+      const options =
+        cityOptions.length > 0
+          ? cityOptions.map(option => option.name)
+          : getCitiesFor(basicInfo.country, basicInfo.state);
+
+      return (
+        <Picker
+          visible
+          title="Choose a city"
+          options={options}
+          selected={basicInfo.city}
+          primaryColor={primaryColor}
+          onClose={closePicker}
+          emptyMessage="Select a state first"
+          onSelect={selection => {
+            const selectedCity =
+              cityOptions.find(option => option.name === selection) || null;
+            updateBasic('city', selection);
+            updateBasic('cityId', selectedCity?.id ?? null);
+            closePicker();
+          }}
+        />
+      );
+    }
+
+    return (
+      <Picker
+        visible
+        title="Product stage"
+        options={PRODUCT_STAGES}
+        selected={basicInfo.productStage}
+        primaryColor={primaryColor}
+        onClose={closePicker}
+        onSelect={selection => {
+          updateBasic('productStage', selection);
+          closePicker();
+        }}
+      />
+    );
   };
 
   if (isLoading) {
@@ -188,13 +917,13 @@ export function EditProfileScreen({token, onBack}: EditProfileScreenProps) {
         <Text style={styles.title}>Edit Startup Details</Text>
       </View>
 
-      {/* <View style={styles.completionRow}>
+      <View style={styles.completionRow}>
         <Text style={styles.completionLabel}>Profile completion</Text>
         <Text style={[styles.completionValue, {color: primaryColor}]}>
           {profileCompletion}%
         </Text>
-      </View> */}
-      {/* <View style={styles.completionTrack}>
+      </View>
+      <View style={styles.completionTrack}>
         <View
           style={[
             styles.completionFill,
@@ -204,48 +933,190 @@ export function EditProfileScreen({token, onBack}: EditProfileScreenProps) {
             },
           ]}
         />
-      </View> */}
+      </View>
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.tabsRow}>
-        {tabs.map(tab => {
-          const isActive = tab.key === activeTab;
-          const isComplete = tab.status === 'complete';
-          return (
-            <Pressable
-              key={tab.key}
-              onPress={() => setActiveTab(tab.key)}
-              style={[
-                styles.tab,
-                isActive && {borderBottomColor: primaryColor},
-              ]}>
-              <Text
-                style={[
-                  styles.tabText,
-                  isActive && {color: primaryColor, fontWeight: '700'},
-                ]}>
-                {tab.label}
-              </Text>
-              <Icon
-                name={isComplete ? 'check-circle' : 'alert-circle-outline'}
-                size={16}
-                color={isComplete ? colors.success : colors.danger}
-              />
-            </Pressable>
-          );
-        })}
-      </ScrollView>
+      <View style={styles.tabsSection}>
+        <View style={styles.tabsShell}>
+          <View style={styles.tabsRow}>
+            {tabs.map(tab => {
+              const isActive = tab.key === activeTab;
+              const isComplete = tab.status === 'complete';
+              return (
+                <Pressable
+                  key={tab.key}
+                  onPress={() => setActiveTab(tab.key)}
+                  style={[
+                    styles.tab,
+                    isActive && {
+                      backgroundColor: `${primaryColor}12`,
+                      borderColor: `${primaryColor}2e`,
+                    },
+                  ]}>
+                  <Text
+                    style={[
+                      styles.tabText,
+                      isActive && styles.tabTextActive,
+                      isActive && {color: primaryColor},
+                    ]}>
+                    {tab.label}
+                  </Text>
+                  <Icon
+                    name={isComplete ? 'check-circle' : 'alert-circle-outline'}
+                    size={16}
+                    color={isComplete ? colors.success : colors.danger}
+                  />
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+      </View>
 
       <ScrollView
         contentContainerStyle={styles.content}
+        alwaysBounceVertical={false}
+        bounces={false}
+        decelerationRate={0.75}
+        disableIntervalMomentum
+        overScrollMode="never"
         keyboardShouldPersistTaps="handled">
         {activeTab === 'basic' ? (
           <BasicInfoForm
             primaryColor={primaryColor}
             value={basicInfo}
+            onLogoPress={handleLogoPress}
+            onOpenCompanySize={() => setPicker('companySize')}
+            onOpenCountry={() => setPicker('country')}
+            onOpenState={() => setPicker('state')}
+            onOpenCity={() => setPicker('city')}
+            onOpenProductStage={() => setPicker('productStage')}
+            onOpenLeadershipRole={index =>
+              setPicker({kind: 'leadershipRole', index})
+            }
             onChange={updateBasic}
+          />
+        ) : activeTab === 'industry' ? (
+          <View style={styles.industryCard}>
+            <Text style={styles.industryTitle}>Industry / Technology</Text>
+
+            {primaryIndustryOptions.length > 0 ? (
+              <View style={styles.domainSection}>
+                <Text style={styles.domainHeading}>Choose Primary Industry</Text>
+                <Text style={styles.domainHint}>Select one option</Text>
+                <View style={styles.domainGrid}>
+                  {primaryIndustryOptions.map(option => {
+                    const isSelected = selectedPrimaryIndustryId === option.id;
+                    return (
+                      <Pressable
+                        key={`primary-${option.id}`}
+                        style={styles.domainOption}
+                        onPress={() => setSelectedPrimaryIndustryId(option.id)}>
+                        <View
+                          style={[
+                            styles.checkbox,
+                            isSelected && {
+                              backgroundColor: primaryColor,
+                              borderColor: primaryColor,
+                            },
+                          ]}>
+                          {isSelected ? (
+                            <Icon name="check" size={14} color="#ffffff" />
+                          ) : null}
+                        </View>
+                        <Text style={styles.domainLabel}>{option.name}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+            ) : null}
+
+            <View style={styles.domainSection}>
+              <Text style={styles.domainHeading}>Choose Industry Domains</Text>
+              <Text style={styles.domainHint}>Select maximum 3 options</Text>
+              <View style={styles.domainGrid}>
+                {industryOptions.map(option => {
+                  const isSelected = selectedIndustryIds.includes(option.id);
+                  return (
+                    <Pressable
+                      key={`industry-${option.id}`}
+                      style={styles.domainOption}
+                      onPress={() =>
+                        toggleLimitedSelection(
+                          selectedIndustryIds,
+                          option.id,
+                          setSelectedIndustryIds,
+                          'industries',
+                        )
+                      }>
+                      <View
+                        style={[
+                          styles.checkbox,
+                          isSelected && {
+                            backgroundColor: primaryColor,
+                            borderColor: primaryColor,
+                          },
+                        ]}>
+                        {isSelected ? (
+                          <Icon name="check" size={14} color="#ffffff" />
+                        ) : null}
+                      </View>
+                      <Text style={styles.domainLabel}>{option.name}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+
+            <View style={styles.domainSection}>
+              <Text style={styles.domainHeading}>Choose Technology Domains</Text>
+              <Text style={styles.domainHint}>Select maximum 3 options</Text>
+              <View style={styles.domainGrid}>
+                {technologyOptions.map(option => {
+                  const isSelected = selectedTechnologyIds.includes(option.id);
+                  return (
+                    <Pressable
+                      key={`technology-${option.id}`}
+                      style={styles.domainOption}
+                      onPress={() =>
+                        toggleLimitedSelection(
+                          selectedTechnologyIds,
+                          option.id,
+                          setSelectedTechnologyIds,
+                          'technologies',
+                        )
+                      }>
+                      <View
+                        style={[
+                          styles.checkbox,
+                          isSelected && {
+                            backgroundColor: primaryColor,
+                            borderColor: primaryColor,
+                          },
+                        ]}>
+                        {isSelected ? (
+                          <Icon name="check" size={14} color="#ffffff" />
+                        ) : null}
+                      </View>
+                      <Text style={styles.domainLabel}>{option.name}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          </View>
+        ) : activeTab === 'financials' ? (
+          <FinancialsForm
+            primaryColor={primaryColor}
+            value={financialInfo}
+            currency={globalSetting?.features?.currency || 'INR'}
+            showInvestmentBankingSection={
+              globalSetting?.features?.investment_banking_section === true
+            }
+            fundingStages={fundingStageOptions}
+            investmentMechanisms={investmentMechanismOptions}
+            ongoingCommitments={ongoingCommitments}
+            onChange={updateFinancial}
           />
         ) : (
           <View style={styles.placeholder}>
@@ -270,11 +1141,18 @@ export function EditProfileScreen({token, onBack}: EditProfileScreenProps) {
         ) : null}
       </ScrollView>
 
+      {renderPicker()}
+
       <View style={styles.footer}>
         <View style={styles.footerSlot}>
           <AppButton
             label={isSaving ? 'Saving…' : 'SAVE'}
-            disabled={isSaving || activeTab !== 'basic'}
+            disabled={
+              isSaving ||
+              (activeTab !== 'basic' &&
+                activeTab !== 'industry' &&
+                activeTab !== 'financials')
+            }
             loading={isSaving}
             onPress={handleSave}
           />
@@ -379,29 +1257,106 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     height: '100%',
   },
-  tabsRow: {
+  tabsSection: {
+    paddingHorizontal: 12,
+    paddingTop: 12,
+  },
+  tabsShell: {
     backgroundColor: '#ffffff',
+    borderColor: '#e2e8f0',
+    borderRadius: 16,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  tabsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 12,
-    paddingHorizontal: 16,
-    paddingTop: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  tabsStrip: {
+    flexGrow: 0,
+    minHeight: 72,
+    width: '100%',
   },
   tab: {
     alignItems: 'center',
-    borderBottomColor: 'transparent',
-    borderBottomWidth: 2,
+    alignSelf: 'flex-start',
+    backgroundColor: '#ffffff',
+    borderColor: 'transparent',
+    borderRadius: 12,
+    borderWidth: 1,
     flexDirection: 'row',
+    flexShrink: 1,
     gap: 6,
-    paddingBottom: 10,
-    paddingHorizontal: 4,
+    minHeight: 44,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
   tabText: {
     color: '#64748b',
-    fontSize: 14,
+    fontSize: 13,
+    flexShrink: 1,
     fontWeight: '600',
+  },
+  tabTextActive: {
+    fontWeight: '700',
   },
   content: {
     padding: 16,
-    paddingBottom: 24,
+    paddingBottom: 112,
+  },
+  industryCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    padding: 16,
+  },
+  industryTitle: {
+    color: '#0f172a',
+    fontSize: 22,
+    fontWeight: '800',
+  },
+  domainSection: {
+    marginTop: 22,
+  },
+  domainHeading: {
+    color: '#0f172a',
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  domainHint: {
+    color: '#64748b',
+    fontSize: 13,
+    marginTop: 4,
+  },
+  domainGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 14,
+    rowGap: 14,
+  },
+  domainOption: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    paddingRight: 12,
+    width: '50%',
+  },
+  checkbox: {
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderColor: '#cbd5e1',
+    borderRadius: 6,
+    borderWidth: 1,
+    height: 22,
+    justifyContent: 'center',
+    marginRight: 10,
+    width: 22,
+  },
+  domainLabel: {
+    color: '#0f172a',
+    flex: 1,
+    fontSize: 15,
   },
   placeholder: {
     alignItems: 'center',

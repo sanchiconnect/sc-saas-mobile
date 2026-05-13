@@ -31,6 +31,11 @@ export function DashboardContent({
   profileCompletion,
   onEditProfile,
 }: DashboardContentProps) {
+  const progress = Math.max(0, Math.min(profileCompletion, 100));
+  const rightRotation = Math.min(progress, 50) * 3.6;
+  const leftRotation = progress > 50 ? (progress - 50) * 3.6 : 0;
+  const showLeftHalf = progress > 50;
+
   return (
     <>
       <View style={[styles.heroPanel, {backgroundColor: primaryColor}]}>
@@ -60,12 +65,38 @@ export function DashboardContent({
 
           <View style={styles.heroAside}>
             <View style={styles.progressRingOuter}>
-              <View
-                style={[
-                  styles.progressRingInner,
-                  {backgroundColor: primaryColor},
-                ]}>
-                <Text style={styles.progressValue}>{profileCompletion}%</Text>
+              <View style={styles.progressRingTrack} />
+
+              <View style={styles.progressHalfWrapperRight}>
+                <View
+                  style={[
+                    styles.progressHalf,
+                    styles.progressHalfRight,
+                    {
+                      transform: [{rotate: `${rightRotation}deg`}],
+                      borderLeftColor: primaryColor,
+                    },
+                  ]}
+                />
+              </View>
+
+              {showLeftHalf && (
+                <View style={styles.progressHalfWrapperLeft}>
+                  <View
+                    style={[
+                      styles.progressHalf,
+                      styles.progressHalfLeft,
+                      {
+                        transform: [{rotate: `${leftRotation}deg`}],
+                        borderRightColor: primaryColor,
+                      },
+                    ]}
+                  />
+                </View>
+              )}
+
+              <View style={styles.progressRingInner}>
+                <Text style={[styles.progressValue, {color: primaryColor}]}> {progress}%</Text>
               </View>
             </View>
 
@@ -194,25 +225,65 @@ const styles = StyleSheet.create({
   },
   progressRingOuter: {
     alignItems: 'center',
-    backgroundColor: '#ffffff',
-    borderRadius: 999,
     height: 110,
     justifyContent: 'center',
     marginBottom: 16,
+    position: 'relative',
     width: 110,
+  },
+  progressRingTrack: {
+    backgroundColor: '#f0f3ff',
+    borderRadius: 999,
+    height: 110,
+    position: 'absolute',
+    width: 110,
+  },
+  progressHalfWrapperRight: {
+    height: 110,
+    overflow: 'hidden',
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    width: 55,
+  },
+  progressHalfWrapperLeft: {
+    height: 110,
+    overflow: 'hidden',
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    width: 55,
+  },
+  progressHalf: {
+    borderBottomColor: 'transparent',
+    borderColor: 'transparent',
+    borderRadius: 999,
+    borderRightColor: 'transparent',
+    borderTopColor: 'transparent',
+    borderWidth: 10,
+    height: 110,
+    left: 0,
+    position: 'absolute',
+    top: 0,
+    width: 110,
+  },
+  progressHalfRight: {
+    borderLeftColor: '#4f46e5',
+  },
+  progressHalfLeft: {
+    borderRightColor: '#4f46e5',
   },
   progressRingInner: {
     alignItems: 'center',
-    borderColor: '#ffffff',
+    backgroundColor: '#ffffff',
     borderRadius: 999,
-    borderWidth: 3,
-    height: 84,
+    height: 88,
     justifyContent: 'center',
-    width: 84,
+    width: 88,
   },
   progressValue: {
-    color: '#ffffff',
-    fontSize: 16,
+    color: '#1f2a44',
+    fontSize: 18,
     fontWeight: '800',
   },
   editProfileButton: {

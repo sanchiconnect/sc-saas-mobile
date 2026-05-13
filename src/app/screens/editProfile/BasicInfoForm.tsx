@@ -1,18 +1,11 @@
-import React, {useState} from 'react';
+import React from 'react';
 import {Image, Pressable, StyleSheet, Text, View} from 'react-native';
 
 import {AppTextField} from '../../../shared/components/AppTextField';
 import {Icon} from '../../../shared/components/Icon';
 import {colors} from '../../../shared/theme/colors';
-import {Picker} from './Picker';
 import {
   BUSINESS_MODELS,
-  COMPANY_SIZES,
-  COUNTRIES,
-  PRODUCT_STAGES,
-  TEAM_ROLES,
-  getCitiesFor,
-  getStatesFor,
 } from './options';
 import {
   AdvisoryMember,
@@ -26,27 +19,33 @@ import {
 type Props = {
   primaryColor: string;
   value: BasicInfoFormType;
+  onLogoPress?: () => void;
+  onOpenCompanySize: () => void;
+  onOpenCountry: () => void;
+  onOpenState: () => void;
+  onOpenCity: () => void;
+  onOpenProductStage: () => void;
+  onOpenLeadershipRole: (index: number) => void;
   onChange: <K extends keyof BasicInfoFormType>(
     key: K,
     value: BasicInfoFormType[K],
   ) => void;
 };
 
-type PickerKind =
-  | 'companySize'
-  | 'country'
-  | 'state'
-  | 'city'
-  | 'productStage'
-  | {kind: 'leadershipRole'; index: number};
-
 const newId = () => `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-export function BasicInfoForm({primaryColor, value, onChange}: Props) {
-  const [picker, setPicker] = useState<PickerKind | null>(null);
-
-  const closePicker = () => setPicker(null);
-
+export function BasicInfoForm({
+  primaryColor,
+  value,
+  onLogoPress,
+  onOpenCompanySize,
+  onOpenCountry,
+  onOpenState,
+  onOpenCity,
+  onOpenProductStage,
+  onOpenLeadershipRole,
+  onChange,
+}: Props) {
   const updateLeadership = (index: number, patch: Partial<TeamMember>) => {
     const next = value.leadership.map((member, idx) =>
       idx === index ? {...member, ...patch} : member,
@@ -67,11 +66,16 @@ export function BasicInfoForm({primaryColor, value, onChange}: Props) {
       {...EMPTY_LEADERSHIP, id: newId()},
     ]);
 
-  const removeLeadership = (index: number) =>
+  const removeLeadership = (index: number) => {
+    if (value.leadership.length <= 1) {
+      return;
+    }
+
     onChange(
       'leadership',
       value.leadership.filter((_, idx) => idx !== index),
     );
+  };
 
   const addAdvisory = () =>
     onChange('advisory', [
@@ -98,120 +102,6 @@ export function BasicInfoForm({primaryColor, value, onChange}: Props) {
   const updateSocial = (key: keyof typeof value.social, text: string) =>
     onChange('social', {...value.social, [key]: text});
 
-  // ---- Picker handling ----
-  const renderPicker = () => {
-    if (!picker) return null;
-
-    if (typeof picker === 'object' && picker.kind === 'leadershipRole') {
-      return (
-        <Picker
-          visible
-          title="Select role"
-          options={TEAM_ROLES}
-          selected={value.leadership[picker.index]?.role}
-          primaryColor={primaryColor}
-          onClose={closePicker}
-          onSelect={role => {
-            updateLeadership(picker.index, {role});
-            closePicker();
-          }}
-        />
-      );
-    }
-
-    if (picker === 'companySize') {
-      return (
-        <Picker
-          visible
-          title="Choose a team size"
-          options={COMPANY_SIZES}
-          selected={value.companySize}
-          primaryColor={primaryColor}
-          onClose={closePicker}
-          onSelect={selection => {
-            onChange('companySize', selection);
-            closePicker();
-          }}
-        />
-      );
-    }
-
-    if (picker === 'country') {
-      return (
-        <Picker
-          visible
-          title="Choose a country"
-          options={COUNTRIES.map(c => c.name)}
-          selected={value.country}
-          primaryColor={primaryColor}
-          onClose={closePicker}
-          onSelect={selection => {
-            onChange('country', selection);
-            onChange('state', '');
-            onChange('city', '');
-            closePicker();
-          }}
-        />
-      );
-    }
-
-    if (picker === 'state') {
-      return (
-        <Picker
-          visible
-          title="Choose a state"
-          options={getStatesFor(value.country)}
-          selected={value.state}
-          primaryColor={primaryColor}
-          onClose={closePicker}
-          emptyMessage="Select a country first"
-          onSelect={selection => {
-            onChange('state', selection);
-            onChange('city', '');
-            closePicker();
-          }}
-        />
-      );
-    }
-
-    if (picker === 'city') {
-      return (
-        <Picker
-          visible
-          title="Choose a city"
-          options={getCitiesFor(value.country, value.state)}
-          selected={value.city}
-          primaryColor={primaryColor}
-          onClose={closePicker}
-          emptyMessage="Select a state first"
-          onSelect={selection => {
-            onChange('city', selection);
-            closePicker();
-          }}
-        />
-      );
-    }
-
-    if (picker === 'productStage') {
-      return (
-        <Picker
-          visible
-          title="Product stage"
-          options={PRODUCT_STAGES}
-          selected={value.productStage}
-          primaryColor={primaryColor}
-          onClose={closePicker}
-          onSelect={selection => {
-            onChange('productStage', selection);
-            closePicker();
-          }}
-        />
-      );
-    }
-
-    return null;
-  };
-
   const pitchCount = value.elevatorPitch.length;
 
   return (
@@ -221,16 +111,24 @@ export function BasicInfoForm({primaryColor, value, onChange}: Props) {
         <Subheading>About Company</Subheading>
 
         <View style={styles.logoRow}>
-          <View style={styles.logoBox}>
+          <Pressable
+            onPress={onLogoPress}
+            style={[
+              styles.logoBox,
+              onLogoPress && styles.logoBoxInteractive,
+              value.logoUrl && styles.logoBoxFilled,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Select company logo">
             {value.logoUrl ? (
-              <Image
-                source={{uri: value.logoUrl}}
-                style={styles.logoImage}
-              />
+              <Image source={{uri: value.logoUrl}} style={styles.logoImage} />
             ) : (
-              <Icon name="image-outline" size={36} color="#94a3b8" />
+              <View style={styles.logoPlaceholder}>
+                <Icon name="image-outline" size={30} color="#94a3b8" />
+                <Text style={styles.logoPlaceholderText}>Upload</Text>
+              </View>
             )}
-          </View>
+          </Pressable>
           <View style={styles.logoCopy}>
             <Text style={styles.logoLabel}>
               Company Logo
@@ -238,6 +136,9 @@ export function BasicInfoForm({primaryColor, value, onChange}: Props) {
             </Text>
             <Text style={styles.logoHint}>
               File types: png, jpg, jpeg{'\n'}Max size 512kb
+            </Text>
+            <Text style={[styles.logoAction, {color: primaryColor}]}>
+              Tap image box to choose logo
             </Text>
           </View>
         </View>
@@ -257,7 +158,7 @@ export function BasicInfoForm({primaryColor, value, onChange}: Props) {
           label="Company size"
           placeholder="Choose a team size"
           value={value.companySize}
-          onPress={() => setPicker('companySize')}
+          onPress={onOpenCompanySize}
         />
 
         <Text style={styles.fieldLabel}>Is your startup incorporated?</Text>
@@ -272,9 +173,30 @@ export function BasicInfoForm({primaryColor, value, onChange}: Props) {
             label="No"
             active={value.isIncorporated === false}
             primaryColor={primaryColor}
-            onPress={() => onChange('isIncorporated', false)}
+            onPress={() => {
+              onChange('isIncorporated', false);
+              onChange('incorporationYear', '');
+            }}
           />
         </View>
+
+        {value.isIncorporated === true ? (
+          <View style={styles.field}>
+            <AppTextField
+              label="Year of Incorporation"
+              required
+              placeholder="Enter year"
+              value={value.incorporationYear}
+              onChangeText={text =>
+                onChange(
+                  'incorporationYear',
+                  text.replace(/[^0-9]/g, '').slice(0, 4),
+                )
+              }
+              keyboardType="number-pad"
+            />
+          </View>
+        ) : null}
 
         <Subheading style={styles.spacedSubheading}>Headquartered in</Subheading>
 
@@ -283,19 +205,19 @@ export function BasicInfoForm({primaryColor, value, onChange}: Props) {
           required
           placeholder="Choose a country"
           value={value.country}
-          onPress={() => setPicker('country')}
+          onPress={onOpenCountry}
         />
         <DropdownField
           label="State"
           placeholder="Choose a state"
           value={value.state}
-          onPress={() => setPicker('state')}
+          onPress={onOpenState}
         />
         <DropdownField
           label="City"
           placeholder="Choose a city"
           value={value.city}
-          onPress={() => setPicker('city')}
+          onPress={onOpenCity}
         />
 
         <Subheading style={styles.spacedSubheading}>
@@ -342,7 +264,7 @@ export function BasicInfoForm({primaryColor, value, onChange}: Props) {
         <DropdownField
           placeholder="Choose product stage"
           value={value.productStage}
-          onPress={() => setPicker('productStage')}
+          onPress={onOpenProductStage}
         />
 
         <Subheading style={styles.spacedSubheading}>Business Models</Subheading>
@@ -377,54 +299,49 @@ export function BasicInfoForm({primaryColor, value, onChange}: Props) {
       <SectionCard primaryColor={primaryColor} heading="Team">
         <Subheading>Leadership Team</Subheading>
 
-        {value.leadership.length === 0 ? (
-          <EmptyHint label="No leadership team members yet." />
-        ) : (
-          value.leadership.map((member, index) => (
-            <MemberCard
-              key={member.id}
-              index={index}
-              onRemove={() => removeLeadership(index)}>
-              <AppTextField
-                label="Name"
-                required
-                placeholder="Member name"
-                value={member.name}
-                onChangeText={text => updateLeadership(index, {name: text})}
-                autoCapitalize="words"
-                containerStyle={styles.field}
-              />
-              <AppTextField
-                label="LinkedIn profile URL"
-                placeholder="https://linkedin.com/in/..."
-                value={member.linkedinUrl}
-                onChangeText={text =>
-                  updateLeadership(index, {linkedinUrl: text})
-                }
-                autoCapitalize="none"
-                keyboardType="url"
-                containerStyle={styles.field}
-              />
-              <DropdownField
-                label="Role"
-                placeholder="Select role"
-                value={member.role}
-                onPress={() =>
-                  setPicker({kind: 'leadershipRole', index})
-                }
-              />
-              <AppTextField
-                label="Designation"
-                placeholder="e.g. CEO, CFO, CTO, CMO"
-                value={member.designation}
-                onChangeText={text =>
-                  updateLeadership(index, {designation: text})
-                }
-                containerStyle={styles.field}
-              />
-            </MemberCard>
-          ))
-        )}
+        {value.leadership.map((member, index) => (
+          <MemberCard
+            key={member.id}
+            index={index}
+            disableRemove={value.leadership.length === 1}
+            onRemove={() => removeLeadership(index)}>
+            <AppTextField
+              label="Name"
+              required
+              placeholder="Member name"
+              value={member.name}
+              onChangeText={text => updateLeadership(index, {name: text})}
+              autoCapitalize="words"
+              containerStyle={styles.field}
+            />
+            <AppTextField
+              label="LinkedIn profile URL"
+              placeholder="https://linkedin.com/in/..."
+              value={member.linkedinUrl}
+              onChangeText={text =>
+                updateLeadership(index, {linkedinUrl: text})
+              }
+              autoCapitalize="none"
+              keyboardType="url"
+              containerStyle={styles.field}
+            />
+            <DropdownField
+              label="Role"
+              placeholder="Select role"
+              value={member.role}
+              onPress={() => onOpenLeadershipRole(index)}
+            />
+            <AppTextField
+              label="Designation"
+              placeholder="e.g. CEO, CFO, CTO, CMO"
+              value={member.designation}
+              onChangeText={text =>
+                updateLeadership(index, {designation: text})
+              }
+              containerStyle={styles.field}
+            />
+          </MemberCard>
+        ))}
 
         <AddRowButton
           label="Add leadership member"
@@ -536,7 +453,6 @@ export function BasicInfoForm({primaryColor, value, onChange}: Props) {
         </View>
       </SectionCard>
 
-      {renderPicker()}
     </View>
   );
 }
@@ -636,18 +552,28 @@ function YesNoButton({
 function MemberCard({
   children,
   index,
+  disableRemove,
   onRemove,
-}: React.PropsWithChildren<{index: number; onRemove: () => void}>) {
+}: React.PropsWithChildren<{
+  index: number;
+  disableRemove?: boolean;
+  onRemove: () => void;
+}>) {
   return (
     <View style={styles.memberCard}>
       <View style={styles.memberHeader}>
         <Text style={styles.memberHeaderText}>Member {index + 1}</Text>
         <Pressable
           onPress={onRemove}
+          disabled={disableRemove}
           hitSlop={6}
           accessibilityRole="button"
           accessibilityLabel={`Remove member ${index + 1}`}>
-          <Icon name="close-circle-outline" size={22} color={colors.danger} />
+          <Icon
+            name="close-circle-outline"
+            size={22}
+            color={disableRemove ? '#cbd5e1' : colors.danger}
+          />
         </Pressable>
       </View>
       {children}
@@ -748,11 +674,26 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 90,
   },
+  logoBoxInteractive: {
+    overflow: 'hidden',
+  },
+  logoBoxFilled: {
+    backgroundColor: '#ffffff',
+  },
   logoImage: {
     borderRadius: 12,
     height: '100%',
     resizeMode: 'cover',
     width: '100%',
+  },
+  logoPlaceholder: {
+    alignItems: 'center',
+    gap: 4,
+  },
+  logoPlaceholderText: {
+    color: '#94a3b8',
+    fontSize: 11,
+    fontWeight: '700',
   },
   logoCopy: {
     flex: 1,
@@ -766,6 +707,11 @@ const styles = StyleSheet.create({
     color: '#94a3b8',
     fontSize: 12,
     marginTop: 4,
+  },
+  logoAction: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 8,
   },
   dropdownTrigger: {
     alignItems: 'center',

@@ -35,9 +35,16 @@ import {AppMenuSelection, AppSection, DashboardSummary, MenuItem} from './types'
 type HomeScreenProps = {
   session: AuthSession;
   onLogout: () => void;
+  showWelcomePopup: boolean;
+  onCloseWelcomePopup: () => void;
 };
 
-export function HomeScreen({session, onLogout}: HomeScreenProps) {
+export function HomeScreen({
+  session,
+  onLogout,
+  showWelcomePopup,
+  onCloseWelcomePopup,
+}: HomeScreenProps) {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [searchText, setSearchText] = useState('');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -49,16 +56,16 @@ export function HomeScreen({session, onLogout}: HomeScreenProps) {
 
   const {globalSetting, theme} = useContext(TenantContext);
 
-  const loadSummary = async () => {
-    const next = await dashboardService.fetchSummary();
+  const loadSummary = async (token: string) => {
+    const next = await dashboardService.fetchSummary(token);
     setSummary(next);
+    return next;
   };
 
   useEffect(() => {
     let cancelled = false;
     setIsLoading(true);
-    dashboardService
-      .fetchSummary()
+    loadSummary(session.token)
       .then(next => {
         if (!cancelled) setSummary(next);
       })
@@ -68,12 +75,12 @@ export function HomeScreen({session, onLogout}: HomeScreenProps) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [session.token]);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
     try {
-      await loadSummary();
+      await loadSummary(session.token);
     } finally {
       setIsRefreshing(false);
     }
@@ -173,6 +180,28 @@ export function HomeScreen({session, onLogout}: HomeScreenProps) {
     );
   }
 
+  if (selectedMenu.section === 'edit-profile') {
+    return (
+      <View style={styles.page}>
+        <SideMenu
+          globalSetting={globalSetting}
+          isVisible={isMenuOpen}
+          onClose={() => setIsMenuOpen(false)}
+          onLogout={onLogout}
+          onSelectMenu={setSelectedMenu}
+          primaryColor={primaryColor}
+          selectedMenu={selectedMenu}
+          session={session}
+        />
+
+        <EditProfileScreen
+          token={session.token}
+          onBack={() => setSelectedMenu({section: 'dashboard'})}
+        />
+      </View>
+    );
+  }
+
   return (
     <View style={styles.page}>
       <SideMenu
@@ -219,6 +248,29 @@ export function HomeScreen({session, onLogout}: HomeScreenProps) {
         </View>
       </View>
 
+      {showWelcomePopup && (
+        <View style={styles.popupOverlay}>
+          <View style={[styles.popupCard, {borderColor: primaryColor}]}> 
+            {logoUri ? (
+              <Image source={{uri: logoUri}} style={styles.popupLogo} />
+            ) : (
+              <Text style={[styles.popupTitle, {color: primaryColor}]}>Welcome</Text>
+            )}
+            <Text style={styles.popupHeading}>Welcome to {globalSetting?.brandName || 'the platform'}</Text>
+            <Text style={styles.popupCopy}>
+              Complete your profile and explore the dashboard to get started.
+            </Text>
+            <Pressable
+              style={[styles.popupAction, {backgroundColor: primaryColor}]}
+              onPress={onCloseWelcomePopup}
+              accessibilityRole="button"
+              accessibilityLabel="Continue">
+              <Text style={styles.popupActionText}>Continue</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
+
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={
@@ -243,15 +295,7 @@ export function HomeScreen({session, onLogout}: HomeScreenProps) {
           />
         ) : null}
 
-        {selectedMenu.section === 'edit-profile' ? (
-          <EditProfileScreen
-            token={session.token}
-            onBack={() => setSelectedMenu({section: 'dashboard'})}
-          />
-        ) : null}
-
         {selectedMenu.section !== 'dashboard' &&
-        selectedMenu.section !== 'edit-profile' &&
         sectionConfigs[selectedMenu.section] ? (
           <SectionScreen
             activeItem={selectedMenu.item}
@@ -307,6 +351,61 @@ const styles = StyleSheet.create({
   brandText: {
     color: '#1f2a44',
     fontSize: 18,
+    fontWeight: '700',
+  },
+  popupOverlay: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(15, 23, 42, 0.55)',
+    bottom: 0,
+    left: 0,
+    justifyContent: 'center',
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    zIndex: 10,
+  },
+  popupCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: 24,
+    shadowColor: '#0f172a',
+    shadowOffset: {width: 0, height: 12},
+    shadowOpacity: 0.12,
+    shadowRadius: 24,
+    width: '90%',
+  },
+  popupLogo: {
+    height: 46,
+    marginBottom: 18,
+    resizeMode: 'contain',
+    width: 120,
+  },
+  popupTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    marginBottom: 10,
+  },
+  popupHeading: {
+    color: '#1f2a44',
+    fontSize: 18,
+    fontWeight: '800',
+    marginBottom: 12,
+  },
+  popupCopy: {
+    color: '#475569',
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 20,
+  },
+  popupAction: {
+    alignItems: 'center',
+    borderRadius: 14,
+    paddingVertical: 14,
+  },
+  popupActionText: {
+    color: '#ffffff',
+    fontSize: 15,
     fontWeight: '700',
   },
   loadingPage: {

@@ -42,4 +42,6 @@ export type EditProfileTab = {
   key: string;
   label: string;
   status: 'complete' | 'incomplete';
+  custom?: boolean;
+  formUuid?: string;
 };

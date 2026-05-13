@@ -1,4 +1,5 @@
 import type {DashboardStat, DashboardSummary} from '../types';
+import {authService} from '../../auth/services/auth.service';
 
 const mockStats: DashboardStat[] = [
   {
@@ -25,13 +26,6 @@ const mockStats: DashboardStat[] = [
     title: 'Document Requests',
     icon: 'file-document-outline',
   },
-  // {
-  //   key: 'affiliation',
-  //   value: 'Active',
-  //   title: 'Affiliation Tier 1',
-  //   icon: 'shield-check',
-  //   accent: true,
-  // },
   {
     key: 'certificate',
     value: '0',
@@ -41,12 +35,25 @@ const mockStats: DashboardStat[] = [
 ];
 
 export const dashboardService = {
-  async fetchSummary(): Promise<DashboardSummary> {
-    // Simulate network latency. Replace with a real API call.
-    await new Promise<void>(resolve => setTimeout(() => resolve(), 600));
-    return {
-      profileCompletion: 100,
-      stats: mockStats,
-    };
+  async fetchSummary(token: string): Promise<DashboardSummary> {
+    try {
+      const completenessData = await authService.getProfileCompletion(token);
+      const rawPercentage =
+        completenessData?.data?.percentage ?? completenessData?.percentage ?? 0;
+      const profileCompletion = Number(rawPercentage);
+
+      return {
+        profileCompletion: Number.isFinite(profileCompletion)
+          ? profileCompletion
+          : 0,
+        stats: mockStats,
+      };
+    } catch (error) {
+      console.warn('Dashboard summary load failed:', error);
+      return {
+        profileCompletion: 0,
+        stats: mockStats,
+      };
+    }
   },
 };

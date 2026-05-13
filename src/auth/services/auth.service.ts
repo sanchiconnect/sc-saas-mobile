@@ -1,4 +1,6 @@
 import {
+  fetchFundingStages,
+  fetchInvestmentMechanisms,
   fetchTenantsSetting,
   verifyEmail,
   verifyMobileNumber,
@@ -17,9 +19,16 @@ const DEFAULT_COUNTRY_CODE = 91;
 const LOGIN_INIT_PATH = 'api/v1/public/auth/mobile/login';
 const LOGIN_VERIFY_PATH = 'api/v1/public/auth/mobile/login/verify';
 const SEND_OTP_PATH = 'api/v1/public/otp_verifications/send';
-const SIGNUP_VERIFY_PATH = 'api/v1/public/otp_verifications/verify'; 
+const SIGNUP_VERIFY_PATH = 'api/v1/public/otp_verifications/verify';
 const REGISTER_PATH = 'api/v1/public/auth/register/';
 const PROFILE_PATH = 'api/v1/users/profile';
+const STARTUP_INFORMATION_PATH = 'api/v1/startups/startup-information';
+const FINANCIALS_INFORMATION_PATH = 'api/v1/startups/financials-information';
+const INDUSTRY_TECHNOLOGY_BUSINESS_PATH =
+  'api/v1/startups/industry-technology-business';
+const PROFILE_COMPLETENESS_PATH = 'api/v1/startups/profile_completeness';
+const STARTUP_FORM_LIST_PATH = 'api/v1/forms-management/list/startup';
+const ONGOING_COMMITMENTS_PATH = 'api/v1/startups/ongoing-commitments';
 
 type ApiResponse = Record<string, any>;
 
@@ -41,11 +50,83 @@ const getErrorMessage = (data: any) =>
   data?.data?.message ||
   data?.response?.message;
 
+const normalizeTokenValue = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+
+  if (!trimmed) {
+    return undefined;
+  }
+
+  return trimmed.replace(/^Bearer\s+/i, '');
+};
+
+const findNestedToken = (data: any): string | undefined => {
+  if (!data || typeof data !== 'object') {
+    return undefined;
+  }
+
+  const directKeys = [
+    'token',
+    'accessToken',
+    'access_token',
+    'authToken',
+    'idToken',
+    'jwt',
+    'authorization',
+    'Authorization',
+  ];
+
+  for (const key of directKeys) {
+    const normalized = normalizeTokenValue(data?.[key]);
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  for (const value of Object.values(data)) {
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const nested = findNestedToken(item);
+        if (nested) {
+          return nested;
+        }
+      }
+      continue;
+    }
+
+    if (value && typeof value === 'object') {
+      const nested = findNestedToken(value);
+      if (nested) {
+        return nested;
+      }
+    }
+  }
+
+  return undefined;
+};
+
 const getToken = (data: any) =>
-  data?.data?.token ||
-  data?.data?.accessToken ||
-  data?.token ||
-  data?.accessToken;
+  normalizeTokenValue(data?.data?.token) ||
+  normalizeTokenValue(data?.data?.accessToken) ||
+  normalizeTokenValue(data?.token) ||
+  normalizeTokenValue(data?.accessToken) ||
+  findNestedToken(data);
+
+const getAuthHeader = (token: string) => {
+  const normalizedToken = normalizeTokenValue(token);
+
+  if (!normalizedToken) {
+    throw new Error('Missing access token.');
+  }
+
+  return {
+    Authorization: `Bearer ${normalizedToken}`,
+  };
+};
 
 const getEmailVerificationId = (data: any) =>
   data?.data?.emailVerificationId ||
@@ -106,7 +187,7 @@ const buildSession = (
     fallback.email.split('@')[0];
 
   return {
-    token: token || 'pending-token',
+    token: normalizeTokenValue(token) || 'pending-token',
     user: {
       id: String(user?.id || user?._id || fallback.email),
       email: user?.email || user?.emailAddress || fallback.email,
@@ -165,9 +246,18 @@ async function fetchProfile(baseUrl: string, token: string) {
     PROFILE_PATH,
     {
       method: 'GET',
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
+      headers: getAuthHeader(token),
+    },
+    baseUrl,
+  );
+}
+
+async function fetchStartupInformation(baseUrl: string, token: string) {
+  return requestJson<ApiResponse>(
+    STARTUP_INFORMATION_PATH,
+    {
+      method: 'GET',
+      headers: getAuthHeader(token),
     },
     baseUrl,
   );
@@ -264,10 +354,14 @@ async function verifyOtpAndFetchProfile(
   }
 
   let profile: any = null;
-  let session: any = undefined;
+  let session: any;
 
   // Only login flow needs profile + session
   if (!isSignup) {
+    if (!token) {
+      throw new Error('OTP verification succeeded but token is missing.');
+    }
+
     profile = await fetchProfile(baseUrl, token);
 
     session = buildSession(profile, token, {
@@ -291,18 +385,99 @@ export const authService = {
     return fetchProfile(baseUrl, token);
   },
 
+  async getStartupInformation(token: string): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return fetchStartupInformation(baseUrl, token);
+  },
+
+  async getProfileCompletion(token: string): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      PROFILE_COMPLETENESS_PATH,
+      {
+        method: 'GET',
+        headers: getAuthHeader(token),
+      },
+      baseUrl,
+    );
+  },
+
+  async getFundingStages(): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return fetchFundingStages(baseUrl);
+  },
+
+  async getInvestmentMechanisms(): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return fetchInvestmentMechanisms(baseUrl);
+  },
+
+  async getStartupFormList(token: string): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      STARTUP_FORM_LIST_PATH,
+      {
+        method: 'GET',
+        headers: getAuthHeader(token),
+      },
+      baseUrl,
+    );
+  },
+
+  async getOngoingCommitments(token: string): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      ONGOING_COMMITMENTS_PATH,
+      {
+        method: 'GET',
+        headers: getAuthHeader(token),
+      },
+      baseUrl,
+    );
+  },
+
   async updateProfile(
     token: string,
     payload: Record<string, any>,
   ): Promise<ApiResponse> {
     const baseUrl = await resolveBaseUrl();
     return requestJson<ApiResponse>(
-      PROFILE_PATH,
+      STARTUP_INFORMATION_PATH,
       {
         method: 'PATCH',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        headers: getAuthHeader(token),
+        body: JSON.stringify(payload),
+      },
+      baseUrl,
+    );
+  },
+
+  async updateFinancialsInformation(
+    token: string,
+    payload: Record<string, any>,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      FINANCIALS_INFORMATION_PATH,
+      {
+        method: 'PATCH',
+        headers: getAuthHeader(token),
+        body: JSON.stringify(payload),
+      },
+      baseUrl,
+    );
+  },
+
+  async updateIndustryTechnologyBusiness(
+    token: string,
+    payload: Record<string, any>,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      INDUSTRY_TECHNOLOGY_BUSINESS_PATH,
+      {
+        method: 'PATCH',
+        headers: getAuthHeader(token),
         body: JSON.stringify(payload),
       },
       baseUrl,
@@ -326,20 +501,6 @@ export const authService = {
           body: JSON.stringify({
             countryCode: payload.countryCode || DEFAULT_COUNTRY_CODE,
             email,
-          }),
-        },
-        baseUrl,
-      );
-
-      await requestJson(
-        SEND_OTP_PATH,
-        {
-          method: 'POST',
-          body: JSON.stringify({
-            type: payload.type || 'email',
-            countryCode: payload.countryCode || DEFAULT_COUNTRY_CODE,
-            mobileNumber: payload.mobile ? Number(payload.mobile.trim()) : undefined,
-            emailAddress: email,
           }),
         },
         baseUrl,
@@ -446,11 +607,7 @@ export const authService = {
       REGISTER_PATH,
       {
         method: 'POST',
-        headers: token
-          ? {
-              Authorization: `Bearer ${token}`,
-            }
-          : undefined,
+        headers: token ? getAuthHeader(token) : undefined,
         body: JSON.stringify({
           name: payload.fullName || payload.companyName || 'THUB User',
           emailAddress: email,
@@ -484,7 +641,7 @@ export const authService = {
       },
       baseUrl,
     );
-    const sessionToken = getToken(registerData) || token;
+    const sessionToken = getToken(registerData) || getToken(verifyData) || token;
 
     if (sessionToken) {
       const profile = await fetchProfile(baseUrl, sessionToken);

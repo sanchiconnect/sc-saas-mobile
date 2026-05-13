@@ -15,6 +15,20 @@ export const fetchSettingStyle = async (baseUrl) => {
   return await response.json();
 };
 
+export const fetchFundingStages = async (baseUrl) => {
+  const url = `${baseUrl}api/v1/public/global/funding_stages`;
+
+  const response = await fetch(url);
+  return await response.json();
+};
+
+export const fetchInvestmentMechanisms = async (baseUrl) => {
+  const url = `${baseUrl}api/v1/public/global/custom/investment_mechanisms`;
+
+  const response = await fetch(url);
+  return await response.json();
+};
+
 export const verifyEmail = async (
   baseUrl,
   email,

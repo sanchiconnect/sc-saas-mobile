@@ -1,7 +1,9 @@
 import {
   AdvisoryMember,
   BasicInfoForm,
+  FinancialsForm,
   EMPTY_BASIC_INFO,
+  EMPTY_FINANCIALS,
   SocialLinks,
   TeamMember,
 } from './types';
@@ -19,6 +21,52 @@ const pickFirst = (...candidates: any[]) => {
 
 const asString = (value: any): string =>
   value === undefined || value === null ? '' : String(value);
+
+const asBoolean = (value: any, fallback = false): boolean => {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (['true', 'yes', '1'].includes(normalized)) {
+      return true;
+    }
+    if (['false', 'no', '0'].includes(normalized)) {
+      return false;
+    }
+  }
+
+  if (typeof value === 'number') {
+    return value === 1;
+  }
+
+  return fallback;
+};
+
+const normalizeIdentifier = (value: any): string => {
+  if (value === undefined || value === null || value === '') {
+    return '';
+  }
+
+  return String(value).trim();
+};
+
+const asIdentifierArray = (value: any): string[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map(item =>
+      normalizeIdentifier(
+        typeof item === 'string' || typeof item === 'number'
+          ? item
+          : pickFirst(item?.id, item?.value, item?.name, item?.label),
+      ),
+    )
+    .filter(Boolean);
+};
 
 const randomId = () =>
   `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -59,7 +107,15 @@ const toAdvisory = (raw: any): AdvisoryMember[] => {
 };
 
 const toSocial = (root: AnyRecord, social: AnyRecord): SocialLinks => ({
-  website: asString(pickFirst(social?.website, social?.websiteUrl, root?.websiteUrl, root?.website)),
+  website: asString(
+    pickFirst(
+      social?.website,
+      social?.websiteUrl,
+      root?.displayWebsite,
+      root?.websiteUrl,
+      root?.website,
+    ),
+  ),
   linkedin: asString(
     pickFirst(
       social?.linkedin,
@@ -83,6 +139,7 @@ const toSocial = (root: AnyRecord, social: AnyRecord): SocialLinks => ({
 
 export type ExtractedProfile = {
   basicInfo: BasicInfoForm;
+  financials: FinancialsForm;
   profileCompletion: number;
   raw: AnyRecord;
 };
@@ -100,6 +157,9 @@ export const extractProfile = (
   logoBaseUrl?: string,
 ): ExtractedProfile => {
   const root = data?.data || data || {};
+  const productInformation = root?.productInformation || {};
+  const pitchDeck = root?.pitchDeck || {};
+  const financialsRoot = root?.financials || {};
 
   // Some deployments may nest the startup detail; fall back to root for the
   // common case where the user object is the entry point.
@@ -122,6 +182,7 @@ export const extractProfile = (
   );
 
   const businessModelsRaw = pickFirst(
+    root?.startupBusinessModels?.map((item: AnyRecord) => item?.name),
     company?.businessModels,
     root?.businessModels,
   );
@@ -131,6 +192,7 @@ export const extractProfile = (
 
     companyName: asString(
       pickFirst(
+        root?.companyName,
         root?.profileName,
         company?.name,
         company?.companyName,
@@ -141,6 +203,7 @@ export const extractProfile = (
     ),
     companySize: asString(
       pickFirst(
+        root?.companySize,
         company?.size,
         company?.teamSize,
         company?.companySize,
@@ -148,10 +211,24 @@ export const extractProfile = (
       ),
     ),
     isIncorporated:
-      typeof incorporatedRaw === 'boolean' ? incorporatedRaw : null,
+      typeof incorporatedRaw === 'boolean'
+        ? incorporatedRaw
+        : root?.isNotRegistered === false
+          ? true
+          : null,
+    incorporationYear: asString(
+      pickFirst(
+        root?.yearOfIncorporation,
+        company?.incorporationYear,
+        company?.yearOfIncorporation,
+        root?.incorporationYear,
+        root?.yearOfIncorporation,
+      ),
+    ),
     logoUrl: resolveLogoUrl(
       asString(
         pickFirst(
+          root?.companyLogo,
           root?.avatar,
           company?.logo,
           company?.logoUrl,
@@ -161,20 +238,63 @@ export const extractProfile = (
       ) || null,
       logoBaseUrl,
     ),
+    servicesLookingFor: Array.isArray(root?.servicesLookingFor)
+      ? root.servicesLookingFor.map(asString).filter(Boolean)
+      : [],
 
-    country: asString(pickFirst(address?.country, root?.country)),
-    state: asString(pickFirst(address?.state, root?.state)),
-    city: asString(pickFirst(address?.city, company?.city, root?.city)),
+    countryId: Number(root?.registeredCountryR?.id ?? root?.registeredCountryId) || null,
+    country: asString(
+      pickFirst(
+        root?.registeredCountryR?.name,
+        root?.registeredCountry,
+        address?.country,
+        root?.country,
+      ),
+    ),
+    stateId: Number(root?.registeredStateR?.id ?? root?.registeredStateId) || null,
+    state: asString(
+      pickFirst(
+        root?.registeredStateR?.name,
+        root?.registeredState,
+        address?.state,
+        root?.state,
+      ),
+    ),
+    cityId: Number(root?.registeredCityR?.id ?? root?.registeredCityId) || null,
+    city: asString(
+      pickFirst(
+        root?.registeredCityR?.name,
+        root?.registeredCity,
+        address?.city,
+        company?.city,
+        root?.city,
+      ),
+    ),
 
     elevatorPitch: asString(
-      pickFirst(company?.elevatorPitch, root?.elevatorPitch, company?.pitch),
+      pickFirst(
+        pitchDeck?.elevatorPitch,
+        company?.elevatorPitch,
+        root?.elevatorPitch,
+        company?.pitch,
+      ),
     ),
     companyBrief: asString(
-      pickFirst(company?.brief, root?.companyBrief, company?.description),
+      pickFirst(
+        productInformation?.description,
+        company?.brief,
+        root?.companyBrief,
+        company?.description,
+      ),
     ),
 
     productStage: asString(
-      pickFirst(company?.productStage, root?.productStage, company?.stage),
+      pickFirst(
+        productInformation?.productStage?.name,
+        company?.productStage,
+        root?.productStage,
+        company?.stage,
+      ),
     ),
     businessModels: Array.isArray(businessModelsRaw)
       ? businessModelsRaw.map(asString).filter(Boolean)
@@ -182,6 +302,7 @@ export const extractProfile = (
 
     leadership: toLeadership(
       pickFirst(
+        root?.founders,
         root?.leadership,
         root?.leadershipTeam,
         company?.leadership,
@@ -190,6 +311,7 @@ export const extractProfile = (
     ),
     advisory: toAdvisory(
       pickFirst(
+        root?.advisoryBoards,
         root?.advisory,
         root?.advisoryBoard,
         company?.advisory,
@@ -198,6 +320,43 @@ export const extractProfile = (
     ),
 
     social: toSocial(root, social),
+  };
+
+  const financials: FinancialsForm = {
+    ...EMPTY_FINANCIALS,
+    fundingStage: asString(
+      pickFirst(
+        financialsRoot?.fundingStageId,
+        financialsRoot?.fundingStage?.name,
+        financialsRoot?.fundingStage?.id,
+        financialsRoot?.fundingStageR?.name,
+        financialsRoot?.fundingStageR?.id,
+        financialsRoot?.fundingStageName,
+      ),
+    ),
+    isRaisingFunds: asBoolean(
+      pickFirst(root?.isRaisingFunds, financialsRoot?.isRaisingFunds),
+      false,
+    ),
+    targetFundraise: asString(financialsRoot?.targetFundraise),
+    tentativeValuation: asString(financialsRoot?.tentativeValuation),
+    investmentMechanisms: asIdentifierArray(
+      pickFirst(
+        financialsRoot?.investmentMechanisms,
+        financialsRoot?.investmentMechanismOptions,
+      ),
+    ),
+    totalFundRaised: asString(financialsRoot?.totalFundRaised),
+    pastFunding: asString(financialsRoot?.pastFunding),
+    revenueStage: asString(financialsRoot?.revenueStage),
+    grossRevenues: asString(financialsRoot?.grossRevenues),
+    grossRevenuesQ1: asString(financialsRoot?.grossRevenuesQ1),
+    grossRevenuesQ2: asString(financialsRoot?.grossRevenuesQ2),
+    grossRevenuesQ3: asString(financialsRoot?.grossRevenuesQ3),
+    timeToCommercialize: asString(financialsRoot?.timeToCommercialize),
+    investmentBankerOpportunity: asString(
+      financialsRoot?.investmentBankerOpportunity,
+    ),
   };
 
   // If the leadership array is empty but the response includes a primary user
@@ -229,29 +388,46 @@ export const extractProfile = (
   const completion = Number(completionRaw);
   const profileCompletion = Number.isFinite(completion) ? completion : 0;
 
-  return {basicInfo, profileCompletion, raw: data};
+  return {basicInfo, financials, profileCompletion, raw: data};
 };
 
 export const buildBasicInfoPayload = (info: BasicInfoForm) => ({
-  profileName: info.companyName,
-  company: {
-    name: info.companyName,
-    size: info.companySize,
-    isIncorporated: info.isIncorporated,
-    elevatorPitch: info.elevatorPitch,
-    brief: info.companyBrief,
-    productStage: info.productStage,
-    businessModels: info.businessModels,
-    address: {
-      country: info.country,
-      state: info.state,
-      city: info.city,
-    },
-  },
-  leadership: info.leadership.map(({id: _id, ...rest}) => rest),
-  advisory: info.advisory.map(({id: _id, ...rest}) => rest),
-  social: info.social,
-  // Top-level mirrors so backends that expect flat fields also receive them.
-  linkedInUrl: info.social.linkedin,
+  companyName: info.companyName,
+  yearOfIncorporation: info.incorporationYear,
+  registeredCountryId: info.countryId,
+  registeredStateId: info.stateId,
+  registeredCityId: info.cityId,
+  companySize: info.companySize,
+  displayWebsite: info.social.website,
+  isNotRegistered: info.isIncorporated === false,
+  servicesLookingFor: info.servicesLookingFor,
+  linkedinUrl: info.social.linkedin,
   twitterUrl: info.social.twitter,
+  facebookUrl: info.social.facebook,
+  instagramUrl: info.social.instagram,
+  youtubeUrl: info.social.youtube,
+  gstNumber: null,
+  dpiitNumber: null,
+  cinNumber: null,
+});
+
+export const buildFinancialsPayload = (info: FinancialsForm) => ({
+  isRaisingFunds: info.isRaisingFunds,
+  financials: {
+    fundingStageId: Number(info.fundingStage) || info.fundingStage,
+    targetFundraise: info.targetFundraise,
+    tentativeValuation: info.tentativeValuation,
+    investmentMechanisms: info.investmentMechanisms.map(item =>
+      Number(item) || item,
+    ),
+    totalFundRaised: info.totalFundRaised,
+    pastFunding: info.pastFunding,
+    revenueStage: info.revenueStage,
+    grossRevenues: info.grossRevenues,
+    grossRevenuesQ1: info.grossRevenuesQ1,
+    grossRevenuesQ2: info.grossRevenuesQ2,
+    grossRevenuesQ3: info.grossRevenuesQ3,
+    timeToCommercialize: info.timeToCommercialize,
+    investmentBankerOpportunity: info.investmentBankerOpportunity,
+  },
 });
