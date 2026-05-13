@@ -16,6 +16,7 @@ import {Icon} from '../shared/components/Icon';
 import {DashboardContent} from './components/DashboardContent';
 import {SectionScreen} from './components/SectionScreen';
 import {SideMenu} from './components/SideMenu';
+import {ProgramsScreen} from './screens/ProgramsScreen';
 import {
   accountSettingItems,
   actionItems,
@@ -202,6 +203,40 @@ export function HomeScreen({
     );
   }
 
+  if (selectedMenu.section === 'program') {
+    return (
+      <View style={styles.page}>
+        <SideMenu
+          globalSetting={globalSetting}
+          isVisible={isMenuOpen}
+          onClose={() => setIsMenuOpen(false)}
+          onLogout={onLogout}
+          onSelectMenu={setSelectedMenu}
+          primaryColor={primaryColor}
+          selectedMenu={selectedMenu}
+          session={session}
+        />
+
+        <ProgramsScreen
+          token={session.token}
+          primaryColor={primaryColor}
+          logoBaseUrl={logoBaseUrl}
+          defaultMode={
+            selectedMenu.item === 'My Applications'
+              ? 'my-applications'
+              : 'all-programs'
+          }
+          onModeChange={mode =>
+            setSelectedMenu({
+              section: 'program',
+              item: mode === 'my-applications' ? 'My Applications' : 'All Programs',
+            })
+          }
+        />
+      </View>
+    );
+  }
+
   return (
     <View style={styles.page}>
       <SideMenu
@@ -294,7 +329,6 @@ export function HomeScreen({
             userFirstName={userFirstName}
           />
         ) : null}
-
         {selectedMenu.section !== 'dashboard' &&
         sectionConfigs[selectedMenu.section] ? (
           <SectionScreen

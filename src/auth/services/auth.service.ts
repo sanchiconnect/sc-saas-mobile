@@ -29,6 +29,10 @@ const INDUSTRY_TECHNOLOGY_BUSINESS_PATH =
 const PROFILE_COMPLETENESS_PATH = 'api/v1/startups/profile_completeness';
 const STARTUP_FORM_LIST_PATH = 'api/v1/forms-management/list/startup';
 const ONGOING_COMMITMENTS_PATH = 'api/v1/startups/ongoing-commitments';
+const PROGRAMS_PATH = 'api/v1/programs-management/?includeExternal=true';
+const VS_PROGRAMS_PATH = 'api/v1/vs-programs-management/?includeExternal=true';
+const APPLICATION_PROGRAMS_PATH =
+  'api/v1/application-programs-management/?partnerId=null&includeExternal=true';
 
 type ApiResponse = Record<string, any>;
 
@@ -428,6 +432,42 @@ export const authService = {
     const baseUrl = await resolveBaseUrl();
     return requestJson<ApiResponse>(
       ONGOING_COMMITMENTS_PATH,
+      {
+        method: 'GET',
+        headers: getAuthHeader(token),
+      },
+      baseUrl,
+    );
+  },
+
+  async getPrograms(token: string): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      PROGRAMS_PATH,
+      {
+        method: 'GET',
+        headers: getAuthHeader(token),
+      },
+      baseUrl,
+    );
+  },
+
+  async getVentureStudioPrograms(token: string): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      VS_PROGRAMS_PATH,
+      {
+        method: 'GET',
+        headers: getAuthHeader(token),
+      },
+      baseUrl,
+    );
+  },
+
+  async getApplicationPrograms(token: string): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      APPLICATION_PROGRAMS_PATH,
       {
         method: 'GET',
         headers: getAuthHeader(token),
