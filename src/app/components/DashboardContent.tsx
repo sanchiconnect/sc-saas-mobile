@@ -67,32 +67,49 @@ export function DashboardContent({
             <View style={styles.progressRingOuter}>
               <View style={styles.progressRingTrack} />
 
-              <View style={styles.progressHalfWrapperRight}>
+              {progress >= 100 ? (
                 <View
                   style={[
-                    styles.progressHalf,
-                    styles.progressHalfRight,
+                    styles.progressRingFull,
                     {
-                      transform: [{rotate: `${rightRotation}deg`}],
+                      borderColor: primaryColor,
+                      borderTopColor: primaryColor,
+                      borderRightColor: primaryColor,
+                      borderBottomColor: primaryColor,
                       borderLeftColor: primaryColor,
                     },
                   ]}
                 />
-              </View>
+              ) : (
+                <>
+                  <View style={styles.progressHalfWrapperRight}>
+                    <View
+                      style={[
+                        styles.progressHalf,
+                        styles.progressHalfRight,
+                        {
+                          transform: [{rotate: `${rightRotation}deg`}],
+                          borderLeftColor: primaryColor,
+                        },
+                      ]}
+                    />
+                  </View>
 
-              {showLeftHalf && (
-                <View style={styles.progressHalfWrapperLeft}>
-                  <View
-                    style={[
-                      styles.progressHalf,
-                      styles.progressHalfLeft,
-                      {
-                        transform: [{rotate: `${leftRotation}deg`}],
-                        borderRightColor: primaryColor,
-                      },
-                    ]}
-                  />
-                </View>
+                  {showLeftHalf && (
+                    <View style={styles.progressHalfWrapperLeft}>
+                      <View
+                        style={[
+                          styles.progressHalf,
+                          styles.progressHalfLeft,
+                          {
+                            transform: [{rotate: `${leftRotation}deg`}],
+                            borderRightColor: primaryColor,
+                          },
+                        ]}
+                      />
+                    </View>
+                  )}
+                </>
               )}
 
               <View style={styles.progressRingInner}>
@@ -234,6 +251,14 @@ const styles = StyleSheet.create({
   progressRingTrack: {
     backgroundColor: '#f0f3ff',
     borderRadius: 999,
+    height: 110,
+    position: 'absolute',
+    width: 110,
+  },
+  progressRingFull: {
+    borderColor: 'transparent',
+    borderRadius: 999,
+    borderWidth: 10,
     height: 110,
     position: 'absolute',
     width: 110,

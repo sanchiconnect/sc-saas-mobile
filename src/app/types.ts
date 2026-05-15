@@ -10,7 +10,8 @@ export type AppSection =
   | 'resources'
   | 'tickets'
   | 'account-settings'
-  | 'edit-profile';
+  | 'edit-profile'
+  | 'profile';
 
 export type AppMenuSelection = {
   section: AppSection;

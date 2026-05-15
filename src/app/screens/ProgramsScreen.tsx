@@ -22,6 +22,7 @@ type ProgramsScreenProps = {
   logoBaseUrl?: string | null;
   defaultMode?: 'all-programs' | 'my-applications';
   onModeChange?: (mode: 'all-programs' | 'my-applications') => void;
+  onBack?: () => void;
 };
 
 type ProgramItem = {
@@ -154,6 +155,7 @@ export function ProgramsScreen({
   logoBaseUrl,
   defaultMode = 'all-programs',
   onModeChange,
+  onBack,
 }: ProgramsScreenProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [screenMode, setScreenMode] = useState<ScreenMode>(defaultMode);
@@ -367,7 +369,18 @@ export function ProgramsScreen({
       showsVerticalScrollIndicator={false}>
       <View style={styles.toolbar}>
         <View style={styles.toolbarHeader}>
-          <Text style={styles.toolbarTitle}>Programs</Text>
+          <View style={styles.toolbarTitleRow}>
+            {onBack ? (
+              <Pressable
+                onPress={onBack}
+                style={styles.backButton}
+                accessibilityRole="button"
+                accessibilityLabel="Back">
+                <Icon name="chevron-left" size={24} color="#0f172a" />
+              </Pressable>
+            ) : null}
+            <Text style={styles.toolbarTitle}>Programs</Text>
+          </View>
           <AppButton
             label={screenMode === 'my-applications' ? 'All Programs' : 'My Applications'}
             fullWidth={false}
@@ -668,6 +681,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     gap: 6,
+  },
+  toolbarTitleRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    flex: 1,
+    gap: 4,
+  },
+  backButton: {
+    alignItems: 'center',
+    borderRadius: 18,
+    height: 36,
+    justifyContent: 'center',
+    marginLeft: -8,
+    width: 36,
   },
   toolbarTitle: {
     color: '#0f172a',

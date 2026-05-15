@@ -1,6 +1,7 @@
 import React, {useContext, useMemo, useState} from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Modal,
   Pressable,
   StyleSheet,
@@ -35,8 +36,32 @@ const reactionOptions: ReactionOption[] = [
 ];
 
 export function FeedbackWidget() {
-  const {theme, globalSetting} = useContext(TenantContext);
   const [visible, setVisible] = useState(false);
+  const {theme} = useContext(TenantContext);
+  const primaryColor = theme?.primary || '#0b0aa3';
+
+  return (
+    <>
+      <Pressable
+        accessibilityLabel="Open feedback"
+        accessibilityRole="button"
+        onPress={() => setVisible(true)}
+        style={[styles.fab, {backgroundColor: primaryColor}]}>
+        <Icon name="message-draw" size={28} color="#ffffff" />
+      </Pressable>
+
+      <FeedbackModal visible={visible} onClose={() => setVisible(false)} />
+    </>
+  );
+}
+
+type FeedbackModalProps = {
+  visible: boolean;
+  onClose: () => void;
+};
+
+export function FeedbackModal({visible, onClose}: FeedbackModalProps) {
+  const {theme, globalSetting} = useContext(TenantContext);
   const [selectedReaction, setSelectedReaction] =
     useState<FeedbackReaction | null>(null);
   const [feedback, setFeedback] = useState('');
@@ -52,10 +77,10 @@ export function FeedbackWidget() {
   );
 
   const resetAndClose = () => {
-    setVisible(false);
     setSelectedReaction(null);
     setFeedback('');
     setLoading(false);
+    onClose();
   };
 
   const handleSubmit = async (reaction?: FeedbackReaction) => {
@@ -67,10 +92,34 @@ export function FeedbackWidget() {
 
     setLoading(true);
 
-    // UI is ready globally; backend endpoint can be plugged in here later.
-    setTimeout(() => {
+    try {
+      const response = await fetch(
+        'https://api.thub.sanchidev.in/api/v1/public/global/platform-feedback',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+          },
+          body: JSON.stringify({
+            ratings: nextReaction,
+            comments: feedback,
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error(`Request failed with status ${response.status}`);
+      }
+
       resetAndClose();
-    }, 350);
+    } catch (error) {
+      setLoading(false);
+      Alert.alert(
+        'Feedback failed',
+        'We could not submit your feedback. Please try again.',
+      );
+    }
   };
 
   const handleSelectReaction = (reaction: FeedbackReaction) => {
@@ -82,113 +131,103 @@ export function FeedbackWidget() {
   };
 
   return (
-    <>
-      <Pressable
-        accessibilityLabel="Open feedback"
-        accessibilityRole="button"
-        onPress={() => setVisible(true)}
-        style={[styles.fab, {backgroundColor: primaryColor}]}>
-        <Icon name="message-draw" size={28} color="#ffffff" />
-      </Pressable>
+    <Modal
+      transparent
+      visible={visible}
+      animationType="fade"
+      onRequestClose={resetAndClose}>
+      <View style={styles.overlay}>
+        <Pressable style={styles.backdrop} onPress={resetAndClose} />
 
-      <Modal
-        transparent
-        visible={visible}
-        animationType="fade"
-        onRequestClose={resetAndClose}>
-        <View style={styles.overlay}>
-          <Pressable style={styles.backdrop} onPress={resetAndClose} />
-
-          <View style={styles.modalCard}>
-            <View style={styles.header}>
-              <View style={styles.headerCopy}>
-                <Text style={styles.title}>Rate your overall experience</Text>
-                <Text style={styles.subtitle}>
-                  Share feedback for {globalSetting?.brandName || 'this app'}.
-                </Text>
-              </View>
-
-              <Pressable
-                accessibilityLabel="Close feedback"
-                accessibilityRole="button"
-                onPress={resetAndClose}
-                style={styles.closeButton}>
-                <Icon name="close" size={20} color="#475569" />
-              </Pressable>
+        <View style={styles.modalCard}>
+          <View style={styles.header}>
+            <View style={styles.headerCopy}>
+              <Text style={styles.title}>Rate your overall experience</Text>
+              <Text style={styles.subtitle}>
+                Share feedback for {globalSetting?.brandName || 'this app'}.
+              </Text>
             </View>
 
-            <View style={styles.reactionRow}>
-              {reactionOptions.map(option => {
-                const isSelected = option.value === selectedReaction;
-
-                return (
-                  <Pressable
-                    key={option.value}
-                    onPress={() => handleSelectReaction(option.value)}
-                    style={styles.reactionWrap}>
-                    <View
-                      style={[
-                        styles.reactionBubble,
-                        isSelected
-                          ? {borderColor: primaryColor, backgroundColor: '#eef2ff'}
-                          : null,
-                      ]}>
-                      <Text style={styles.reactionEmoji}>{option.emoji}</Text>
-                    </View>
-                    <Text
-                      style={[
-                        styles.reactionLabel,
-                        isSelected ? {color: primaryColor, fontWeight: '700'} : null,
-                      ]}>
-                      {option.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-
-            {needsComment ? (
-              <View style={styles.body}>
-                <Text style={styles.bodyLabel}>
-                  Kindly provide feedback for our continual improvement efforts.
-                </Text>
-                <TextInput
-                  multiline
-                  numberOfLines={4}
-                  placeholder="Enter your feedback/comments."
-                  placeholderTextColor="#94a3b8"
-                  style={styles.textarea}
-                  textAlignVertical="top"
-                  value={feedback}
-                  onChangeText={setFeedback}
-                />
-              </View>
-            ) : null}
-
-            {needsComment ? (
-              <View style={styles.footer}>
-                <AppButton
-                  label="Cancel"
-                  onPress={resetAndClose}
-                  variant="secondary"
-                  disabled={loading}
-                  style={styles.footerButton}
-                />
-                <AppButton
-                  label="Submit"
-                  onPress={() => void handleSubmit()}
-                  disabled={!selectedReaction || loading}
-                  style={styles.footerButton}
-                  rightIcon={
-                    loading ? <ActivityIndicator color="#ffffff" size="small" /> : null
-                  }
-                />
-              </View>
-            ) : null}
+            <Pressable
+              accessibilityLabel="Close feedback"
+              accessibilityRole="button"
+              onPress={resetAndClose}
+              style={styles.closeButton}>
+              <Icon name="close" size={20} color="#475569" />
+            </Pressable>
           </View>
+
+          <View style={styles.reactionRow}>
+            {reactionOptions.map(option => {
+              const isSelected = option.value === selectedReaction;
+
+              return (
+                <Pressable
+                  key={option.value}
+                  onPress={() => handleSelectReaction(option.value)}
+                  style={styles.reactionWrap}>
+                  <View
+                    style={[
+                      styles.reactionBubble,
+                      isSelected
+                        ? {borderColor: primaryColor, backgroundColor: '#eef2ff'}
+                        : null,
+                    ]}>
+                    <Text style={styles.reactionEmoji}>{option.emoji}</Text>
+                  </View>
+                  <Text
+                    style={[
+                      styles.reactionLabel,
+                      isSelected ? {color: primaryColor, fontWeight: '700'} : null,
+                    ]}>
+                    {option.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          {needsComment ? (
+            <View style={styles.body}>
+              <Text style={styles.bodyLabel}>
+                Kindly provide feedback for our continual improvement efforts.
+              </Text>
+              <TextInput
+                multiline
+                numberOfLines={4}
+                placeholder="Enter your feedback/comments."
+                placeholderTextColor="#94a3b8"
+                style={styles.textarea}
+                textAlignVertical="top"
+                value={feedback}
+                onChangeText={setFeedback}
+              />
+            </View>
+          ) : null}
+
+          {needsComment ? (
+            <View style={styles.footer}>
+              <AppButton
+                label="Cancel"
+                onPress={resetAndClose}
+                variant="secondary"
+                disabled={loading}
+                style={styles.footerButton}
+              />
+              <AppButton
+                label="Submit"
+                onPress={() => void handleSubmit()}
+                disabled={!selectedReaction || loading}
+                style={styles.footerButton}
+                rightIcon={
+                  loading ? <ActivityIndicator color="#ffffff" size="small" /> : null
+                }
+              />
+            </View>
+          ) : null}
         </View>
-      </Modal>
-    </>
+      </View>
+    </Modal>
   );
 }
 

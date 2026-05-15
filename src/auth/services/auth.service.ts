@@ -23,16 +23,48 @@ const SIGNUP_VERIFY_PATH = 'api/v1/public/otp_verifications/verify';
 const REGISTER_PATH = 'api/v1/public/auth/register/';
 const PROFILE_PATH = 'api/v1/users/profile';
 const STARTUP_INFORMATION_PATH = 'api/v1/startups/startup-information';
+
+const ACCOUNT_TYPE_TO_PLURAL: Record<string, string> = {
+  startup: 'startups',
+  corporate: 'corporates',
+  investor: 'investors',
+};
+
+const buildInformationPath = (accountType?: string) => {
+  const type = (accountType || 'startup').toLowerCase();
+  const plural = ACCOUNT_TYPE_TO_PLURAL[type] || `${type}s`;
+  return `api/v1/${plural}/${type}-information`;
+};
+
+const buildFormListPath = (accountType?: string) => {
+  const type = (accountType || 'startup').toLowerCase();
+  return `api/v1/forms-management/list/${type}`;
+};
+
+const buildOngoingCommitmentsPath = (accountType?: string) => {
+  const type = (accountType || 'startup').toLowerCase();
+  const plural = ACCOUNT_TYPE_TO_PLURAL[type] || `${type}s`;
+  return `api/v1/${plural}/ongoing-commitments`;
+};
+
+const buildProfileCompletenessPath = (accountType?: string) => {
+  const type = (accountType || 'startup').toLowerCase();
+  const plural = ACCOUNT_TYPE_TO_PLURAL[type] || `${type}s`;
+  return `api/v1/${plural}/profile_completeness`;
+};
 const FINANCIALS_INFORMATION_PATH = 'api/v1/startups/financials-information';
 const INDUSTRY_TECHNOLOGY_BUSINESS_PATH =
   'api/v1/startups/industry-technology-business';
-const PROFILE_COMPLETENESS_PATH = 'api/v1/startups/profile_completeness';
-const STARTUP_FORM_LIST_PATH = 'api/v1/forms-management/list/startup';
-const ONGOING_COMMITMENTS_PATH = 'api/v1/startups/ongoing-commitments';
 const PROGRAMS_PATH = 'api/v1/programs-management/?includeExternal=true';
 const VS_PROGRAMS_PATH = 'api/v1/vs-programs-management/?includeExternal=true';
 const APPLICATION_PROGRAMS_PATH =
   'api/v1/application-programs-management/?partnerId=null&includeExternal=true';
+const CORPORATE_PROFILE_DATA_PATH =
+  'api/v1/forms-management/profile/data/corporate';
+const INVESTOR_PROFILE_DATA_PATH =
+  'api/v1/forms-management/profile/data/investor';
+const STARTUP_PUBLIC_INFORMATION_PATH =
+  'api/v1/startups/public/startup-information';
 
 type ApiResponse = Record<string, any>;
 
@@ -256,9 +288,13 @@ async function fetchProfile(baseUrl: string, token: string) {
   );
 }
 
-async function fetchStartupInformation(baseUrl: string, token: string) {
+async function fetchStartupInformation(
+  baseUrl: string,
+  token: string,
+  accountType?: string,
+) {
   return requestJson<ApiResponse>(
-    STARTUP_INFORMATION_PATH,
+    buildInformationPath(accountType),
     {
       method: 'GET',
       headers: getAuthHeader(token),
@@ -389,15 +425,94 @@ export const authService = {
     return fetchProfile(baseUrl, token);
   },
 
-  async getStartupInformation(token: string): Promise<ApiResponse> {
-    const baseUrl = await resolveBaseUrl();
-    return fetchStartupInformation(baseUrl, token);
-  },
-
-  async getProfileCompletion(token: string): Promise<ApiResponse> {
+  async updateUserProfile(
+    token: string,
+    payload: Record<string, any>,
+  ): Promise<ApiResponse> {
     const baseUrl = await resolveBaseUrl();
     return requestJson<ApiResponse>(
-      PROFILE_COMPLETENESS_PATH,
+      PROFILE_PATH,
+      {
+        method: 'PATCH',
+        headers: getAuthHeader(token),
+        body: JSON.stringify(payload),
+      },
+      baseUrl,
+    );
+  },
+
+  async deleteUserAccount(token: string): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      'api/v1/users/delete_account',
+      {
+        method: 'DELETE',
+        headers: getAuthHeader(token),
+      },
+      baseUrl,
+    );
+  },
+
+  async getStartupInformation(
+    token: string,
+    accountType?: string,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return fetchStartupInformation(baseUrl, token, accountType);
+  },
+
+  async getCorporateProfileData(
+    token: string,
+    uuid: string,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      `${CORPORATE_PROFILE_DATA_PATH}/${uuid}`,
+      {
+        method: 'GET',
+        headers: getAuthHeader(token),
+      },
+      baseUrl,
+    );
+  },
+
+  async getInvestorProfileData(
+    token: string,
+    uuid: string,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      `${INVESTOR_PROFILE_DATA_PATH}/${uuid}`,
+      {
+        method: 'GET',
+        headers: getAuthHeader(token),
+      },
+      baseUrl,
+    );
+  },
+
+  async getStartupPublicInformation(
+    token: string,
+    uuid: string,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      `${STARTUP_PUBLIC_INFORMATION_PATH}/${uuid}`,
+      {
+        method: 'GET',
+        headers: getAuthHeader(token),
+      },
+      baseUrl,
+    );
+  },
+
+  async getProfileCompletion(
+    token: string,
+    accountType?: string,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      buildProfileCompletenessPath(accountType),
       {
         method: 'GET',
         headers: getAuthHeader(token),
@@ -416,10 +531,13 @@ export const authService = {
     return fetchInvestmentMechanisms(baseUrl);
   },
 
-  async getStartupFormList(token: string): Promise<ApiResponse> {
+  async getStartupFormList(
+    token: string,
+    accountType?: string,
+  ): Promise<ApiResponse> {
     const baseUrl = await resolveBaseUrl();
     return requestJson<ApiResponse>(
-      STARTUP_FORM_LIST_PATH,
+      buildFormListPath(accountType),
       {
         method: 'GET',
         headers: getAuthHeader(token),
@@ -428,10 +546,13 @@ export const authService = {
     );
   },
 
-  async getOngoingCommitments(token: string): Promise<ApiResponse> {
+  async getOngoingCommitments(
+    token: string,
+    accountType?: string,
+  ): Promise<ApiResponse> {
     const baseUrl = await resolveBaseUrl();
     return requestJson<ApiResponse>(
-      ONGOING_COMMITMENTS_PATH,
+      buildOngoingCommitmentsPath(accountType),
       {
         method: 'GET',
         headers: getAuthHeader(token),
@@ -474,6 +595,84 @@ export const authService = {
       },
       baseUrl,
     );
+  },
+
+  async getTicketIssueTypes(): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      'api/v1/public/global/ticket_issue_types',
+      {method: 'GET'},
+      baseUrl,
+    );
+  },
+
+  async getTickets(
+    token: string,
+    page = 1,
+    limit = 500,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      `api/v1/tickets/?page=${page}&limit=${limit}`,
+      {
+        method: 'GET',
+        headers: getAuthHeader(token),
+      },
+      baseUrl,
+    );
+  },
+
+  async createTicket(
+    token: string,
+    payload: {
+      title: string;
+      description: string;
+      issueTypeId: number;
+      attachments?: string[];
+    },
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      'api/v1/tickets/',
+      {
+        method: 'POST',
+        headers: getAuthHeader(token),
+        body: JSON.stringify(payload),
+      },
+      baseUrl,
+    );
+  },
+
+  async uploadTicketAttachments(
+    token: string,
+    files: Array<{uri: string; name: string; type: string}>,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    const formData = new FormData();
+    files.forEach(file => {
+      formData.append('files', {
+        uri: file.uri,
+        name: file.name,
+        type: file.type,
+      } as any);
+    });
+
+    const response = await fetch(`${baseUrl}api/v1/tickets/add-attachments`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: formData as any,
+    });
+    const raw = await response.text();
+    const data = raw ? safeJsonParse(raw) : null;
+    if (!response.ok) {
+      throw new Error(
+        data?.message || `Attachment upload failed (${response.status}).`,
+      );
+    }
+    return data as ApiResponse;
   },
 
   async updateProfile(

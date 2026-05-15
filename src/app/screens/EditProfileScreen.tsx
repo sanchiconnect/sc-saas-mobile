@@ -96,20 +96,21 @@ const BASE_TABS: EditProfileTab[] = [
 ];
 
 const calculateProfileCompletion = (basicInfo: BasicInfoFormType) => {
+  const safeSocial = basicInfo.social || EMPTY_BASIC_INFO.social;
   const checks = [
     Boolean(basicInfo.logoUrl),
-    Boolean(basicInfo.companyName.trim()),
+    Boolean((basicInfo.companyName || '').trim()),
     Boolean(basicInfo.companySize),
     basicInfo.isIncorporated !== null,
     Boolean(basicInfo.country),
     Boolean(basicInfo.state),
     Boolean(basicInfo.city),
-    Boolean(basicInfo.elevatorPitch.trim()),
-    Boolean(basicInfo.companyBrief.trim()),
+    Boolean((basicInfo.elevatorPitch || '').trim()),
+    Boolean((basicInfo.companyBrief || '').trim()),
     Boolean(basicInfo.productStage),
-    basicInfo.businessModels.length > 0,
-    basicInfo.leadership.length > 0,
-    Object.values(basicInfo.social).some(link => link.trim().length > 0),
+    (basicInfo.businessModels || []).length > 0,
+    (basicInfo.leadership || []).length > 0,
+    Object.values(safeSocial).some(link => String(link || '').trim().length > 0),
   ];
 
   const completed = checks.filter(Boolean).length;
@@ -118,13 +119,64 @@ const calculateProfileCompletion = (basicInfo: BasicInfoFormType) => {
 
 const ensureBasicInfoDefaults = (
   basicInfo: BasicInfoFormType,
-): BasicInfoFormType => ({
-  ...basicInfo,
-  leadership:
-    basicInfo.leadership.length > 0
-      ? basicInfo.leadership
-      : [{...EMPTY_LEADERSHIP, id: `${Date.now()}_leadership`}],
-});
+): BasicInfoFormType => {
+  const safeLeadership = Array.isArray(basicInfo?.leadership)
+    ? basicInfo.leadership
+        .filter(Boolean)
+        .map(member => ({
+          ...EMPTY_LEADERSHIP,
+          ...member,
+          id: member?.id || `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          name: String(member?.name || ''),
+          linkedinUrl: String(member?.linkedinUrl || ''),
+          role: String(member?.role || ''),
+          designation: String(member?.designation || ''),
+        }))
+    : [];
+
+  return {
+    ...EMPTY_BASIC_INFO,
+    ...basicInfo,
+    companyName: String(basicInfo?.companyName || ''),
+    companySize: String(basicInfo?.companySize || ''),
+    incorporationYear: String(basicInfo?.incorporationYear || ''),
+    country: String(basicInfo?.country || ''),
+    state: String(basicInfo?.state || ''),
+    city: String(basicInfo?.city || ''),
+    elevatorPitch: String(basicInfo?.elevatorPitch || ''),
+    companyBrief: String(basicInfo?.companyBrief || ''),
+    productStage: String(basicInfo?.productStage || ''),
+    logoUrl: basicInfo?.logoUrl || null,
+    servicesLookingFor: Array.isArray(basicInfo?.servicesLookingFor)
+      ? basicInfo.servicesLookingFor
+      : [],
+    businessModels: Array.isArray(basicInfo?.businessModels)
+      ? basicInfo.businessModels
+      : [],
+    leadership:
+      safeLeadership.length > 0
+        ? safeLeadership
+        : [{...EMPTY_LEADERSHIP, id: `${Date.now()}_leadership`}],
+    advisory: Array.isArray(basicInfo?.advisory)
+      ? basicInfo.advisory.filter(Boolean).map(member => ({
+          id:
+            member?.id || `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          name: String(member?.name || ''),
+          linkedinUrl: String(member?.linkedinUrl || ''),
+        }))
+      : [],
+    social: {
+      ...EMPTY_BASIC_INFO.social,
+      ...(basicInfo?.social || {}),
+      website: String(basicInfo?.social?.website || ''),
+      linkedin: String(basicInfo?.social?.linkedin || ''),
+      twitter: String(basicInfo?.social?.twitter || ''),
+      youtube: String(basicInfo?.social?.youtube || ''),
+      facebook: String(basicInfo?.social?.facebook || ''),
+      instagram: String(basicInfo?.social?.instagram || ''),
+    },
+  };
+};
 
 const COUNTRIES_API =
   'https://api.thub.sanchidev.in/api/v1/public/global/countries';
@@ -244,6 +296,7 @@ export function EditProfileScreen({token, onBack}: EditProfileScreenProps) {
   const [selectedPrimaryIndustryId, setSelectedPrimaryIndustryId] = useState<number | null>(null);
   const [startupInfo, setStartupInfo] = useState<Record<string, any> | null>(null);
   const [startupForms, setStartupForms] = useState<StartupFormDefinition[]>([]);
+  const [accountType, setAccountType] = useState<string | null>(null);
   const [basicInfo, setBasicInfo] =
     useState<BasicInfoFormType>(EMPTY_BASIC_INFO);
   const [financialInfo, setFinancialInfo] =
@@ -253,7 +306,10 @@ export function EditProfileScreen({token, onBack}: EditProfileScreenProps) {
     setIsLoading(true);
     setLoadError(null);
     try {
-      const raw = await authService.getStartupInformation(token);
+      const raw = await authService.getStartupInformation(
+        token,
+        accountType || undefined,
+      );
       const extracted = extractProfile(raw, logoBaseUrl);
       const root = raw?.data || raw || null;
       setStartupInfo(root);
@@ -321,11 +377,35 @@ export function EditProfileScreen({token, onBack}: EditProfileScreenProps) {
 
   useEffect(() => {
     let cancelled = false;
+    authService
+      .getProfile(token)
+      .then(raw => {
+        if (cancelled) return;
+        const type = String(raw?.data?.accountType || '').toLowerCase();
+        setAccountType(type || 'startup');
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAccountType('startup');
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!accountType) {
+      return;
+    }
 
     Promise.all([
       authService.getFundingStages(),
       authService.getInvestmentMechanisms(),
-      authService.getOngoingCommitments(token).catch(() => ({data: []})),
+      authService
+        .getOngoingCommitments(token, accountType)
+        .catch(() => ({data: []})),
     ])
       .then(([fundingStagesResponse, mechanismsResponse, commitmentsResponse]) => {
         if (cancelled) {
@@ -363,7 +443,7 @@ export function EditProfileScreen({token, onBack}: EditProfileScreenProps) {
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [token, accountType]);
 
   useEffect(() => {
     let cancelled = false;
@@ -404,9 +484,12 @@ export function EditProfileScreen({token, onBack}: EditProfileScreenProps) {
 
   useEffect(() => {
     let cancelled = false;
+    if (!accountType) {
+      return;
+    }
 
     authService
-      .getStartupFormList(token)
+      .getStartupFormList(token, accountType)
       .then(raw => {
         if (cancelled) return;
         const forms = Array.isArray(raw?.data)
@@ -425,14 +508,17 @@ export function EditProfileScreen({token, onBack}: EditProfileScreenProps) {
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [token, accountType]);
 
   useEffect(() => {
     let cancelled = false;
+    if (!accountType) {
+      return;
+    }
     setIsLoading(true);
     setLoadError(null);
     authService
-      .getStartupInformation(token)
+      .getStartupInformation(token, accountType)
       .then(raw => {
         if (cancelled) return;
         const extracted = extractProfile(raw, logoBaseUrl);
@@ -472,7 +558,7 @@ export function EditProfileScreen({token, onBack}: EditProfileScreenProps) {
     return () => {
       cancelled = true;
     };
-  }, [token, logoBaseUrl]);
+  }, [token, logoBaseUrl, accountType]);
 
   useEffect(() => {
     const countryId = getCountryIdByName(basicInfo.country, countryOptions);

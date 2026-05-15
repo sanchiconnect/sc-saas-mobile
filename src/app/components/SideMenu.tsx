@@ -238,7 +238,14 @@ export function SideMenu({
 
           <View style={styles.divider} />
 
-          <View style={styles.profileRow}>
+          <Pressable
+            onPress={() => {
+              onSelectMenu({section: 'profile'});
+              onClose();
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Open my profile"
+            style={styles.profileRow}>
             <View style={styles.avatarWrap}>
               <Text style={styles.avatarText}>
                 {session.user.fullName.slice(0, 2).toUpperCase()}
@@ -256,7 +263,7 @@ export function SideMenu({
             <Pressable style={styles.profileAction} hitSlop={6}>
               <Icon name="bell-outline" size={20} color="#334155" />
             </Pressable>
-          </View>
+          </Pressable>
 
           <View style={styles.quickRow}>
             <Pressable style={styles.quickCard}>
