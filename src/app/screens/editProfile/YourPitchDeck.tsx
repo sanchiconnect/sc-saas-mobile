@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import {launchImageLibrary} from 'react-native-image-picker';
 import Video from 'react-native-video';
+import {WebView} from 'react-native-webview';
 import {
   pick,
   types,
@@ -45,6 +46,45 @@ const isDirectVideoUrl = (url?: string | null) => {
   if (!url) return false;
   return /\.(mp4|m4v|mov|webm|mkv)(\?|#|$)/i.test(url);
 };
+
+function PdfPreview({
+  url,
+  primaryColor,
+}: {
+  url: string;
+  primaryColor: string;
+}) {
+  const [hasError, setHasError] = useState(false);
+  const viewerUrl = `https://docs.google.com/gview?embedded=true&url=${encodeURIComponent(url)}`;
+
+  if (hasError) {
+    return (
+      <View style={styles.pdfFallback}>
+        <Icon name="file-pdf-box" size={56} color={primaryColor} />
+        <Text style={styles.pdfFallbackText}>
+          Inline preview unavailable. Tap to open in full screen.
+        </Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.pdfWrap}>
+      <WebView
+        source={{uri: viewerUrl}}
+        style={styles.pdfWebView}
+        startInLoadingState
+        renderLoading={() => (
+          <View style={styles.pdfLoading}>
+            <ActivityIndicator color={primaryColor} />
+          </View>
+        )}
+        onError={() => setHasError(true)}
+        onHttpError={() => setHasError(true)}
+      />
+    </View>
+  );
+}
 
 function InlineVideoPlayer({
   url,
@@ -386,23 +426,29 @@ export function YourPitchDeck({
           (Your pitch deck is private and visible only to your connections.)
         </Text>
 
-        <Pressable
-          onPress={() => pitchDocument && openLink(pitchDocument)}
-          disabled={!pitchDocument}
-          style={[
-            styles.previewBox,
-            {borderColor: primaryColor},
-            !pitchDocument && styles.previewBoxEmpty,
-          ]}>
-          {pitchDocument ? (
-            <View style={styles.previewContent}>
-              <Icon name="file-pdf-box" size={56} color={primaryColor} />
-              <Text style={styles.previewFileName} numberOfLines={2}>
-                {fileName || 'pitch-deck.pdf'}
+        {pitchDocument ? (
+          <View
+            style={[
+              styles.previewBox,
+              {borderColor: primaryColor, padding: 8},
+            ]}>
+            <PdfPreview url={pitchDocument} primaryColor={primaryColor} />
+            <Pressable
+              onPress={() => openLink(pitchDocument)}
+              style={styles.previewOpenLink}>
+              <Icon name="open-in-new" size={14} color={primaryColor} />
+              <Text style={[styles.previewOpenLinkText, {color: primaryColor}]}>
+                Open in full screen
               </Text>
-              <Text style={styles.previewHint}>Tap to view in full screen</Text>
-            </View>
-          ) : (
+            </Pressable>
+          </View>
+        ) : (
+          <View
+            style={[
+              styles.previewBox,
+              styles.previewBoxEmpty,
+              {borderColor: primaryColor},
+            ]}>
             <View style={styles.previewContent}>
               <Icon name="file-upload-outline" size={48} color="#94a3b8" />
               <Text style={styles.previewEmptyTitle}>
@@ -412,8 +458,8 @@ export function YourPitchDeck({
                 Use the upload box below to add one.
               </Text>
             </View>
-          )}
-        </Pressable>
+          </View>
+        )}
 
         <View style={styles.dropZoneRow}>
           <Pressable
@@ -932,6 +978,54 @@ const styles = StyleSheet.create({
   videoEmptyText: {
     color: '#94a3b8',
     fontSize: 14,
+  },
+  pdfWrap: {
+    backgroundColor: '#0f172a',
+    borderRadius: 10,
+    height: 280,
+    overflow: 'hidden',
+    width: '100%',
+  },
+  pdfWebView: {
+    backgroundColor: '#ffffff',
+    flex: 1,
+  },
+  pdfLoading: {
+    alignItems: 'center',
+    backgroundColor: '#0f172a55',
+    bottom: 0,
+    justifyContent: 'center',
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+  },
+  previewOpenLink: {
+    alignItems: 'center',
+    alignSelf: 'center',
+    flexDirection: 'row',
+    gap: 6,
+    marginTop: 10,
+    paddingVertical: 4,
+  },
+  previewOpenLinkText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  pdfFallback: {
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    borderRadius: 10,
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 32,
+    width: '100%',
+  },
+  pdfFallbackText: {
+    color: '#475569',
+    fontSize: 13,
+    fontWeight: '600',
+    textAlign: 'center',
   },
   videoPlayerWrap: {
     backgroundColor: '#0f172a',
