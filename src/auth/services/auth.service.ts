@@ -28,12 +28,30 @@ const ACCOUNT_TYPE_TO_PLURAL: Record<string, string> = {
   startup: 'startups',
   corporate: 'corporates',
   investor: 'investors',
+  mentor: 'mentors',
+  service_provider: 'service_providers',
+  partner: 'partners',
+  individual: 'individuals',
+  program_office: 'program_office_members',
+  job_seeker: 'job_seekers',
+};
+
+const SELF_INFORMATION_PATH_OVERRIDES: Record<string, string> = {
+  individual: 'api/v1/individuals/information',
+  investor: 'api/v1/investors/organization-information',
+  program_office:
+    'api/v1/program_office_members/program-office-member-information',
 };
 
 const buildInformationPath = (accountType?: string) => {
   const type = (accountType || 'startup').toLowerCase();
+  const override = SELF_INFORMATION_PATH_OVERRIDES[type];
+  if (override) {
+    return override;
+  }
   const plural = ACCOUNT_TYPE_TO_PLURAL[type] || `${type}s`;
-  return `api/v1/${plural}/${type}-information`;
+  const actionType = type.replace(/_/g, '-');
+  return `api/v1/${plural}/${actionType}-information`;
 };
 
 const buildFormListPath = (accountType?: string) => {
@@ -47,8 +65,16 @@ const buildOngoingCommitmentsPath = (accountType?: string) => {
   return `api/v1/${plural}/ongoing-commitments`;
 };
 
+const PROFILE_COMPLETENESS_PATH_OVERRIDES: Record<string, string> = {
+  investor: 'api/v1/investors/organization/profile_completeness',
+};
+
 const buildProfileCompletenessPath = (accountType?: string) => {
   const type = (accountType || 'startup').toLowerCase();
+  const override = PROFILE_COMPLETENESS_PATH_OVERRIDES[type];
+  if (override) {
+    return override;
+  }
   const plural = ACCOUNT_TYPE_TO_PLURAL[type] || `${type}s`;
   return `api/v1/${plural}/profile_completeness`;
 };
@@ -65,6 +91,20 @@ const INVESTOR_PROFILE_DATA_PATH =
   'api/v1/forms-management/profile/data/investor';
 const STARTUP_PUBLIC_INFORMATION_PATH =
   'api/v1/startups/public/startup-information';
+const CORPORATE_PUBLIC_INFORMATION_PATH =
+  'api/v1/corporates/public/corporate-information';
+const INVESTOR_PUBLIC_INFORMATION_PATH =
+  'api/v1/investors/public/profile';
+const MENTOR_PUBLIC_INFORMATION_PATH =
+  'api/v1/mentors/public/mentor-information';
+const SERVICE_PROVIDER_PUBLIC_INFORMATION_PATH =
+  'api/v1/service_providers/public/service-provider-information';
+const PARTNER_PUBLIC_INFORMATION_PATH =
+  'api/v1/partners/public/partners-information';
+const INDIVIDUAL_PUBLIC_INFORMATION_PATH =
+  'api/v1/individuals/public/individual-information';
+const PROGRAM_OFFICE_PUBLIC_INFORMATION_PATH =
+  'api/v1/program_office_members/public/program-office-member-information';
 
 type ApiResponse = Record<string, any>;
 
@@ -506,6 +546,111 @@ export const authService = {
     );
   },
 
+  async getCorporatePublicInformation(
+    token: string,
+    uuid: string,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      `${CORPORATE_PUBLIC_INFORMATION_PATH}/${uuid}`,
+      {
+        method: 'GET',
+        headers: getAuthHeader(token),
+      },
+      baseUrl,
+    );
+  },
+
+  async getInvestorPublicInformation(
+    token: string,
+    uuid: string,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      `${INVESTOR_PUBLIC_INFORMATION_PATH}/${uuid}`,
+      {
+        method: 'GET',
+        headers: getAuthHeader(token),
+      },
+      baseUrl,
+    );
+  },
+
+  async getMentorPublicInformation(
+    token: string,
+    uuid: string,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      `${MENTOR_PUBLIC_INFORMATION_PATH}/${uuid}`,
+      {
+        method: 'GET',
+        headers: getAuthHeader(token),
+      },
+      baseUrl,
+    );
+  },
+
+  async getServiceProviderPublicInformation(
+    token: string,
+    uuid: string,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      `${SERVICE_PROVIDER_PUBLIC_INFORMATION_PATH}/${uuid}`,
+      {
+        method: 'GET',
+        headers: getAuthHeader(token),
+      },
+      baseUrl,
+    );
+  },
+
+  async getPartnerPublicInformation(
+    token: string,
+    uuid: string,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      `${PARTNER_PUBLIC_INFORMATION_PATH}/${uuid}`,
+      {
+        method: 'GET',
+        headers: getAuthHeader(token),
+      },
+      baseUrl,
+    );
+  },
+
+  async getIndividualPublicInformation(
+    token: string,
+    uuid: string,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      `${INDIVIDUAL_PUBLIC_INFORMATION_PATH}/${uuid}`,
+      {
+        method: 'GET',
+        headers: getAuthHeader(token),
+      },
+      baseUrl,
+    );
+  },
+
+  async getProgramOfficePublicInformation(
+    token: string,
+    uuid: string,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      `${PROGRAM_OFFICE_PUBLIC_INFORMATION_PATH}/${uuid}`,
+      {
+        method: 'GET',
+        headers: getAuthHeader(token),
+      },
+      baseUrl,
+    );
+  },
+
   async getProfileCompletion(
     token: string,
     accountType?: string,
@@ -634,6 +779,35 @@ export const authService = {
     const baseUrl = await resolveBaseUrl();
     return requestJson<ApiResponse>(
       'api/v1/tickets/',
+      {
+        method: 'POST',
+        headers: getAuthHeader(token),
+        body: JSON.stringify(payload),
+      },
+      baseUrl,
+    );
+  },
+
+  async getTicketDetail(token: string, uuid: string): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      `api/v1/tickets/${uuid}/detail`,
+      {
+        method: 'GET',
+        headers: getAuthHeader(token),
+      },
+      baseUrl,
+    );
+  },
+
+  async addTicketConversation(
+    token: string,
+    uuid: string,
+    payload: {description: string; attachments?: string[]},
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      `api/v1/tickets/${uuid}/conversation`,
       {
         method: 'POST',
         headers: getAuthHeader(token),

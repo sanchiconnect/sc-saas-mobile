@@ -2,7 +2,9 @@ import React, {useContext, useEffect, useMemo, useState} from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -59,6 +61,28 @@ type RemoteTicket = {
   isSupportReplied?: boolean;
 };
 
+type TicketConversation = {
+  uuid: string;
+  createdAt: string;
+  text: string;
+  attachments?: string[];
+  user?: {uuid?: string; name?: string} | null;
+  admin?: {uuid?: string; name?: string} | null;
+};
+
+type TicketDetail = {
+  uuid: string;
+  ticketNumber: number;
+  title: string;
+  ticketStatus: string;
+  createdAt: string;
+  modifiedAt: string;
+  issueType?: {name?: string};
+  assignedToIds?: Array<{name?: string; role?: number}>;
+  user?: {uuid?: string; name?: string} | null;
+  conversations?: TicketConversation[];
+};
+
 type FormState = {
   issueTypeId: number | null;
   title: string;
@@ -100,14 +124,62 @@ const formatTicketDate = (raw: string) => {
   });
 };
 
+const formatRelativeTime = (raw: string) => {
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+  const diffMs = Date.now() - date.getTime();
+  if (diffMs < 60_000) {
+    return 'just now';
+  }
+  const minutes = Math.floor(diffMs / 60_000);
+  if (minutes < 60) {
+    return `${minutes} minute${minutes === 1 ? '' : 's'} ago`;
+  }
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+  }
+  const days = Math.floor(hours / 24);
+  if (days < 30) {
+    return `${days} day${days === 1 ? '' : 's'} ago`;
+  }
+  return formatTicketDate(raw);
+};
+
+const resolveAttachmentUri = (
+  path: string,
+  baseUrl?: string | null,
+) => {
+  if (!path) {
+    return null;
+  }
+  if (/^https?:\/\//i.test(path)) {
+    return path;
+  }
+  if (!baseUrl) {
+    return null;
+  }
+  return `${baseUrl.replace(/\/$/, '')}/${path.replace(/^\//, '')}`;
+};
+
+const isImageAttachment = (path: string) =>
+  /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(path);
+
 export function TicketsScreen({
   token,
   onBack,
   primaryColor,
 }: TicketsScreenProps) {
-  const {theme} = useContext(TenantContext);
+  const {theme, globalSetting} = useContext(TenantContext);
   const secondaryColor = theme?.secondary || '#1e1f3a';
   const dangerColor = theme?.danger || '#dc2626';
+  const attachmentBaseUrl =
+    (globalSetting as any)?.s3Url ||
+    (globalSetting as any)?.imgKitUrl ||
+    (globalSetting as any)?.assetsImgKitUrl ||
+    null;
 
   const [issueTypes, setIssueTypes] = useState<IssueTypeOption[]>([]);
   const [tickets, setTickets] = useState<RemoteTicket[]>([]);
@@ -124,6 +196,18 @@ export function TicketsScreen({
     description?: string;
   }>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const [selectedTicketUuid, setSelectedTicketUuid] = useState<string | null>(
+    null,
+  );
+  const [detailData, setDetailData] = useState<TicketDetail | null>(null);
+  const [isLoadingDetail, setIsLoadingDetail] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const [replyText, setReplyText] = useState('');
+  const [replyAttachments, setReplyAttachments] = useState<LocalAttachment[]>(
+    [],
+  );
+  const [isSubmittingReply, setIsSubmittingReply] = useState(false);
 
   const selectedIssueType = useMemo(
     () => issueTypes.find(item => item.id === form.issueTypeId) || null,
@@ -184,6 +268,150 @@ export function TicketsScreen({
     void loadTickets('initial');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
+
+  const loadDetail = async (uuid: string) => {
+    setIsLoadingDetail(true);
+    setDetailError(null);
+    try {
+      const response = await authService.getTicketDetail(token, uuid);
+      setDetailData((response?.data as TicketDetail) || null);
+    } catch (error) {
+      setDetailError(
+        error instanceof Error ? error.message : 'Could not load ticket detail.',
+      );
+    } finally {
+      setIsLoadingDetail(false);
+    }
+  };
+
+  const handleOpenDetail = (uuid: string) => {
+    setSelectedTicketUuid(uuid);
+    setDetailData(null);
+    setReplyText('');
+    setReplyAttachments([]);
+    void loadDetail(uuid);
+  };
+
+  const handleCloseDetail = () => {
+    setSelectedTicketUuid(null);
+    setDetailData(null);
+    setDetailError(null);
+    setReplyText('');
+    setReplyAttachments([]);
+  };
+
+  const handleAddReplyAttachment = async () => {
+    try {
+      if (typeof launchImageLibrary !== 'function') {
+        Alert.alert(
+          'Attachment upload unavailable',
+          'Image picker is not ready yet. Please rebuild the app and try again.',
+        );
+        return;
+      }
+
+      const result = await launchImageLibrary({
+        mediaType: 'photo',
+        selectionLimit: 1,
+        includeBase64: false,
+      });
+      if (result.didCancel || result.errorCode) {
+        return;
+      }
+      const asset = result.assets?.[0];
+      if (!asset?.uri) {
+        return;
+      }
+
+      const attachment: LocalAttachment = {
+        id: `${Date.now()}_${replyAttachments.length}`,
+        uri: asset.uri,
+        name: asset.fileName || `attachment_${Date.now()}.jpg`,
+        size: formatBytes(asset.fileSize),
+        type: asset.type || 'image/jpeg',
+        uploading: true,
+      };
+      setReplyAttachments(prev => [...prev, attachment]);
+
+      try {
+        const uploadResponse = await authService.uploadTicketAttachments(
+          token,
+          [
+            {
+              uri: attachment.uri,
+              name: attachment.name,
+              type: attachment.type,
+            },
+          ],
+        );
+        const paths: string[] = uploadResponse?.data || [];
+        setReplyAttachments(prev =>
+          prev.map(item =>
+            item.id === attachment.id
+              ? {...item, uploadedPath: paths[0], uploading: false}
+              : item,
+          ),
+        );
+      } catch (uploadError) {
+        const message =
+          uploadError instanceof Error
+            ? uploadError.message
+            : 'Upload failed.';
+        setReplyAttachments(prev =>
+          prev.map(item =>
+            item.id === attachment.id
+              ? {...item, uploading: false, error: message}
+              : item,
+          ),
+        );
+      }
+    } catch (error) {
+      Alert.alert(
+        'Attachment failed',
+        error instanceof Error ? error.message : 'Could not pick the file.',
+      );
+    }
+  };
+
+  const handleRemoveReplyAttachment = (id: string) => {
+    setReplyAttachments(prev => prev.filter(item => item.id !== id));
+  };
+
+  const handleSubmitReply = async () => {
+    if (!selectedTicketUuid) {
+      return;
+    }
+    if (!replyText.trim()) {
+      Alert.alert('Reply required', 'Please write a reply before submitting.');
+      return;
+    }
+    if (replyAttachments.some(item => item.uploading)) {
+      Alert.alert('Please wait', 'Attachments are still uploading.');
+      return;
+    }
+
+    const attachmentPaths = replyAttachments
+      .map(item => item.uploadedPath)
+      .filter((path): path is string => Boolean(path));
+
+    setIsSubmittingReply(true);
+    try {
+      await authService.addTicketConversation(token, selectedTicketUuid, {
+        description: replyText.trim(),
+        attachments: attachmentPaths,
+      });
+      setReplyText('');
+      setReplyAttachments([]);
+      await loadDetail(selectedTicketUuid);
+    } catch (error) {
+      Alert.alert(
+        'Could not send reply',
+        error instanceof Error ? error.message : 'Please try again.',
+      );
+    } finally {
+      setIsSubmittingReply(false);
+    }
+  };
 
   const openCreateModal = () => {
     setForm(INITIAL_FORM);
@@ -389,8 +617,240 @@ export function TicketsScreen({
           </Text>
         </View>
       </View>
+
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Open details for ticket ${ticket.ticketNumber}`}
+        onPress={() => handleOpenDetail(ticket.uuid)}
+        style={[styles.detailsButton, {backgroundColor: primaryColor}]}>
+        <Text style={styles.detailsButtonText}>DETAILS</Text>
+      </Pressable>
     </View>
   );
+
+  const renderConversation = (conversation: TicketConversation) => {
+    const authorName =
+      conversation.admin?.name || conversation.user?.name || 'User';
+    return (
+      <View key={conversation.uuid} style={styles.conversationCard}>
+        <View style={styles.conversationHeader}>
+          <Text style={styles.conversationAuthor}>{authorName}</Text>
+          <Text style={styles.conversationTime}>
+            {formatRelativeTime(conversation.createdAt)}
+          </Text>
+        </View>
+        <View style={styles.conversationDivider} />
+        {conversation.text ? (
+          <Text style={styles.conversationText}>{conversation.text}</Text>
+        ) : null}
+        {Array.isArray(conversation.attachments) &&
+        conversation.attachments.length > 0 ? (
+          <View style={styles.conversationAttachments}>
+            {conversation.attachments.map(path => {
+              const uri = resolveAttachmentUri(path, attachmentBaseUrl);
+              const isImage = isImageAttachment(path);
+              if (uri && isImage) {
+                return (
+                  <Pressable
+                    key={path}
+                    onPress={() => Linking.openURL(uri).catch(() => undefined)}
+                    style={styles.attachmentThumbWrap}>
+                    <Image source={{uri}} style={styles.attachmentThumb} />
+                  </Pressable>
+                );
+              }
+              return (
+                <Pressable
+                  key={path}
+                  onPress={() =>
+                    uri && Linking.openURL(uri).catch(() => undefined)
+                  }
+                  style={styles.attachmentLinkRow}>
+                  <Icon name="paperclip" size={16} color={primaryColor} />
+                  <Text
+                    style={[styles.attachmentLinkText, {color: primaryColor}]}
+                    numberOfLines={1}>
+                    {path.split('/').pop()}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        ) : null}
+      </View>
+    );
+  };
+
+  if (selectedTicketUuid) {
+    return (
+      <View style={styles.page}>
+        <View style={styles.detailHeader}>
+          <Pressable
+            onPress={handleCloseDetail}
+            style={styles.backButton}
+            accessibilityRole="button"
+            accessibilityLabel="Back to tickets">
+            <Icon name="chevron-left" size={22} color="#0f172a" />
+          </Pressable>
+          <View style={styles.detailHeaderCopy}>
+            <Text style={styles.detailTitle}>
+              {detailData?.title || '...'}{' '}
+              <Text style={[styles.detailTicketNumber, {color: primaryColor}]}>
+                (#{detailData?.ticketNumber || ''})
+              </Text>
+            </Text>
+            <Text style={styles.detailIssueType}>
+              {detailData?.issueType?.name || ''}
+            </Text>
+          </View>
+        </View>
+
+        {isLoadingDetail && !detailData ? (
+          <View style={styles.emptyWrap}>
+            <ActivityIndicator size="large" color={primaryColor} />
+            <Text style={styles.loadingText}>Loading ticket...</Text>
+          </View>
+        ) : detailError ? (
+          <View style={styles.errorCard}>
+            <Text style={styles.errorTitle}>Couldn't load ticket</Text>
+            <Text style={styles.errorBody}>{detailError}</Text>
+            <AppButton
+              fullWidth={false}
+              label="Retry"
+              onPress={() => void loadDetail(selectedTicketUuid)}
+              style={styles.retryButton}
+            />
+          </View>
+        ) : (
+          <ScrollView
+            style={styles.listWrap}
+            contentContainerStyle={styles.detailContent}
+            keyboardShouldPersistTaps="handled">
+            <View style={styles.detailMetaCard}>
+              <View style={styles.detailMetaCol}>
+                <Text style={styles.detailMetaLabel}>Create Date</Text>
+                <Text style={styles.detailMetaValue}>
+                  {detailData?.createdAt
+                    ? formatTicketDate(detailData.createdAt)
+                    : '-'}
+                </Text>
+              </View>
+              <View style={styles.detailMetaCol}>
+                <Text style={styles.detailMetaLabel}>Status</Text>
+                <View
+                  style={[
+                    styles.ticketStatusBadge,
+                    detailData?.ticketStatus === 'closed'
+                      ? styles.ticketStatusClosed
+                      : styles.ticketStatusOpen,
+                    {alignSelf: 'flex-start'},
+                  ]}>
+                  <Text style={styles.ticketStatusText}>
+                    {(detailData?.ticketStatus || 'open').toUpperCase()}
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.detailMetaCol}>
+                <Text style={styles.detailMetaLabel}>Assigned to</Text>
+                <Text style={styles.detailMetaValue}>
+                  {detailData?.assignedToIds?.[0]?.name || 'Unassigned'}
+                </Text>
+              </View>
+              <View style={styles.detailMetaCol}>
+                <Text style={styles.detailMetaLabel}>Last activity</Text>
+                <Text style={styles.detailMetaValue}>
+                  {detailData?.modifiedAt
+                    ? formatRelativeTime(detailData.modifiedAt)
+                    : '-'}
+                </Text>
+              </View>
+            </View>
+
+            {(detailData?.conversations || []).map(renderConversation)}
+
+            <View style={styles.replyCard}>
+              <Text style={styles.replyHeading}>Submit your reply</Text>
+              <View style={styles.replyDivider} />
+              <View style={styles.textAreaWrap}>
+                <TextInput
+                  multiline
+                  numberOfLines={4}
+                  textAlignVertical="top"
+                  value={replyText}
+                  onChangeText={setReplyText}
+                  placeholder="Write your reply"
+                  placeholderTextColor="#94a3b8"
+                  style={styles.textArea}
+                />
+              </View>
+
+              {replyAttachments.length > 0 ? (
+                <View style={styles.attachmentList}>
+                  {replyAttachments.map(attachment => (
+                    <View key={attachment.id} style={styles.attachmentItem}>
+                      <Icon
+                        name="file-document-outline"
+                        size={18}
+                        color="#475569"
+                      />
+                      <View style={styles.attachmentInfo}>
+                        <Text
+                          style={styles.attachmentName}
+                          numberOfLines={1}>
+                          {attachment.name}
+                        </Text>
+                        <Text style={styles.attachmentSize}>
+                          {attachment.uploading
+                            ? 'Uploading...'
+                            : attachment.error
+                            ? attachment.error
+                            : attachment.size}
+                        </Text>
+                      </View>
+                      {attachment.uploading ? (
+                        <ActivityIndicator
+                          size="small"
+                          color={primaryColor}
+                        />
+                      ) : (
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel={`Remove ${attachment.name}`}
+                          onPress={() =>
+                            handleRemoveReplyAttachment(attachment.id)
+                          }
+                          hitSlop={8}>
+                          <Icon name="close" size={18} color="#94a3b8" />
+                        </Pressable>
+                      )}
+                    </View>
+                  ))}
+                </View>
+              ) : null}
+
+              <View style={styles.replyActions}>
+                <Pressable
+                  onPress={handleAddReplyAttachment}
+                  style={styles.addAttachmentButton}
+                  accessibilityRole="button"
+                  accessibilityLabel="Add attachments">
+                  <Text style={styles.addAttachmentText}>+ Add attachments</Text>
+                </Pressable>
+                <AppButton
+                  fullWidth={false}
+                  label={isSubmittingReply ? 'SUBMITTING...' : 'SUBMIT'}
+                  onPress={() => void handleSubmitReply()}
+                  disabled={isSubmittingReply || !replyText.trim()}
+                  style={styles.submitButton}
+                  labelStyle={styles.submitButtonLabel}
+                />
+              </View>
+            </View>
+          </ScrollView>
+        )}
+      </View>
+    );
+  }
 
   return (
     <>
@@ -1093,5 +1553,175 @@ const styles = StyleSheet.create({
   pickerOptionText: {
     color: '#0f172a',
     fontSize: 15,
+  },
+  detailsButton: {
+    alignSelf: 'flex-end',
+    borderRadius: 8,
+    marginTop: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  detailsButtonText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+  },
+  detailHeader: {
+    alignItems: 'flex-start',
+    backgroundColor: '#ffffff',
+    borderBottomColor: '#e2e8f0',
+    borderBottomWidth: 1,
+    flexDirection: 'row',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  detailHeaderCopy: {
+    flex: 1,
+    gap: 4,
+  },
+  detailTitle: {
+    color: '#0f172a',
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  detailTicketNumber: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  detailIssueType: {
+    color: '#64748b',
+    fontSize: 13,
+  },
+  detailContent: {
+    padding: 16,
+    paddingBottom: 60,
+  },
+  detailMetaCard: {
+    backgroundColor: '#ffffff',
+    borderColor: '#e2e8f0',
+    borderRadius: 16,
+    borderWidth: 1,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 16,
+    marginBottom: 16,
+    padding: 16,
+  },
+  detailMetaCol: {
+    flexBasis: '45%',
+    flexGrow: 1,
+    gap: 4,
+  },
+  detailMetaLabel: {
+    color: '#64748b',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  detailMetaValue: {
+    color: '#0f172a',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  conversationCard: {
+    backgroundColor: '#ffffff',
+    borderColor: '#e2e8f0',
+    borderRadius: 16,
+    borderWidth: 1,
+    marginBottom: 12,
+    padding: 16,
+  },
+  conversationHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  conversationAuthor: {
+    color: '#0f172a',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  conversationTime: {
+    color: '#94a3b8',
+    fontSize: 12,
+  },
+  conversationDivider: {
+    backgroundColor: '#e2e8f0',
+    height: 1,
+    marginVertical: 10,
+  },
+  conversationText: {
+    color: '#334155',
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  conversationAttachments: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 12,
+  },
+  attachmentThumbWrap: {
+    borderRadius: 10,
+    overflow: 'hidden',
+  },
+  attachmentThumb: {
+    backgroundColor: '#f1f5f9',
+    borderRadius: 10,
+    height: 120,
+    width: 120,
+  },
+  attachmentLinkRow: {
+    alignItems: 'center',
+    backgroundColor: '#eef2ff',
+    borderRadius: 10,
+    flexDirection: 'row',
+    gap: 6,
+    maxWidth: '100%',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  attachmentLinkText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  replyCard: {
+    backgroundColor: '#ffffff',
+    borderColor: '#e2e8f0',
+    borderRadius: 16,
+    borderWidth: 1,
+    marginTop: 4,
+    padding: 16,
+  },
+  replyHeading: {
+    color: '#0f172a',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  replyDivider: {
+    backgroundColor: '#e2e8f0',
+    height: 1,
+    marginVertical: 12,
+  },
+  replyActions: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 12,
+    justifyContent: 'space-between',
+    marginTop: 14,
+  },
+  addAttachmentButton: {
+    backgroundColor: '#f8fafc',
+    borderColor: '#cbd5e1',
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  addAttachmentText: {
+    color: '#334155',
+    fontSize: 13,
+    fontWeight: '700',
   },
 });
