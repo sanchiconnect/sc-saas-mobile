@@ -108,14 +108,13 @@ export function YourPitchDeck({
 
   const handleUpload = async (kind: UploadKind) => {
     const isDeck = kind === 'deck';
-    const typeId = isDeck
-      ? findTypeId(documentTypes, ['pitch deck', 'pitchdeck', 'pitch'])
+    const videoTypeId = isDeck
+      ? null
       : findTypeId(documentTypes, ['video pitch', 'video', 'power pitch']);
 
-    if (!typeId) {
-      const fallback = isDeck ? 'Pitch Deck' : 'Video Pitch';
+    if (!isDeck && !videoTypeId) {
       setMessage({
-        text: `${fallback} document type is not configured for your account.`,
+        text: 'Video Pitch document type is not configured for your account.',
         tone: 'error',
       });
       return;
@@ -212,7 +211,30 @@ export function YourPitchDeck({
         return;
       }
 
-      await authService.saveStartupDocument(token, typeId, filePayload);
+      if (isDeck) {
+        await authService.uploadPitchFile(
+          token,
+          filePayload,
+          'fundraising-pitch',
+        );
+        try {
+          await authService.updatePitchType(token, 'upload_pitch');
+        } catch {
+          // pitch-type is a non-blocking follow-up; ignore failure.
+        }
+      } else {
+        await authService.saveStartupDocument(
+          token,
+          videoTypeId as string | number,
+          filePayload,
+        );
+        try {
+          await authService.updatePitchType(token, 'power_pitch');
+        } catch {
+          // pitch-type is a non-blocking follow-up; ignore failure.
+        }
+      }
+
       setMessage({
         text: isDeck ? 'Pitch deck uploaded.' : 'Video pitch uploaded.',
         tone: 'success',
