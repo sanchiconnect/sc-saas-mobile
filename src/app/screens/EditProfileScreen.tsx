@@ -53,6 +53,7 @@ import type {EditProfileTab} from '../types';
 type EditProfileScreenProps = {
   token: string;
   onBack: () => void;
+  onPreview?: () => void;
 };
 
 type PickerKind =
@@ -279,7 +280,11 @@ const buildEditTabs = (
   return [...baseTabs, ...customTabs];
 };
 
-export function EditProfileScreen({token, onBack}: EditProfileScreenProps) {
+export function EditProfileScreen({
+  token,
+  onBack,
+  onPreview,
+}: EditProfileScreenProps) {
   const {theme, globalSetting} = useContext(TenantContext);
   const primaryColor = theme?.primary || colors.primary;
   const logoBaseUrl =
@@ -1265,29 +1270,38 @@ export function EditProfileScreen({token, onBack}: EditProfileScreenProps) {
       {renderPicker()}
 
       <View style={styles.footer}>
-        <View style={styles.footerSlot}>
-          <AppButton
-            label={isSaving ? 'Saving…' : 'SAVE'}
-            disabled={
-              isSaving ||
-              (activeTab !== 'basic' &&
-                activeTab !== 'industry' &&
-                activeTab !== 'financials')
-            }
-            loading={isSaving}
-            onPress={handleSave}
-          />
-        </View>
-        <View style={styles.footerSlot}>
-          <AppButton
-            label="NEXT STEP"
-            variant="secondary"
-            onPress={handleNext}
-            disabled={
-              tabs.findIndex(tab => tab.key === activeTab) === tabs.length - 1
-            }
-          />
-        </View>
+        {tabs.findIndex(tab => tab.key === activeTab) === tabs.length - 1 ? (
+          <View style={styles.footerSlot}>
+            <AppButton
+              label="PREVIEW"
+              onPress={() => onPreview?.()}
+              disabled={!onPreview}
+            />
+          </View>
+        ) : (
+          <>
+            <View style={styles.footerSlot}>
+              <AppButton
+                label={isSaving ? 'Saving…' : 'SAVE'}
+                disabled={
+                  isSaving ||
+                  (activeTab !== 'basic' &&
+                    activeTab !== 'industry' &&
+                    activeTab !== 'financials')
+                }
+                loading={isSaving}
+                onPress={handleSave}
+              />
+            </View>
+            <View style={styles.footerSlot}>
+              <AppButton
+                label="NEXT STEP"
+                variant="secondary"
+                onPress={handleNext}
+              />
+            </View>
+          </>
+        )}
       </View>
     </View>
   );

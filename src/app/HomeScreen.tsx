@@ -201,6 +201,7 @@ export function HomeScreen({
         <EditProfileScreen
           token={session.token}
           onBack={() => setSelectedMenu({section: 'dashboard'})}
+          onPreview={() => setSelectedMenu({section: 'profile'})}
         />
       </View>
     );
