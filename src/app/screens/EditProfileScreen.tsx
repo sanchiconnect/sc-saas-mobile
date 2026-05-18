@@ -16,8 +16,10 @@ import {colors} from '../../shared/theme/colors';
 import {TenantContext} from '../../context/TenantProvider';
 import {authService} from '../../auth/services/auth.service';
 import {BasicInfoForm} from './editProfile/BasicInfoForm';
+import {Documents} from './editProfile/Documents';
 import {FinancialsForm} from './editProfile/FinancialsForm';
 import {Picker} from './editProfile/Picker';
+import {YourPitchDeck} from './editProfile/YourPitchDeck';
 import {
   COMPANY_SIZES,
   COUNTRIES,
@@ -1204,6 +1206,20 @@ export function EditProfileScreen({token, onBack}: EditProfileScreenProps) {
             ongoingCommitments={ongoingCommitments}
             onChange={updateFinancial}
           />
+        ) : activeTab === 'pitch' ? (
+          <View>
+            <YourPitchDeck
+              primaryColor={primaryColor}
+              pitchDeck={startupInfo?.pitchDeck}
+              token={token}
+              onUploaded={() => loadProfile()}
+            />
+            <Documents
+              token={token}
+              primaryColor={primaryColor}
+              onUploaded={() => loadProfile()}
+            />
+          </View>
         ) : (
           <View style={styles.placeholder}>
             <Icon name="hammer-wrench" size={32} color="#94a3b8" />

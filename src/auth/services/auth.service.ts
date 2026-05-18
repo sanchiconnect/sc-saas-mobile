@@ -55,6 +55,11 @@ const buildProfileCompletenessPath = (accountType?: string) => {
 const FINANCIALS_INFORMATION_PATH = 'api/v1/startups/financials-information';
 const INDUSTRY_TECHNOLOGY_BUSINESS_PATH =
   'api/v1/startups/industry-technology-business';
+const DOCUMENT_TYPES_PATH = 'api/v1/public/global/document_types';
+const SUPPORTING_DOCUMENTS_PATH = 'api/v1/startups/supporting-documents';
+const STARTUP_DOCUMENT_SAVE_PATH = 'api/v1/startup/documents';
+const STARTUP_DOCUMENTS_LIST_PATH = 'api/v1/startup/documents/';
+const PITCH_TYPE_PATH = 'api/v1/startups/pitch-deck/default/pitch-type';
 const PROGRAMS_PATH = 'api/v1/programs-management/?includeExternal=true';
 const VS_PROGRAMS_PATH = 'api/v1/vs-programs-management/?includeExternal=true';
 const APPLICATION_PROGRAMS_PATH =
@@ -420,6 +425,10 @@ async function verifyOtpAndFetchProfile(
   };
 }
 export const authService = {
+  async getApiBaseUrl(): Promise<string> {
+    return resolveBaseUrl();
+  },
+
   async getProfile(token: string): Promise<ApiResponse> {
     const baseUrl = await resolveBaseUrl();
     return fetchProfile(baseUrl, token);
@@ -606,6 +615,15 @@ export const authService = {
     );
   },
 
+  async getDocumentTypes(): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      DOCUMENT_TYPES_PATH,
+      {method: 'GET'},
+      baseUrl,
+    );
+  },
+
   async getTickets(
     token: string,
     page = 1,
@@ -702,6 +720,280 @@ export const authService = {
         method: 'PATCH',
         headers: getAuthHeader(token),
         body: JSON.stringify(payload),
+      },
+      baseUrl,
+    );
+  },
+
+  async getSupportingDocuments(token: string): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    const response = await fetch(`${baseUrl}${SUPPORTING_DOCUMENTS_PATH}`, {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+        ...getAuthHeader(token),
+      },
+    });
+
+    const raw = await response.text();
+    const data = raw ? safeJsonParse(raw) : null;
+
+    // Some tenants expose document-types but not the saved-documents list route.
+    // In that case we still want to render the dynamic upload rows.
+    if (response.status === 404) {
+      return {data: []};
+    }
+
+    if (!response.ok) {
+      throw new Error(
+        getErrorMessage(data) ||
+          raw ||
+          `Supporting documents request failed (${response.status}).`,
+      );
+    }
+
+    return (data || {data: []}) as ApiResponse;
+  },
+
+  async uploadSupportingDocument(
+    token: string,
+    file: {uri: string; name: string; type: string},
+    documentTypeId: string | number,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    const normalizedToken = normalizeTokenValue(token);
+
+    if (!normalizedToken) {
+      throw new Error('Missing access token.');
+    }
+
+    const formData = new FormData();
+    formData.append('file', {
+      uri: file.uri,
+      name: file.name,
+      type: file.type,
+    } as any);
+    formData.append('documentType', String(documentTypeId));
+
+    const response = await fetch(`${baseUrl}${SUPPORTING_DOCUMENTS_PATH}`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${normalizedToken}`,
+      },
+      body: formData as any,
+    });
+    const raw = await response.text();
+    const data = raw ? safeJsonParse(raw) : null;
+    if (!response.ok) {
+      throw new Error(
+        getErrorMessage(data) ||
+          `Supporting document upload failed (${response.status}).`,
+      );
+    }
+    return data as ApiResponse;
+  },
+
+  async saveStartupDocument(
+    token: string,
+    documentTypeId: string | number,
+    file: {uri: string; name: string; type: string},
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    const normalizedToken = normalizeTokenValue(token);
+
+    if (!normalizedToken) {
+      throw new Error('Missing access token.');
+    }
+
+    if (!documentTypeId && documentTypeId !== 0) {
+      throw new Error('Document type id is required.');
+    }
+
+    const formData = new FormData();
+    formData.append('file', {
+      uri: file.uri,
+      name: file.name,
+      type: file.type,
+    } as any);
+
+    const response = await fetch(
+      `${baseUrl}${STARTUP_DOCUMENT_SAVE_PATH}/${documentTypeId}/save`,
+      {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${normalizedToken}`,
+        },
+        body: formData as any,
+      },
+    );
+    const raw = await response.text();
+    const data = raw ? safeJsonParse(raw) : null;
+    if (!response.ok) {
+      throw new Error(
+        getErrorMessage(data) ||
+          `Document save failed (${response.status}).`,
+      );
+    }
+    return data as ApiResponse;
+  },
+
+  async getStartupDocuments(token: string): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    const response = await fetch(`${baseUrl}${STARTUP_DOCUMENTS_LIST_PATH}`, {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+        ...getAuthHeader(token),
+      },
+    });
+
+    const raw = await response.text();
+    const data = raw ? safeJsonParse(raw) : null;
+
+    if (response.status === 404) {
+      return {data: []};
+    }
+
+    if (!response.ok) {
+      throw new Error(
+        getErrorMessage(data) ||
+          raw ||
+          `Startup documents request failed (${response.status}).`,
+      );
+    }
+
+    return (data || {data: []}) as ApiResponse;
+  },
+
+  async updatePitchType(
+    token: string,
+    pitchType: string,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      PITCH_TYPE_PATH,
+      {
+        method: 'PATCH',
+        headers: getAuthHeader(token),
+        body: JSON.stringify({pitchType}),
+      },
+      baseUrl,
+    );
+  },
+
+  async deleteStartupDocument(
+    token: string,
+    uuid: string,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      `${STARTUP_DOCUMENT_SAVE_PATH}/${uuid}`,
+      {
+        method: 'DELETE',
+        headers: getAuthHeader(token),
+      },
+      baseUrl,
+    );
+  },
+
+  async editStartupDocument(
+    token: string,
+    uuid: string,
+    file: {uri: string; name: string; type: string},
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    const normalizedToken = normalizeTokenValue(token);
+
+    if (!normalizedToken) {
+      throw new Error('Missing access token.');
+    }
+
+    if (!uuid) {
+      throw new Error('Document uuid is required.');
+    }
+
+    const formData = new FormData();
+    formData.append('file', {
+      uri: file.uri,
+      name: file.name,
+      type: file.type,
+    } as any);
+
+    const response = await fetch(
+      `${baseUrl}${STARTUP_DOCUMENT_SAVE_PATH}/${uuid}`,
+      {
+        method: 'PATCH',
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${normalizedToken}`,
+        },
+        body: formData as any,
+      },
+    );
+    const raw = await response.text();
+    const data = raw ? safeJsonParse(raw) : null;
+    if (!response.ok) {
+      throw new Error(
+        getErrorMessage(data) ||
+          `Document update failed (${response.status}).`,
+      );
+    }
+    return data as ApiResponse;
+  },
+
+  async updateSupportingDocument(
+    token: string,
+    uuid: string,
+    file: {uri: string; name: string; type: string},
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    const normalizedToken = normalizeTokenValue(token);
+
+    if (!normalizedToken) {
+      throw new Error('Missing access token.');
+    }
+
+    const formData = new FormData();
+    formData.append('file', {
+      uri: file.uri,
+      name: file.name,
+      type: file.type,
+    } as any);
+
+    const response = await fetch(
+      `${baseUrl}${SUPPORTING_DOCUMENTS_PATH}/${uuid}`,
+      {
+        method: 'PATCH',
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${normalizedToken}`,
+        },
+        body: formData as any,
+      },
+    );
+    const raw = await response.text();
+    const data = raw ? safeJsonParse(raw) : null;
+    if (!response.ok) {
+      throw new Error(
+        getErrorMessage(data) ||
+          `Supporting document update failed (${response.status}).`,
+      );
+    }
+    return data as ApiResponse;
+  },
+
+  async deleteSupportingDocument(
+    token: string,
+    uuid: string,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      `${SUPPORTING_DOCUMENTS_PATH}/${uuid}`,
+      {
+        method: 'DELETE',
+        headers: getAuthHeader(token),
       },
       baseUrl,
     );
