@@ -13,9 +13,6 @@ export const connectItems: MenuItem[] = [
 
 export const programItems: MenuItem[] = [
   {key: 'all-programs', label: 'All Programs', icon: 'view-grid'},
-  {key: 'my-applications', label: 'My Applications', icon: 'file-document'},
-  {key: 'certificates', label: 'Certificates', icon: 'certificate'},
-  {key: 'events', label: 'Events', icon: 'calendar'},
 ];
 
 export const communityItems: MenuItem[] = [
