@@ -8,7 +8,12 @@ import {
   Text,
   View,
 } from 'react-native';
-import {launchImageLibrary} from 'react-native-image-picker';
+import {
+  pick,
+  types,
+  isErrorWithCode,
+  errorCodes,
+} from '@react-native-documents/picker';
 
 import {authService} from '../../../auth/services/auth.service';
 import {Icon} from '../../../shared/components/Icon';
@@ -218,38 +223,30 @@ export function Documents({token, primaryColor, onUploaded}: Props) {
 
     setMessage(null);
 
-    let pickerResult: any;
+    let picked:
+      | {uri: string; name?: string | null; type?: string | null; size?: number | null}
+      | null = null;
     try {
-      pickerResult = await launchImageLibrary({
-        mediaType: 'photo',
-        selectionLimit: 1,
-        includeBase64: false,
+      const results = await pick({
+        type: [types.allFiles],
+        allowMultiSelection: false,
       });
+      picked = results?.[0] || null;
     } catch (error) {
+      if (isErrorWithCode(error) && error.code === errorCodes.OPERATION_CANCELED) {
+        return;
+      }
       setMessage({
         text:
           error instanceof Error
             ? error.message
-            : 'Could not open image picker.',
+            : 'Could not open the file picker.',
         tone: 'error',
       });
       return;
     }
 
-    if (pickerResult?.didCancel) {
-      return;
-    }
-
-    if (pickerResult?.errorCode) {
-      setMessage({
-        text: pickerResult?.errorMessage || 'Image picker failed.',
-        tone: 'error',
-      });
-      return;
-    }
-
-    const asset = pickerResult?.assets?.[0];
-    if (!asset?.uri) {
+    if (!picked?.uri) {
       setMessage({
         text: 'No file was selected.',
         tone: 'error',
@@ -257,7 +254,7 @@ export function Documents({token, primaryColor, onUploaded}: Props) {
       return;
     }
 
-    const sizeInMB = (asset.fileSize || 0) / (1024 * 1024);
+    const sizeInMB = (picked.size || 0) / (1024 * 1024);
     if (sizeInMB > MAX_FILE_SIZE_MB) {
       setMessage({
         text: `File size should be less than ${MAX_FILE_SIZE_MB} MB`,
@@ -269,9 +266,9 @@ export function Documents({token, primaryColor, onUploaded}: Props) {
     setUploadingKey(rowKey(item));
     try {
       const filePayload = {
-        uri: asset.uri,
-        name: asset.fileName || 'document',
-        type: asset.type || 'image/jpeg',
+        uri: picked.uri,
+        name: picked.name || 'document',
+        type: picked.type || 'application/octet-stream',
       };
 
       const response = item.uuid

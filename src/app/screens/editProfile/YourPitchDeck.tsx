@@ -9,6 +9,12 @@ import {
   View,
 } from 'react-native';
 import {launchCamera, launchImageLibrary} from 'react-native-image-picker';
+import {
+  pick,
+  types,
+  isErrorWithCode,
+  errorCodes,
+} from '@react-native-documents/picker';
 
 import {authService} from '../../../auth/services/auth.service';
 import {Icon} from '../../../shared/components/Icon';
@@ -119,50 +125,92 @@ export function YourPitchDeck({
     setBusyKind(kind);
 
     try {
-      const pickerResult =
-        kind === 'videoRecord'
-          ? await launchCamera({
-              mediaType: 'video',
-              videoQuality: 'high',
-              durationLimit: 120,
-              saveToPhotos: true,
-            })
-          : await launchImageLibrary({
-              mediaType: isDeck ? 'photo' : 'video',
-              selectionLimit: 1,
-              includeBase64: false,
-            });
+      let filePayload: {uri: string; name: string; type: string} | null = null;
 
-      if (pickerResult?.didCancel) {
+      if (isDeck) {
+        try {
+          const results = await pick({
+            type: [types.allFiles],
+            allowMultiSelection: false,
+          });
+          const picked = results?.[0];
+          if (!picked?.uri) {
+            throw new Error('No file was selected.');
+          }
+
+          const sizeInMB = (picked.size || 0) / (1024 * 1024);
+          if (sizeInMB > MAX_FILE_SIZE_MB) {
+            throw new Error(
+              `File size should be less than ${MAX_FILE_SIZE_MB} MB`,
+            );
+          }
+
+          filePayload = {
+            uri: picked.uri,
+            name: picked.name || 'pitch-deck',
+            type: picked.type || 'application/octet-stream',
+          };
+        } catch (pickerError) {
+          if (
+            isErrorWithCode(pickerError) &&
+            pickerError.code === errorCodes.OPERATION_CANCELED
+          ) {
+            return;
+          }
+          throw pickerError;
+        }
+      } else {
+        const pickerResult =
+          kind === 'videoRecord'
+            ? await launchCamera({
+                mediaType: 'video',
+                videoQuality: 'high',
+                durationLimit: 120,
+                saveToPhotos: true,
+              })
+            : await launchImageLibrary({
+                mediaType: 'video',
+                selectionLimit: 1,
+                includeBase64: false,
+              });
+
+        if (pickerResult?.didCancel) {
+          return;
+        }
+
+        if (pickerResult?.errorCode) {
+          throw new Error(
+            pickerResult?.errorMessage || 'Picker could not be opened.',
+          );
+        }
+
+        const asset = pickerResult?.assets?.[0];
+        if (!asset?.uri) {
+          throw new Error('No file was selected.');
+        }
+
+        const sizeInMB = (asset.fileSize || 0) / (1024 * 1024);
+        if (sizeInMB > MAX_FILE_SIZE_MB) {
+          throw new Error(
+            `File size should be less than ${MAX_FILE_SIZE_MB} MB`,
+          );
+        }
+
+        filePayload = {
+          uri: asset.uri,
+          name:
+            asset.fileName ||
+            'video-pitch' +
+              (asset.type?.includes('/')
+                ? `.${asset.type.split('/')[1]}`
+                : ''),
+          type: asset.type || 'video/mp4',
+        };
+      }
+
+      if (!filePayload) {
         return;
       }
-
-      if (pickerResult?.errorCode) {
-        throw new Error(
-          pickerResult?.errorMessage || 'Picker could not be opened.',
-        );
-      }
-
-      const asset = pickerResult?.assets?.[0];
-      if (!asset?.uri) {
-        throw new Error('No file was selected.');
-      }
-
-      const sizeInMB = (asset.fileSize || 0) / (1024 * 1024);
-      if (sizeInMB > MAX_FILE_SIZE_MB) {
-        throw new Error(`File size should be less than ${MAX_FILE_SIZE_MB} MB`);
-      }
-
-      const filePayload = {
-        uri: asset.uri,
-        name:
-          asset.fileName ||
-          (isDeck ? 'pitch-deck' : 'video-pitch') +
-            (asset.type?.includes('/')
-              ? `.${asset.type.split('/')[1]}`
-              : ''),
-        type: asset.type || (isDeck ? 'image/jpeg' : 'video/mp4'),
-      };
 
       await authService.saveStartupDocument(token, typeId, filePayload);
       setMessage({
