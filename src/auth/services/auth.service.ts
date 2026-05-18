@@ -61,7 +61,9 @@ const STARTUP_DOCUMENT_SAVE_PATH = 'api/v1/startup/documents';
 const STARTUP_DOCUMENTS_LIST_PATH = 'api/v1/startup/documents/';
 const PITCH_TYPE_PATH = 'api/v1/startups/pitch-deck/default/pitch-type';
 const PITCH_FILE_UPLOAD_PATH = 'api/v1/startups/pitch-deck/upload/pitch-file';
+const PITCH_VIDEO_UPLOAD_PATH = 'api/v1/startups/pitch-deck/upload/pitch-video';
 const POWER_PITCH_VIDEO_PATH = 'api/v1/power-pitch/video';
+const POWER_PITCH_CONNECT_PATH = 'api/v1/power-pitch/connect';
 const PROGRAMS_PATH = 'api/v1/programs-management/?includeExternal=true';
 const VS_PROGRAMS_PATH = 'api/v1/vs-programs-management/?includeExternal=true';
 const APPLICATION_PROGRAMS_PATH =
@@ -931,6 +933,58 @@ export const authService = {
       {
         method: 'GET',
         headers: getAuthHeader(token),
+      },
+      baseUrl,
+    );
+  },
+
+  async uploadPitchVideo(
+    token: string,
+    file: {uri: string; name: string; type: string},
+    documentType: string = 'fundraising-pitch',
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    const normalizedToken = normalizeTokenValue(token);
+
+    if (!normalizedToken) {
+      throw new Error('Missing access token.');
+    }
+
+    const formData = new FormData();
+    formData.append('file', {
+      uri: file.uri,
+      name: file.name,
+      type: file.type,
+    } as any);
+    formData.append('documentType', documentType);
+
+    const response = await fetch(`${baseUrl}${PITCH_VIDEO_UPLOAD_PATH}`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${normalizedToken}`,
+      },
+      body: formData as any,
+    });
+    const raw = await response.text();
+    const data = raw ? safeJsonParse(raw) : null;
+    if (!response.ok) {
+      throw new Error(
+        getErrorMessage(data) ||
+          `Pitch video upload failed (${response.status}).`,
+      );
+    }
+    return data as ApiResponse;
+  },
+
+  async connectPowerPitch(token: string): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      POWER_PITCH_CONNECT_PATH,
+      {
+        method: 'POST',
+        headers: getAuthHeader(token),
+        body: JSON.stringify({}),
       },
       baseUrl,
     );
