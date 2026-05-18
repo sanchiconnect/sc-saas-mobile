@@ -16,8 +16,15 @@ import {colors} from '../../shared/theme/colors';
 import {TenantContext} from '../../context/TenantProvider';
 import {authService} from '../../auth/services/auth.service';
 import {BasicInfoForm} from './editProfile/BasicInfoForm';
+import {Documents} from './editProfile/Documents';
 import {FinancialsForm} from './editProfile/FinancialsForm';
 import {Picker} from './editProfile/Picker';
+import {YourPitchDeck} from './editProfile/YourPitchDeck';
+import {
+  buildBaseTabs,
+  detectInvestorSubtype,
+  InvestorSubtype,
+} from './editProfile/tabConfig';
 import {
   COMPANY_SIZES,
   COUNTRIES,
@@ -88,12 +95,30 @@ type StartupFormDefinition = {
   programs?: Array<{id?: number}> | null;
 };
 
-const BASE_TABS: EditProfileTab[] = [
-  {key: 'basic', label: 'Basic Information', status: 'incomplete'},
-  {key: 'industry', label: 'Industry / Technology', status: 'incomplete'},
-  {key: 'financials', label: 'Financials', status: 'incomplete'},
-  {key: 'pitch', label: 'Pitch Deck', status: 'incomplete'},
-];
+type CompletionFlags = {
+  basic: boolean;
+  industry: boolean;
+  financials: boolean;
+  pitch: boolean;
+};
+
+const tabCompletion = (
+  key: string,
+  flags: CompletionFlags,
+): 'complete' | 'incomplete' => {
+  switch (key) {
+    case 'basic':
+      return flags.basic ? 'complete' : 'incomplete';
+    case 'industry':
+      return flags.industry ? 'complete' : 'incomplete';
+    case 'financials':
+      return flags.financials ? 'complete' : 'incomplete';
+    case 'pitch':
+      return flags.pitch ? 'complete' : 'incomplete';
+    default:
+      return 'incomplete';
+  }
+};
 
 const calculateProfileCompletion = (basicInfo: BasicInfoFormType) => {
   const safeSocial = basicInfo.social || EMPTY_BASIC_INFO.social;
@@ -210,45 +235,36 @@ const buildEditTabs = (
   basicInfo: BasicInfoFormType,
   startupInfo: Record<string, any> | null,
   forms: StartupFormDefinition[],
+  accountType: string,
+  investorSubtype: InvestorSubtype,
 ): EditProfileTab[] => {
-  const isBasicComplete =
-    Boolean(basicInfo.companyName) &&
-    Boolean(basicInfo.companySize) &&
-    Boolean(basicInfo.country) &&
-    Boolean(basicInfo.productStage) &&
-    basicInfo.isIncorporated !== null;
+  const flags: CompletionFlags = {
+    basic:
+      Boolean(basicInfo.companyName) &&
+      Boolean(basicInfo.companySize) &&
+      Boolean(basicInfo.country) &&
+      Boolean(basicInfo.productStage) &&
+      basicInfo.isIncorporated !== null,
+    industry:
+      Array.isArray(startupInfo?.startupIndustries) &&
+      startupInfo.startupIndustries.length > 0 &&
+      Array.isArray(startupInfo?.startupTechnologies) &&
+      startupInfo.startupTechnologies.length > 0,
+    financials: Boolean(
+      startupInfo?.financials?.fundingStageId ||
+        startupInfo?.financials?.targetFundraise ||
+        startupInfo?.financials?.tentativeValuation,
+    ),
+    pitch: Boolean(
+      startupInfo?.pitchDeck?.elevatorPitch ||
+        startupInfo?.pitchDeck?.pitchDocument,
+    ),
+  };
 
-  const isIndustryComplete =
-    Array.isArray(startupInfo?.startupIndustries) &&
-    startupInfo.startupIndustries.length > 0 &&
-    Array.isArray(startupInfo?.startupTechnologies) &&
-    startupInfo.startupTechnologies.length > 0;
-
-  const isFinancialsComplete = Boolean(
-    startupInfo?.financials?.fundingStageId ||
-      startupInfo?.financials?.targetFundraise ||
-      startupInfo?.financials?.tentativeValuation,
-  );
-
-  const isPitchComplete = Boolean(
-    startupInfo?.pitchDeck?.elevatorPitch || startupInfo?.pitchDeck?.pitchDocument,
-  );
-
-  const baseTabs: EditProfileTab[] = BASE_TABS.map(tab => {
-    if (tab.key === 'basic') {
-      return {...tab, status: isBasicComplete ? 'complete' : 'incomplete'};
-    }
-    if (tab.key === 'industry') {
-      return {...tab, status: isIndustryComplete ? 'complete' : 'incomplete'};
-    }
-    if (tab.key === 'financials') {
-      return {...tab, status: isFinancialsComplete ? 'complete' : 'incomplete'};
-    }
-    if (tab.key === 'pitch') {
-      return {...tab, status: isPitchComplete ? 'complete' : 'incomplete'};
-    }
-    return tab;
-  });
+  const baseTabs: EditProfileTab[] = buildBaseTabs(
+    accountType,
+    investorSubtype,
+  ).map(tab => ({...tab, status: tabCompletion(tab.key, flags)}));
 
   const customTabs = forms
     .filter(form => form?.status && form?.useFormAs === 'form' && form?.programs === null)
@@ -269,7 +285,9 @@ export function EditProfileScreen({token, onBack}: EditProfileScreenProps) {
   const logoBaseUrl =
     globalSetting?.imgKitUrl || globalSetting?.assetsImgKitUrl;
 
-  const [activeTab, setActiveTab] = useState(BASE_TABS[0].key);
+  const [activeTab, setActiveTab] = useState<string>('basic');
+  const [investorSubtype, setInvestorSubtype] =
+    useState<InvestorSubtype>('organization');
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -383,6 +401,7 @@ export function EditProfileScreen({token, onBack}: EditProfileScreenProps) {
         if (cancelled) return;
         const type = String(raw?.data?.accountType || '').toLowerCase();
         setAccountType(type || 'startup');
+        setInvestorSubtype(detectInvestorSubtype(raw?.data));
       })
       .catch(() => {
         if (!cancelled) {
@@ -630,6 +649,8 @@ export function EditProfileScreen({token, onBack}: EditProfileScreenProps) {
       startupTechnologies: selectedTechnologyIds,
     },
     startupForms,
+    accountType || 'startup',
+    investorSubtype,
   );
 
   useEffect(() => {
@@ -1204,6 +1225,20 @@ export function EditProfileScreen({token, onBack}: EditProfileScreenProps) {
             ongoingCommitments={ongoingCommitments}
             onChange={updateFinancial}
           />
+        ) : activeTab === 'pitch' ? (
+          <View>
+            <YourPitchDeck
+              primaryColor={primaryColor}
+              pitchDeck={startupInfo?.pitchDeck}
+              token={token}
+              onUploaded={() => loadProfile()}
+            />
+            <Documents
+              token={token}
+              primaryColor={primaryColor}
+              onUploaded={() => loadProfile()}
+            />
+          </View>
         ) : (
           <View style={styles.placeholder}>
             <Icon name="hammer-wrench" size={32} color="#94a3b8" />
