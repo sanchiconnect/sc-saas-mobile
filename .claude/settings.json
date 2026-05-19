@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(brew install *)",
+      "Bash(/usr/local/opt/openjdk@17/bin/java -version)",
+      "Read(//Users/mac/**)",
+      "Bash(brew info *)",
+      "Bash(tail -10 /private/tmp/claude-501/-Users-mac-Desktop-Work-SanchiConnect-sc-saas-mobile/7e0dc744-0bb3-4666-adbd-70d7193a1098/tasks/bwjdg4qoj.output; echo \"---verify---\"; ls /usr/local/share/android-commandlinetools/cmdline-tools/latest/bin/ 2>&1 | head -5)",
+      "Read(//usr/local/share/android-commandlinetools/cmdline-tools/latest/bin/**)",
+      "Bash(sysctl -n machdep.cpu.brand_string)",
+      "Bash(sysctl -n kern.hv_support)",
+      "Bash(sysctl -n hw.memsize)",
+      "Bash(awk '{print $1/1024/1024/1024\" GB\"}')",
+      "Bash(awk '{print $2, $3\"%CPU\", $4\"%MEM\", $11, $12, $13, $14, $15, $16, $17}')"
+    ],
+    "additionalDirectories": [
+      "/Users/mac"
+    ]
+  }
+}
