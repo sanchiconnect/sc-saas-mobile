@@ -12,14 +12,8 @@ import {AuthSession} from '../../auth/models/auth.models';
 import {Icon} from '../../shared/components/Icon';
 import {
   accountSettingItems,
-  actionItems,
-  businessChallengeItems,
-  communityItems,
   connectItems,
-  eventItems,
   programItems,
-  resourceItems,
-  startupBoosterKitItems,
   ticketItems,
 } from '../config/menus';
 import {AppMenuSelection, AppSection, MenuItem} from '../types';
@@ -238,7 +232,14 @@ export function SideMenu({
 
           <View style={styles.divider} />
 
-          <View style={styles.profileRow}>
+          <Pressable
+            onPress={() => {
+              onSelectMenu({section: 'profile'});
+              onClose();
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Open my profile"
+            style={styles.profileRow}>
             <View style={styles.avatarWrap}>
               <Text style={styles.avatarText}>
                 {session.user.fullName.slice(0, 2).toUpperCase()}
@@ -256,7 +257,7 @@ export function SideMenu({
             <Pressable style={styles.profileAction} hitSlop={6}>
               <Icon name="bell-outline" size={20} color="#334155" />
             </Pressable>
-          </View>
+          </Pressable>
 
           <View style={styles.quickRow}>
             <Pressable style={styles.quickCard}>
@@ -311,72 +312,6 @@ export function SideMenu({
             section="program"
             icon="briefcase-outline"
             items={programItems}
-            onSelectMenu={onSelectMenu}
-            onClose={onClose}
-            primaryColor={primaryColor}
-            selectedMenu={selectedMenu}
-          />
-
-          <SingleSection
-            title="Community Wall"
-            section="community"
-            icon={communityItems[0].icon || 'account-group-outline'}
-            item={communityItems[0]}
-            onSelectMenu={onSelectMenu}
-            onClose={onClose}
-            primaryColor={primaryColor}
-            selectedMenu={selectedMenu}
-          />
-
-          <SingleSection
-            title="Business Challenges"
-            section="business-challenges"
-            icon={businessChallengeItems[0].icon || 'briefcase-outline'}
-            item={businessChallengeItems[0]}
-            onSelectMenu={onSelectMenu}
-            onClose={onClose}
-            primaryColor={primaryColor}
-            selectedMenu={selectedMenu}
-          />
-
-          <ExpandableSection
-            title="My Actions"
-            section="actions"
-            icon="tools"
-            items={actionItems}
-            onSelectMenu={onSelectMenu}
-            onClose={onClose}
-            primaryColor={primaryColor}
-            selectedMenu={selectedMenu}
-          />
-
-          <SingleSection
-            title="Events"
-            section="events"
-            icon={eventItems[0].icon || 'calendar-month-outline'}
-            item={eventItems[0]}
-            onSelectMenu={onSelectMenu}
-            onClose={onClose}
-            primaryColor={primaryColor}
-            selectedMenu={selectedMenu}
-          />
-
-          <SingleSection
-            title="Startup Booster Kit"
-            section="startup-booster-kit"
-            icon={startupBoosterKitItems[0].icon || 'currency-usd'}
-            item={startupBoosterKitItems[0]}
-            onSelectMenu={onSelectMenu}
-            onClose={onClose}
-            primaryColor={primaryColor}
-            selectedMenu={selectedMenu}
-          />
-
-          <ExpandableSection
-            title="Resources"
-            section="resources"
-            icon="book-open-page-variant-outline"
-            items={resourceItems}
             onSelectMenu={onSelectMenu}
             onClose={onClose}
             primaryColor={primaryColor}

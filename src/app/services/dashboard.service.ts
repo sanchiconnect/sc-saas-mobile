@@ -37,7 +37,17 @@ const mockStats: DashboardStat[] = [
 export const dashboardService = {
   async fetchSummary(token: string): Promise<DashboardSummary> {
     try {
-      const completenessData = await authService.getProfileCompletion(token);
+      let accountType: string | undefined;
+      try {
+        const profile = await authService.getProfile(token);
+        accountType = String(profile?.data?.accountType || '').toLowerCase() || undefined;
+      } catch (profileError) {
+        console.warn('Dashboard: failed to resolve accountType:', profileError);
+      }
+      const completenessData = await authService.getProfileCompletion(
+        token,
+        accountType,
+      );
       const rawPercentage =
         completenessData?.data?.percentage ?? completenessData?.percentage ?? 0;
       const profileCompletion = Number(rawPercentage);

@@ -16,6 +16,8 @@ import {Icon} from '../shared/components/Icon';
 import {DashboardContent} from './components/DashboardContent';
 import {SectionScreen} from './components/SectionScreen';
 import {SideMenu} from './components/SideMenu';
+import {AccountSettingsScreen} from './screens/AccountSettingsScreen';
+import {ProfileScreen} from './screens/ProfileScreen';
 import {ProgramsScreen} from './screens/ProgramsScreen';
 import {
   accountSettingItems,
@@ -30,6 +32,7 @@ import {
   ticketItems,
 } from './config/menus';
 import {EditProfileScreen} from './screens/EditProfileScreen';
+import {TicketsScreen} from './screens/TicketsScreen';
 import {dashboardService} from './services/dashboard.service';
 import {AppMenuSelection, AppSection, DashboardSummary, MenuItem} from './types';
 
@@ -198,6 +201,32 @@ export function HomeScreen({
         <EditProfileScreen
           token={session.token}
           onBack={() => setSelectedMenu({section: 'dashboard'})}
+          onPreview={() => setSelectedMenu({section: 'profile'})}
+        />
+      </View>
+    );
+  }
+
+  if (selectedMenu.section === 'profile') {
+    return (
+      <View style={styles.page}>
+        <SideMenu
+          globalSetting={globalSetting}
+          isVisible={isMenuOpen}
+          onClose={() => setIsMenuOpen(false)}
+          onLogout={onLogout}
+          onSelectMenu={setSelectedMenu}
+          primaryColor={primaryColor}
+          selectedMenu={selectedMenu}
+          session={session}
+        />
+
+        <ProfileScreen
+          token={session.token}
+          primaryColor={primaryColor}
+          logoBaseUrl={logoBaseUrl}
+          onBack={() => setSelectedMenu({section: 'dashboard'})}
+          onEditProfile={() => setSelectedMenu({section: 'edit-profile'})}
         />
       </View>
     );
@@ -232,6 +261,54 @@ export function HomeScreen({
               item: mode === 'my-applications' ? 'My Applications' : 'All Programs',
             })
           }
+          onBack={() => setSelectedMenu({section: 'dashboard'})}
+        />
+      </View>
+    );
+  }
+
+  if (selectedMenu.section === 'tickets') {
+    return (
+      <View style={styles.page}>
+        <SideMenu
+          globalSetting={globalSetting}
+          isVisible={isMenuOpen}
+          onClose={() => setIsMenuOpen(false)}
+          onLogout={onLogout}
+          onSelectMenu={setSelectedMenu}
+          primaryColor={primaryColor}
+          selectedMenu={selectedMenu}
+          session={session}
+        />
+
+        <TicketsScreen
+          token={session.token}
+          onBack={() => setSelectedMenu({section: 'dashboard'})}
+          primaryColor={primaryColor}
+        />
+      </View>
+    );
+  }
+
+  if (selectedMenu.section === 'account-settings') {
+    return (
+      <View style={styles.page}>
+        <SideMenu
+          globalSetting={globalSetting}
+          isVisible={isMenuOpen}
+          onClose={() => setIsMenuOpen(false)}
+          onLogout={onLogout}
+          onSelectMenu={setSelectedMenu}
+          primaryColor={primaryColor}
+          selectedMenu={selectedMenu}
+          session={session}
+        />
+
+        <AccountSettingsScreen
+          token={session.token}
+          session={session}
+          onBack={() => setSelectedMenu({section: 'dashboard'})}
+          onLogout={onLogout}
         />
       </View>
     );

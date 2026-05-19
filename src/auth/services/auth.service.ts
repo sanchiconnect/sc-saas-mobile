@@ -23,16 +23,97 @@ const SIGNUP_VERIFY_PATH = 'api/v1/public/otp_verifications/verify';
 const REGISTER_PATH = 'api/v1/public/auth/register/';
 const PROFILE_PATH = 'api/v1/users/profile';
 const STARTUP_INFORMATION_PATH = 'api/v1/startups/startup-information';
+
+const ACCOUNT_TYPE_TO_PLURAL: Record<string, string> = {
+  startup: 'startups',
+  corporate: 'corporates',
+  investor: 'investors',
+  mentor: 'mentors',
+  service_provider: 'service_providers',
+  partner: 'partners',
+  individual: 'individuals',
+  program_office: 'program_office_members',
+  job_seeker: 'job_seekers',
+};
+
+const SELF_INFORMATION_PATH_OVERRIDES: Record<string, string> = {
+  individual: 'api/v1/individuals/information',
+  investor: 'api/v1/investors/organization-information',
+  program_office:
+    'api/v1/program_office_members/program-office-member-information',
+};
+
+const buildInformationPath = (accountType?: string) => {
+  const type = (accountType || 'startup').toLowerCase();
+  const override = SELF_INFORMATION_PATH_OVERRIDES[type];
+  if (override) {
+    return override;
+  }
+  const plural = ACCOUNT_TYPE_TO_PLURAL[type] || `${type}s`;
+  const actionType = type.replace(/_/g, '-');
+  return `api/v1/${plural}/${actionType}-information`;
+};
+
+const buildFormListPath = (accountType?: string) => {
+  const type = (accountType || 'startup').toLowerCase();
+  return `api/v1/forms-management/list/${type}`;
+};
+
+const buildOngoingCommitmentsPath = (accountType?: string) => {
+  const type = (accountType || 'startup').toLowerCase();
+  const plural = ACCOUNT_TYPE_TO_PLURAL[type] || `${type}s`;
+  return `api/v1/${plural}/ongoing-commitments`;
+};
+
+const PROFILE_COMPLETENESS_PATH_OVERRIDES: Record<string, string> = {
+  investor: 'api/v1/investors/organization/profile_completeness',
+};
+
+const buildProfileCompletenessPath = (accountType?: string) => {
+  const type = (accountType || 'startup').toLowerCase();
+  const override = PROFILE_COMPLETENESS_PATH_OVERRIDES[type];
+  if (override) {
+    return override;
+  }
+  const plural = ACCOUNT_TYPE_TO_PLURAL[type] || `${type}s`;
+  return `api/v1/${plural}/profile_completeness`;
+};
 const FINANCIALS_INFORMATION_PATH = 'api/v1/startups/financials-information';
 const INDUSTRY_TECHNOLOGY_BUSINESS_PATH =
   'api/v1/startups/industry-technology-business';
-const PROFILE_COMPLETENESS_PATH = 'api/v1/startups/profile_completeness';
-const STARTUP_FORM_LIST_PATH = 'api/v1/forms-management/list/startup';
-const ONGOING_COMMITMENTS_PATH = 'api/v1/startups/ongoing-commitments';
+const DOCUMENT_TYPES_PATH = 'api/v1/public/global/document_types';
+const SUPPORTING_DOCUMENTS_PATH = 'api/v1/startups/supporting-documents';
+const STARTUP_DOCUMENT_SAVE_PATH = 'api/v1/startup/documents';
+const STARTUP_DOCUMENTS_LIST_PATH = 'api/v1/startup/documents/';
+const PITCH_TYPE_PATH = 'api/v1/startups/pitch-deck/default/pitch-type';
+const PITCH_FILE_UPLOAD_PATH = 'api/v1/startups/pitch-deck/upload/pitch-file';
+const PITCH_VIDEO_UPLOAD_PATH = 'api/v1/startups/pitch-deck/upload/pitch-video';
+const POWER_PITCH_VIDEO_PATH = 'api/v1/power-pitch/video';
+const POWER_PITCH_CONNECT_PATH = 'api/v1/power-pitch/connect';
 const PROGRAMS_PATH = 'api/v1/programs-management/?includeExternal=true';
 const VS_PROGRAMS_PATH = 'api/v1/vs-programs-management/?includeExternal=true';
 const APPLICATION_PROGRAMS_PATH =
   'api/v1/application-programs-management/?partnerId=null&includeExternal=true';
+const CORPORATE_PROFILE_DATA_PATH =
+  'api/v1/forms-management/profile/data/corporate';
+const INVESTOR_PROFILE_DATA_PATH =
+  'api/v1/forms-management/profile/data/investor';
+const STARTUP_PUBLIC_INFORMATION_PATH =
+  'api/v1/startups/public/startup-information';
+const CORPORATE_PUBLIC_INFORMATION_PATH =
+  'api/v1/corporates/public/corporate-information';
+const INVESTOR_PUBLIC_INFORMATION_PATH =
+  'api/v1/investors/public/profile';
+const MENTOR_PUBLIC_INFORMATION_PATH =
+  'api/v1/mentors/public/mentor-information';
+const SERVICE_PROVIDER_PUBLIC_INFORMATION_PATH =
+  'api/v1/service_providers/public/service-provider-information';
+const PARTNER_PUBLIC_INFORMATION_PATH =
+  'api/v1/partners/public/partners-information';
+const INDIVIDUAL_PUBLIC_INFORMATION_PATH =
+  'api/v1/individuals/public/individual-information';
+const PROGRAM_OFFICE_PUBLIC_INFORMATION_PATH =
+  'api/v1/program_office_members/public/program-office-member-information';
 
 type ApiResponse = Record<string, any>;
 
@@ -256,9 +337,13 @@ async function fetchProfile(baseUrl: string, token: string) {
   );
 }
 
-async function fetchStartupInformation(baseUrl: string, token: string) {
+async function fetchStartupInformation(
+  baseUrl: string,
+  token: string,
+  accountType?: string,
+) {
   return requestJson<ApiResponse>(
-    STARTUP_INFORMATION_PATH,
+    buildInformationPath(accountType),
     {
       method: 'GET',
       headers: getAuthHeader(token),
@@ -384,20 +469,208 @@ async function verifyOtpAndFetchProfile(
   };
 }
 export const authService = {
+  async getApiBaseUrl(): Promise<string> {
+    return resolveBaseUrl();
+  },
+
   async getProfile(token: string): Promise<ApiResponse> {
     const baseUrl = await resolveBaseUrl();
     return fetchProfile(baseUrl, token);
   },
 
-  async getStartupInformation(token: string): Promise<ApiResponse> {
-    const baseUrl = await resolveBaseUrl();
-    return fetchStartupInformation(baseUrl, token);
-  },
-
-  async getProfileCompletion(token: string): Promise<ApiResponse> {
+  async updateUserProfile(
+    token: string,
+    payload: Record<string, any>,
+  ): Promise<ApiResponse> {
     const baseUrl = await resolveBaseUrl();
     return requestJson<ApiResponse>(
-      PROFILE_COMPLETENESS_PATH,
+      PROFILE_PATH,
+      {
+        method: 'PATCH',
+        headers: getAuthHeader(token),
+        body: JSON.stringify(payload),
+      },
+      baseUrl,
+    );
+  },
+
+  async deleteUserAccount(token: string): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      'api/v1/users/delete_account',
+      {
+        method: 'DELETE',
+        headers: getAuthHeader(token),
+      },
+      baseUrl,
+    );
+  },
+
+  async getStartupInformation(
+    token: string,
+    accountType?: string,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return fetchStartupInformation(baseUrl, token, accountType);
+  },
+
+  async getCorporateProfileData(
+    token: string,
+    uuid: string,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      `${CORPORATE_PROFILE_DATA_PATH}/${uuid}`,
+      {
+        method: 'GET',
+        headers: getAuthHeader(token),
+      },
+      baseUrl,
+    );
+  },
+
+  async getInvestorProfileData(
+    token: string,
+    uuid: string,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      `${INVESTOR_PROFILE_DATA_PATH}/${uuid}`,
+      {
+        method: 'GET',
+        headers: getAuthHeader(token),
+      },
+      baseUrl,
+    );
+  },
+
+  async getStartupPublicInformation(
+    token: string,
+    uuid: string,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      `${STARTUP_PUBLIC_INFORMATION_PATH}/${uuid}`,
+      {
+        method: 'GET',
+        headers: getAuthHeader(token),
+      },
+      baseUrl,
+    );
+  },
+
+  async getCorporatePublicInformation(
+    token: string,
+    uuid: string,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      `${CORPORATE_PUBLIC_INFORMATION_PATH}/${uuid}`,
+      {
+        method: 'GET',
+        headers: getAuthHeader(token),
+      },
+      baseUrl,
+    );
+  },
+
+  async getInvestorPublicInformation(
+    token: string,
+    uuid: string,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      `${INVESTOR_PUBLIC_INFORMATION_PATH}/${uuid}`,
+      {
+        method: 'GET',
+        headers: getAuthHeader(token),
+      },
+      baseUrl,
+    );
+  },
+
+  async getMentorPublicInformation(
+    token: string,
+    uuid: string,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      `${MENTOR_PUBLIC_INFORMATION_PATH}/${uuid}`,
+      {
+        method: 'GET',
+        headers: getAuthHeader(token),
+      },
+      baseUrl,
+    );
+  },
+
+  async getServiceProviderPublicInformation(
+    token: string,
+    uuid: string,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      `${SERVICE_PROVIDER_PUBLIC_INFORMATION_PATH}/${uuid}`,
+      {
+        method: 'GET',
+        headers: getAuthHeader(token),
+      },
+      baseUrl,
+    );
+  },
+
+  async getPartnerPublicInformation(
+    token: string,
+    uuid: string,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      `${PARTNER_PUBLIC_INFORMATION_PATH}/${uuid}`,
+      {
+        method: 'GET',
+        headers: getAuthHeader(token),
+      },
+      baseUrl,
+    );
+  },
+
+  async getIndividualPublicInformation(
+    token: string,
+    uuid: string,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      `${INDIVIDUAL_PUBLIC_INFORMATION_PATH}/${uuid}`,
+      {
+        method: 'GET',
+        headers: getAuthHeader(token),
+      },
+      baseUrl,
+    );
+  },
+
+  async getProgramOfficePublicInformation(
+    token: string,
+    uuid: string,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      `${PROGRAM_OFFICE_PUBLIC_INFORMATION_PATH}/${uuid}`,
+      {
+        method: 'GET',
+        headers: getAuthHeader(token),
+      },
+      baseUrl,
+    );
+  },
+
+  async getProfileCompletion(
+    token: string,
+    accountType?: string,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      buildProfileCompletenessPath(accountType),
       {
         method: 'GET',
         headers: getAuthHeader(token),
@@ -416,10 +689,13 @@ export const authService = {
     return fetchInvestmentMechanisms(baseUrl);
   },
 
-  async getStartupFormList(token: string): Promise<ApiResponse> {
+  async getStartupFormList(
+    token: string,
+    accountType?: string,
+  ): Promise<ApiResponse> {
     const baseUrl = await resolveBaseUrl();
     return requestJson<ApiResponse>(
-      STARTUP_FORM_LIST_PATH,
+      buildFormListPath(accountType),
       {
         method: 'GET',
         headers: getAuthHeader(token),
@@ -428,10 +704,13 @@ export const authService = {
     );
   },
 
-  async getOngoingCommitments(token: string): Promise<ApiResponse> {
+  async getOngoingCommitments(
+    token: string,
+    accountType?: string,
+  ): Promise<ApiResponse> {
     const baseUrl = await resolveBaseUrl();
     return requestJson<ApiResponse>(
-      ONGOING_COMMITMENTS_PATH,
+      buildOngoingCommitmentsPath(accountType),
       {
         method: 'GET',
         headers: getAuthHeader(token),
@@ -476,6 +755,122 @@ export const authService = {
     );
   },
 
+  async getTicketIssueTypes(): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      'api/v1/public/global/ticket_issue_types',
+      {method: 'GET'},
+      baseUrl,
+    );
+  },
+
+  async getDocumentTypes(): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      DOCUMENT_TYPES_PATH,
+      {method: 'GET'},
+      baseUrl,
+    );
+  },
+
+  async getTickets(
+    token: string,
+    page = 1,
+    limit = 500,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      `api/v1/tickets/?page=${page}&limit=${limit}`,
+      {
+        method: 'GET',
+        headers: getAuthHeader(token),
+      },
+      baseUrl,
+    );
+  },
+
+  async createTicket(
+    token: string,
+    payload: {
+      title: string;
+      description: string;
+      issueTypeId: number;
+      attachments?: string[];
+    },
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      'api/v1/tickets/',
+      {
+        method: 'POST',
+        headers: getAuthHeader(token),
+        body: JSON.stringify(payload),
+      },
+      baseUrl,
+    );
+  },
+
+  async getTicketDetail(token: string, uuid: string): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      `api/v1/tickets/${uuid}/detail`,
+      {
+        method: 'GET',
+        headers: getAuthHeader(token),
+      },
+      baseUrl,
+    );
+  },
+
+  async addTicketConversation(
+    token: string,
+    uuid: string,
+    payload: {description: string; attachments?: string[]},
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      `api/v1/tickets/${uuid}/conversation`,
+      {
+        method: 'POST',
+        headers: getAuthHeader(token),
+        body: JSON.stringify(payload),
+      },
+      baseUrl,
+    );
+  },
+
+  async uploadTicketAttachments(
+    token: string,
+    files: Array<{uri: string; name: string; type: string}>,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    const formData = new FormData();
+    files.forEach(file => {
+      formData.append('files', {
+        uri: file.uri,
+        name: file.name,
+        type: file.type,
+      } as any);
+    });
+
+    const response = await fetch(`${baseUrl}api/v1/tickets/add-attachments`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: formData as any,
+    });
+    const raw = await response.text();
+    const data = raw ? safeJsonParse(raw) : null;
+    if (!response.ok) {
+      throw new Error(
+        data?.message || `Attachment upload failed (${response.status}).`,
+      );
+    }
+    return data as ApiResponse;
+  },
+
   async updateProfile(
     token: string,
     payload: Record<string, any>,
@@ -503,6 +898,383 @@ export const authService = {
         method: 'PATCH',
         headers: getAuthHeader(token),
         body: JSON.stringify(payload),
+      },
+      baseUrl,
+    );
+  },
+
+  async getSupportingDocuments(token: string): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    const response = await fetch(`${baseUrl}${SUPPORTING_DOCUMENTS_PATH}`, {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+        ...getAuthHeader(token),
+      },
+    });
+
+    const raw = await response.text();
+    const data = raw ? safeJsonParse(raw) : null;
+
+    // Some tenants expose document-types but not the saved-documents list route.
+    // In that case we still want to render the dynamic upload rows.
+    if (response.status === 404) {
+      return {data: []};
+    }
+
+    if (!response.ok) {
+      throw new Error(
+        getErrorMessage(data) ||
+          raw ||
+          `Supporting documents request failed (${response.status}).`,
+      );
+    }
+
+    return (data || {data: []}) as ApiResponse;
+  },
+
+  async uploadSupportingDocument(
+    token: string,
+    file: {uri: string; name: string; type: string},
+    documentTypeId: string | number,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    const normalizedToken = normalizeTokenValue(token);
+
+    if (!normalizedToken) {
+      throw new Error('Missing access token.');
+    }
+
+    const formData = new FormData();
+    formData.append('file', {
+      uri: file.uri,
+      name: file.name,
+      type: file.type,
+    } as any);
+    formData.append('documentType', String(documentTypeId));
+
+    const response = await fetch(`${baseUrl}${SUPPORTING_DOCUMENTS_PATH}`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${normalizedToken}`,
+      },
+      body: formData as any,
+    });
+    const raw = await response.text();
+    const data = raw ? safeJsonParse(raw) : null;
+    if (!response.ok) {
+      throw new Error(
+        getErrorMessage(data) ||
+          `Supporting document upload failed (${response.status}).`,
+      );
+    }
+    return data as ApiResponse;
+  },
+
+  async saveStartupDocument(
+    token: string,
+    documentTypeId: string | number,
+    file: {uri: string; name: string; type: string},
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    const normalizedToken = normalizeTokenValue(token);
+
+    if (!normalizedToken) {
+      throw new Error('Missing access token.');
+    }
+
+    if (!documentTypeId && documentTypeId !== 0) {
+      throw new Error('Document type id is required.');
+    }
+
+    const formData = new FormData();
+    formData.append('file', {
+      uri: file.uri,
+      name: file.name,
+      type: file.type,
+    } as any);
+
+    const response = await fetch(
+      `${baseUrl}${STARTUP_DOCUMENT_SAVE_PATH}/${documentTypeId}/save`,
+      {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${normalizedToken}`,
+        },
+        body: formData as any,
+      },
+    );
+    const raw = await response.text();
+    const data = raw ? safeJsonParse(raw) : null;
+    if (!response.ok) {
+      throw new Error(
+        getErrorMessage(data) ||
+          `Document save failed (${response.status}).`,
+      );
+    }
+    return data as ApiResponse;
+  },
+
+  async getStartupDocuments(token: string): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    const response = await fetch(`${baseUrl}${STARTUP_DOCUMENTS_LIST_PATH}`, {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+        ...getAuthHeader(token),
+      },
+    });
+
+    const raw = await response.text();
+    const data = raw ? safeJsonParse(raw) : null;
+
+    if (response.status === 404) {
+      return {data: []};
+    }
+
+    if (!response.ok) {
+      throw new Error(
+        getErrorMessage(data) ||
+          raw ||
+          `Startup documents request failed (${response.status}).`,
+      );
+    }
+
+    return (data || {data: []}) as ApiResponse;
+  },
+
+  async updatePitchType(
+    token: string,
+    pitchType: string,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      PITCH_TYPE_PATH,
+      {
+        method: 'PATCH',
+        headers: getAuthHeader(token),
+        body: JSON.stringify({pitchType}),
+      },
+      baseUrl,
+    );
+  },
+
+  async uploadPitchFile(
+    token: string,
+    file: {uri: string; name: string; type: string},
+    documentType: string = 'fundraising-pitch',
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    const normalizedToken = normalizeTokenValue(token);
+
+    if (!normalizedToken) {
+      throw new Error('Missing access token.');
+    }
+
+    const formData = new FormData();
+    formData.append('file', {
+      uri: file.uri,
+      name: file.name,
+      type: file.type,
+    } as any);
+    formData.append('documentType', documentType);
+
+    const response = await fetch(`${baseUrl}${PITCH_FILE_UPLOAD_PATH}`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${normalizedToken}`,
+      },
+      body: formData as any,
+    });
+    const raw = await response.text();
+    const data = raw ? safeJsonParse(raw) : null;
+    if (!response.ok) {
+      throw new Error(
+        getErrorMessage(data) ||
+          `Pitch file upload failed (${response.status}).`,
+      );
+    }
+    return data as ApiResponse;
+  },
+
+  async getPowerPitchVideo(token: string): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      POWER_PITCH_VIDEO_PATH,
+      {
+        method: 'GET',
+        headers: getAuthHeader(token),
+      },
+      baseUrl,
+    );
+  },
+
+  async uploadPitchVideo(
+    token: string,
+    file: {uri: string; name: string; type: string},
+    documentType: string = 'fundraising-pitch',
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    const normalizedToken = normalizeTokenValue(token);
+
+    if (!normalizedToken) {
+      throw new Error('Missing access token.');
+    }
+
+    const formData = new FormData();
+    formData.append('file', {
+      uri: file.uri,
+      name: file.name,
+      type: file.type,
+    } as any);
+    formData.append('documentType', documentType);
+
+    const response = await fetch(`${baseUrl}${PITCH_VIDEO_UPLOAD_PATH}`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${normalizedToken}`,
+      },
+      body: formData as any,
+    });
+    const raw = await response.text();
+    const data = raw ? safeJsonParse(raw) : null;
+    if (!response.ok) {
+      throw new Error(
+        getErrorMessage(data) ||
+          `Pitch video upload failed (${response.status}).`,
+      );
+    }
+    return data as ApiResponse;
+  },
+
+  async connectPowerPitch(token: string): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      POWER_PITCH_CONNECT_PATH,
+      {
+        method: 'POST',
+        headers: getAuthHeader(token),
+        body: JSON.stringify({}),
+      },
+      baseUrl,
+    );
+  },
+
+  async deleteStartupDocument(
+    token: string,
+    uuid: string,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      `${STARTUP_DOCUMENT_SAVE_PATH}/${uuid}`,
+      {
+        method: 'DELETE',
+        headers: getAuthHeader(token),
+      },
+      baseUrl,
+    );
+  },
+
+  async editStartupDocument(
+    token: string,
+    uuid: string,
+    file: {uri: string; name: string; type: string},
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    const normalizedToken = normalizeTokenValue(token);
+
+    if (!normalizedToken) {
+      throw new Error('Missing access token.');
+    }
+
+    if (!uuid) {
+      throw new Error('Document uuid is required.');
+    }
+
+    const formData = new FormData();
+    formData.append('file', {
+      uri: file.uri,
+      name: file.name,
+      type: file.type,
+    } as any);
+
+    const response = await fetch(
+      `${baseUrl}${STARTUP_DOCUMENT_SAVE_PATH}/${uuid}`,
+      {
+        method: 'PATCH',
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${normalizedToken}`,
+        },
+        body: formData as any,
+      },
+    );
+    const raw = await response.text();
+    const data = raw ? safeJsonParse(raw) : null;
+    if (!response.ok) {
+      throw new Error(
+        getErrorMessage(data) ||
+          `Document update failed (${response.status}).`,
+      );
+    }
+    return data as ApiResponse;
+  },
+
+  async updateSupportingDocument(
+    token: string,
+    uuid: string,
+    file: {uri: string; name: string; type: string},
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    const normalizedToken = normalizeTokenValue(token);
+
+    if (!normalizedToken) {
+      throw new Error('Missing access token.');
+    }
+
+    const formData = new FormData();
+    formData.append('file', {
+      uri: file.uri,
+      name: file.name,
+      type: file.type,
+    } as any);
+
+    const response = await fetch(
+      `${baseUrl}${SUPPORTING_DOCUMENTS_PATH}/${uuid}`,
+      {
+        method: 'PATCH',
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${normalizedToken}`,
+        },
+        body: formData as any,
+      },
+    );
+    const raw = await response.text();
+    const data = raw ? safeJsonParse(raw) : null;
+    if (!response.ok) {
+      throw new Error(
+        getErrorMessage(data) ||
+          `Supporting document update failed (${response.status}).`,
+      );
+    }
+    return data as ApiResponse;
+  },
+
+  async deleteSupportingDocument(
+    token: string,
+    uuid: string,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      `${SUPPORTING_DOCUMENTS_PATH}/${uuid}`,
+      {
+        method: 'DELETE',
+        headers: getAuthHeader(token),
       },
       baseUrl,
     );

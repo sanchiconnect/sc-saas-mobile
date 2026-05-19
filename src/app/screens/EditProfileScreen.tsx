@@ -16,8 +16,15 @@ import {colors} from '../../shared/theme/colors';
 import {TenantContext} from '../../context/TenantProvider';
 import {authService} from '../../auth/services/auth.service';
 import {BasicInfoForm} from './editProfile/BasicInfoForm';
+import {Documents} from './editProfile/Documents';
 import {FinancialsForm} from './editProfile/FinancialsForm';
 import {Picker} from './editProfile/Picker';
+import {YourPitchDeck} from './editProfile/YourPitchDeck';
+import {
+  buildBaseTabs,
+  detectInvestorSubtype,
+  InvestorSubtype,
+} from './editProfile/tabConfig';
 import {
   COMPANY_SIZES,
   COUNTRIES,
@@ -46,6 +53,7 @@ import type {EditProfileTab} from '../types';
 type EditProfileScreenProps = {
   token: string;
   onBack: () => void;
+  onPreview?: () => void;
 };
 
 type PickerKind =
@@ -88,28 +96,47 @@ type StartupFormDefinition = {
   programs?: Array<{id?: number}> | null;
 };
 
-const BASE_TABS: EditProfileTab[] = [
-  {key: 'basic', label: 'Basic Information', status: 'incomplete'},
-  {key: 'industry', label: 'Industry / Technology', status: 'incomplete'},
-  {key: 'financials', label: 'Financials', status: 'incomplete'},
-  {key: 'pitch', label: 'Pitch Deck', status: 'incomplete'},
-];
+type CompletionFlags = {
+  basic: boolean;
+  industry: boolean;
+  financials: boolean;
+  pitch: boolean;
+};
+
+const tabCompletion = (
+  key: string,
+  flags: CompletionFlags,
+): 'complete' | 'incomplete' => {
+  switch (key) {
+    case 'basic':
+      return flags.basic ? 'complete' : 'incomplete';
+    case 'industry':
+      return flags.industry ? 'complete' : 'incomplete';
+    case 'financials':
+      return flags.financials ? 'complete' : 'incomplete';
+    case 'pitch':
+      return flags.pitch ? 'complete' : 'incomplete';
+    default:
+      return 'incomplete';
+  }
+};
 
 const calculateProfileCompletion = (basicInfo: BasicInfoFormType) => {
+  const safeSocial = basicInfo.social || EMPTY_BASIC_INFO.social;
   const checks = [
     Boolean(basicInfo.logoUrl),
-    Boolean(basicInfo.companyName.trim()),
+    Boolean((basicInfo.companyName || '').trim()),
     Boolean(basicInfo.companySize),
     basicInfo.isIncorporated !== null,
     Boolean(basicInfo.country),
     Boolean(basicInfo.state),
     Boolean(basicInfo.city),
-    Boolean(basicInfo.elevatorPitch.trim()),
-    Boolean(basicInfo.companyBrief.trim()),
+    Boolean((basicInfo.elevatorPitch || '').trim()),
+    Boolean((basicInfo.companyBrief || '').trim()),
     Boolean(basicInfo.productStage),
-    basicInfo.businessModels.length > 0,
-    basicInfo.leadership.length > 0,
-    Object.values(basicInfo.social).some(link => link.trim().length > 0),
+    (basicInfo.businessModels || []).length > 0,
+    (basicInfo.leadership || []).length > 0,
+    Object.values(safeSocial).some(link => String(link || '').trim().length > 0),
   ];
 
   const completed = checks.filter(Boolean).length;
@@ -118,13 +145,64 @@ const calculateProfileCompletion = (basicInfo: BasicInfoFormType) => {
 
 const ensureBasicInfoDefaults = (
   basicInfo: BasicInfoFormType,
-): BasicInfoFormType => ({
-  ...basicInfo,
-  leadership:
-    basicInfo.leadership.length > 0
-      ? basicInfo.leadership
-      : [{...EMPTY_LEADERSHIP, id: `${Date.now()}_leadership`}],
-});
+): BasicInfoFormType => {
+  const safeLeadership = Array.isArray(basicInfo?.leadership)
+    ? basicInfo.leadership
+        .filter(Boolean)
+        .map(member => ({
+          ...EMPTY_LEADERSHIP,
+          ...member,
+          id: member?.id || `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          name: String(member?.name || ''),
+          linkedinUrl: String(member?.linkedinUrl || ''),
+          role: String(member?.role || ''),
+          designation: String(member?.designation || ''),
+        }))
+    : [];
+
+  return {
+    ...EMPTY_BASIC_INFO,
+    ...basicInfo,
+    companyName: String(basicInfo?.companyName || ''),
+    companySize: String(basicInfo?.companySize || ''),
+    incorporationYear: String(basicInfo?.incorporationYear || ''),
+    country: String(basicInfo?.country || ''),
+    state: String(basicInfo?.state || ''),
+    city: String(basicInfo?.city || ''),
+    elevatorPitch: String(basicInfo?.elevatorPitch || ''),
+    companyBrief: String(basicInfo?.companyBrief || ''),
+    productStage: String(basicInfo?.productStage || ''),
+    logoUrl: basicInfo?.logoUrl || null,
+    servicesLookingFor: Array.isArray(basicInfo?.servicesLookingFor)
+      ? basicInfo.servicesLookingFor
+      : [],
+    businessModels: Array.isArray(basicInfo?.businessModels)
+      ? basicInfo.businessModels
+      : [],
+    leadership:
+      safeLeadership.length > 0
+        ? safeLeadership
+        : [{...EMPTY_LEADERSHIP, id: `${Date.now()}_leadership`}],
+    advisory: Array.isArray(basicInfo?.advisory)
+      ? basicInfo.advisory.filter(Boolean).map(member => ({
+          id:
+            member?.id || `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          name: String(member?.name || ''),
+          linkedinUrl: String(member?.linkedinUrl || ''),
+        }))
+      : [],
+    social: {
+      ...EMPTY_BASIC_INFO.social,
+      ...(basicInfo?.social || {}),
+      website: String(basicInfo?.social?.website || ''),
+      linkedin: String(basicInfo?.social?.linkedin || ''),
+      twitter: String(basicInfo?.social?.twitter || ''),
+      youtube: String(basicInfo?.social?.youtube || ''),
+      facebook: String(basicInfo?.social?.facebook || ''),
+      instagram: String(basicInfo?.social?.instagram || ''),
+    },
+  };
+};
 
 const COUNTRIES_API =
   'https://api.thub.sanchidev.in/api/v1/public/global/countries';
@@ -158,45 +236,36 @@ const buildEditTabs = (
   basicInfo: BasicInfoFormType,
   startupInfo: Record<string, any> | null,
   forms: StartupFormDefinition[],
+  accountType: string,
+  investorSubtype: InvestorSubtype,
 ): EditProfileTab[] => {
-  const isBasicComplete =
-    Boolean(basicInfo.companyName) &&
-    Boolean(basicInfo.companySize) &&
-    Boolean(basicInfo.country) &&
-    Boolean(basicInfo.productStage) &&
-    basicInfo.isIncorporated !== null;
+  const flags: CompletionFlags = {
+    basic:
+      Boolean(basicInfo.companyName) &&
+      Boolean(basicInfo.companySize) &&
+      Boolean(basicInfo.country) &&
+      Boolean(basicInfo.productStage) &&
+      basicInfo.isIncorporated !== null,
+    industry:
+      Array.isArray(startupInfo?.startupIndustries) &&
+      startupInfo.startupIndustries.length > 0 &&
+      Array.isArray(startupInfo?.startupTechnologies) &&
+      startupInfo.startupTechnologies.length > 0,
+    financials: Boolean(
+      startupInfo?.financials?.fundingStageId ||
+        startupInfo?.financials?.targetFundraise ||
+        startupInfo?.financials?.tentativeValuation,
+    ),
+    pitch: Boolean(
+      startupInfo?.pitchDeck?.elevatorPitch ||
+        startupInfo?.pitchDeck?.pitchDocument,
+    ),
+  };
 
-  const isIndustryComplete =
-    Array.isArray(startupInfo?.startupIndustries) &&
-    startupInfo.startupIndustries.length > 0 &&
-    Array.isArray(startupInfo?.startupTechnologies) &&
-    startupInfo.startupTechnologies.length > 0;
-
-  const isFinancialsComplete = Boolean(
-    startupInfo?.financials?.fundingStageId ||
-      startupInfo?.financials?.targetFundraise ||
-      startupInfo?.financials?.tentativeValuation,
-  );
-
-  const isPitchComplete = Boolean(
-    startupInfo?.pitchDeck?.elevatorPitch || startupInfo?.pitchDeck?.pitchDocument,
-  );
-
-  const baseTabs: EditProfileTab[] = BASE_TABS.map(tab => {
-    if (tab.key === 'basic') {
-      return {...tab, status: isBasicComplete ? 'complete' : 'incomplete'};
-    }
-    if (tab.key === 'industry') {
-      return {...tab, status: isIndustryComplete ? 'complete' : 'incomplete'};
-    }
-    if (tab.key === 'financials') {
-      return {...tab, status: isFinancialsComplete ? 'complete' : 'incomplete'};
-    }
-    if (tab.key === 'pitch') {
-      return {...tab, status: isPitchComplete ? 'complete' : 'incomplete'};
-    }
-    return tab;
-  });
+  const baseTabs: EditProfileTab[] = buildBaseTabs(
+    accountType,
+    investorSubtype,
+  ).map(tab => ({...tab, status: tabCompletion(tab.key, flags)}));
 
   const customTabs = forms
     .filter(form => form?.status && form?.useFormAs === 'form' && form?.programs === null)
@@ -211,13 +280,19 @@ const buildEditTabs = (
   return [...baseTabs, ...customTabs];
 };
 
-export function EditProfileScreen({token, onBack}: EditProfileScreenProps) {
+export function EditProfileScreen({
+  token,
+  onBack,
+  onPreview,
+}: EditProfileScreenProps) {
   const {theme, globalSetting} = useContext(TenantContext);
   const primaryColor = theme?.primary || colors.primary;
   const logoBaseUrl =
     globalSetting?.imgKitUrl || globalSetting?.assetsImgKitUrl;
 
-  const [activeTab, setActiveTab] = useState(BASE_TABS[0].key);
+  const [activeTab, setActiveTab] = useState<string>('basic');
+  const [investorSubtype, setInvestorSubtype] =
+    useState<InvestorSubtype>('organization');
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -244,6 +319,7 @@ export function EditProfileScreen({token, onBack}: EditProfileScreenProps) {
   const [selectedPrimaryIndustryId, setSelectedPrimaryIndustryId] = useState<number | null>(null);
   const [startupInfo, setStartupInfo] = useState<Record<string, any> | null>(null);
   const [startupForms, setStartupForms] = useState<StartupFormDefinition[]>([]);
+  const [accountType, setAccountType] = useState<string | null>(null);
   const [basicInfo, setBasicInfo] =
     useState<BasicInfoFormType>(EMPTY_BASIC_INFO);
   const [financialInfo, setFinancialInfo] =
@@ -253,7 +329,10 @@ export function EditProfileScreen({token, onBack}: EditProfileScreenProps) {
     setIsLoading(true);
     setLoadError(null);
     try {
-      const raw = await authService.getStartupInformation(token);
+      const raw = await authService.getStartupInformation(
+        token,
+        accountType || undefined,
+      );
       const extracted = extractProfile(raw, logoBaseUrl);
       const root = raw?.data || raw || null;
       setStartupInfo(root);
@@ -321,11 +400,36 @@ export function EditProfileScreen({token, onBack}: EditProfileScreenProps) {
 
   useEffect(() => {
     let cancelled = false;
+    authService
+      .getProfile(token)
+      .then(raw => {
+        if (cancelled) return;
+        const type = String(raw?.data?.accountType || '').toLowerCase();
+        setAccountType(type || 'startup');
+        setInvestorSubtype(detectInvestorSubtype(raw?.data));
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAccountType('startup');
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!accountType) {
+      return;
+    }
 
     Promise.all([
       authService.getFundingStages(),
       authService.getInvestmentMechanisms(),
-      authService.getOngoingCommitments(token).catch(() => ({data: []})),
+      authService
+        .getOngoingCommitments(token, accountType)
+        .catch(() => ({data: []})),
     ])
       .then(([fundingStagesResponse, mechanismsResponse, commitmentsResponse]) => {
         if (cancelled) {
@@ -363,7 +467,7 @@ export function EditProfileScreen({token, onBack}: EditProfileScreenProps) {
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [token, accountType]);
 
   useEffect(() => {
     let cancelled = false;
@@ -404,9 +508,12 @@ export function EditProfileScreen({token, onBack}: EditProfileScreenProps) {
 
   useEffect(() => {
     let cancelled = false;
+    if (!accountType) {
+      return;
+    }
 
     authService
-      .getStartupFormList(token)
+      .getStartupFormList(token, accountType)
       .then(raw => {
         if (cancelled) return;
         const forms = Array.isArray(raw?.data)
@@ -425,14 +532,17 @@ export function EditProfileScreen({token, onBack}: EditProfileScreenProps) {
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [token, accountType]);
 
   useEffect(() => {
     let cancelled = false;
+    if (!accountType) {
+      return;
+    }
     setIsLoading(true);
     setLoadError(null);
     authService
-      .getStartupInformation(token)
+      .getStartupInformation(token, accountType)
       .then(raw => {
         if (cancelled) return;
         const extracted = extractProfile(raw, logoBaseUrl);
@@ -472,7 +582,7 @@ export function EditProfileScreen({token, onBack}: EditProfileScreenProps) {
     return () => {
       cancelled = true;
     };
-  }, [token, logoBaseUrl]);
+  }, [token, logoBaseUrl, accountType]);
 
   useEffect(() => {
     const countryId = getCountryIdByName(basicInfo.country, countryOptions);
@@ -544,6 +654,8 @@ export function EditProfileScreen({token, onBack}: EditProfileScreenProps) {
       startupTechnologies: selectedTechnologyIds,
     },
     startupForms,
+    accountType || 'startup',
+    investorSubtype,
   );
 
   useEffect(() => {
@@ -1118,6 +1230,20 @@ export function EditProfileScreen({token, onBack}: EditProfileScreenProps) {
             ongoingCommitments={ongoingCommitments}
             onChange={updateFinancial}
           />
+        ) : activeTab === 'pitch' ? (
+          <View>
+            <YourPitchDeck
+              primaryColor={primaryColor}
+              pitchDeck={startupInfo?.pitchDeck}
+              token={token}
+              onUploaded={() => loadProfile()}
+            />
+            <Documents
+              token={token}
+              primaryColor={primaryColor}
+              onUploaded={() => loadProfile()}
+            />
+          </View>
         ) : (
           <View style={styles.placeholder}>
             <Icon name="hammer-wrench" size={32} color="#94a3b8" />
@@ -1144,29 +1270,38 @@ export function EditProfileScreen({token, onBack}: EditProfileScreenProps) {
       {renderPicker()}
 
       <View style={styles.footer}>
-        <View style={styles.footerSlot}>
-          <AppButton
-            label={isSaving ? 'Saving…' : 'SAVE'}
-            disabled={
-              isSaving ||
-              (activeTab !== 'basic' &&
-                activeTab !== 'industry' &&
-                activeTab !== 'financials')
-            }
-            loading={isSaving}
-            onPress={handleSave}
-          />
-        </View>
-        <View style={styles.footerSlot}>
-          <AppButton
-            label="NEXT STEP"
-            variant="secondary"
-            onPress={handleNext}
-            disabled={
-              tabs.findIndex(tab => tab.key === activeTab) === tabs.length - 1
-            }
-          />
-        </View>
+        {tabs.findIndex(tab => tab.key === activeTab) === tabs.length - 1 ? (
+          <View style={styles.footerSlot}>
+            <AppButton
+              label="PREVIEW"
+              onPress={() => onPreview?.()}
+              disabled={!onPreview}
+            />
+          </View>
+        ) : (
+          <>
+            <View style={styles.footerSlot}>
+              <AppButton
+                label={isSaving ? 'Saving…' : 'SAVE'}
+                disabled={
+                  isSaving ||
+                  (activeTab !== 'basic' &&
+                    activeTab !== 'industry' &&
+                    activeTab !== 'financials')
+                }
+                loading={isSaving}
+                onPress={handleSave}
+              />
+            </View>
+            <View style={styles.footerSlot}>
+              <AppButton
+                label="NEXT STEP"
+                variant="secondary"
+                onPress={handleNext}
+              />
+            </View>
+          </>
+        )}
       </View>
     </View>
   );
