@@ -1,6 +1,9 @@
-import React, {useContext, useEffect, useMemo, useState} from 'react';
+import React, {useContext, useEffect, useMemo, useRef, useState} from 'react';
 import {
   Image,
+  KeyboardAvoidingView,
+  Linking,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -12,6 +15,14 @@ import {TenantContext} from '../../../core/tenant/TenantProvider';
 import {AppButton} from '../../../core/components/AppButton';
 import {AppCard} from '../../../core/components/AppCard';
 import {AppTextField} from '../../../core/components/AppTextField';
+import {Icon} from '../../../core/components/Icon';
+import {useToast} from '../../../core/toast/ToastProvider';
+import {
+  radii,
+  spacing,
+  typography,
+  withAlpha,
+} from '../../../core/theme/colors';
 import {SignupDraft} from '../models/auth.models';
 import {authService} from '../services/auth.service';
 
@@ -36,7 +47,10 @@ const isValidEmail = (value: string) =>
   /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 
 const isValidWebsite = (value: string) =>
-  !value.trim() || /^(https?:\/\/)?([\da-z.-]+)\.([a-z.]{2,})([/\w .-]*)*\/?$/.test(value.trim());
+  !value.trim() ||
+  /^(https?:\/\/)?([\da-z.-]+)\.([a-z.]{2,})([/\w .-]*)*\/?$/.test(
+    value.trim(),
+  );
 
 export function SignupScreen({
   role,
@@ -48,6 +62,9 @@ export function SignupScreen({
   messageTone = 'neutral',
 }: SignupScreenProps) {
   const {theme, globalSetting} = useContext(TenantContext);
+  const toast = useToast();
+  const accent = theme?.primary || '#0f172a';
+  const tint = withAlpha(accent, 0.08);
   const [submitted, setSubmitted] = useState(false);
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [mobileAvailabilityError, setMobileAvailabilityError] = useState('');
@@ -105,6 +122,16 @@ export function SignupScreen({
       clearTimeout(timer);
     };
   }, [form.mobile, investorType, role]);
+
+  // Surface backend messages via Toast (matches Login/OTP pattern).
+  const lastShownMessage = useRef<string | null>(null);
+  useEffect(() => {
+    if (!message || message === lastShownMessage.current) return;
+    lastShownMessage.current = message;
+    if (messageTone === 'success') toast.success(message);
+    else if (messageTone === 'error') toast.error(message);
+    else toast.info(message);
+  }, [message, messageTone, toast]);
 
   const logoBaseUrl = globalSetting?.imgKitUrl || globalSetting?.assetsImgKitUrl;
   const logoPath = globalSetting?.logo;
@@ -189,7 +216,10 @@ export function SignupScreen({
 
   const canSubmit = Object.keys(errors).length === 0;
 
-  const updateField = <K extends keyof SignupDraft>(key: K, value: SignupDraft[K]) => {
+  const updateField = <K extends keyof SignupDraft>(
+    key: K,
+    value: SignupDraft[K],
+  ) => {
     setForm(current => ({
       ...current,
       [key]: value,
@@ -216,29 +246,60 @@ export function SignupScreen({
     onContinue(form);
   };
 
+  // Light wrapper around Linking.openURL — no-ops if the URL isn't set.
+  const openExternal = (target?: string) => {
+    if (!target) return;
+    Linking.openURL(target).catch(() => {});
+  };
+
   return (
-    <View style={styles.page}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      style={styles.page}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}>
         <AppCard>
           <View style={styles.card}>
-            {logoUri ? <Image source={{uri: logoUri}} style={styles.logo} /> : null}
+            {logoUri ? (
+              <Image source={{uri: logoUri}} style={styles.logo} />
+            ) : globalSetting?.brandName ? (
+              <Text style={[styles.brandFallback, {color: accent}]}>
+                {globalSetting.brandName}
+              </Text>
+            ) : null}
 
-            <Pressable onPress={onLogin}>
-              <Text style={styles.backLink}>
-                {'<-'} Already have an account? <Text style={styles.linkStrong}>Login</Text>
+            <Pressable
+              onPress={onLogin}
+              style={styles.backLinkWrap}
+              hitSlop={10}
+              accessibilityLabel="Back to login">
+              <Icon name="arrow-left" size={18} color="#475569" />
+              <Text style={styles.backText}>
+                Have an account?{' '}
+                <Text style={[styles.loginLink, {color: accent}]}>Log in</Text>
               </Text>
             </Pressable>
 
-            <Text style={styles.title}>Create Profile</Text>
-            <Text style={styles.subtitle}>
-              Signup as {roleLabel}
-              {investorType ? ` (${formatRoleLabel(investorType)})` : ''}
-            </Text>
+            <View style={styles.headerWrap}>
+              <View style={[styles.stepBadge, {backgroundColor: tint}]}>
+                <Text style={[styles.stepText, {color: accent}]}>
+                  STEP 2 OF 2
+                </Text>
+              </View>
+              <Text style={styles.title}>Create your profile</Text>
+              <Text style={styles.subtitle}>
+                Signing up as {roleLabel}
+                {investorType ? ` (${formatRoleLabel(investorType)})` : ''}
+              </Text>
+            </View>
 
             {requiresOrganizationName ? (
               <AppTextField
                 label="Organization Name"
-                placeholder="Enter organization name"
+                required
+                placeholder="e.g. Acme Ventures"
                 value={form.organizationName || ''}
                 onChangeText={value => updateField('organizationName', value)}
                 onBlur={() => markTouched('organizationName')}
@@ -249,11 +310,12 @@ export function SignupScreen({
             {requiresWebsite ? (
               <AppTextField
                 label="Website"
-                placeholder="Enter website"
+                required
+                placeholder="https://acme.vc"
                 value={form.website || ''}
                 onChangeText={value => updateField('website', value)}
                 autoCapitalize="none"
-                keyboardType="default"
+                keyboardType="url"
                 onBlur={() => markTouched('website')}
                 error={getFieldError('website')}
               />
@@ -262,7 +324,8 @@ export function SignupScreen({
             {requiresCompanyName ? (
               <AppTextField
                 label="Company Name"
-                placeholder="Enter company name"
+                required
+                placeholder="e.g. Acme Inc."
                 value={form.companyName}
                 onChangeText={value => updateField('companyName', value)}
                 onBlur={() => markTouched('companyName')}
@@ -273,7 +336,8 @@ export function SignupScreen({
             {requiresDesignation ? (
               <AppTextField
                 label="Designation"
-                placeholder="Enter designation"
+                required
+                placeholder="e.g. Innovation Lead"
                 value={form.designation || ''}
                 onChangeText={value => updateField('designation', value)}
                 onBlur={() => markTouched('designation')}
@@ -283,7 +347,8 @@ export function SignupScreen({
 
             <AppTextField
               label="Your Name"
-              placeholder="Enter your name"
+              required
+              placeholder="Jane Doe"
               value={form.fullName}
               onChangeText={value => updateField('fullName', value)}
               onBlur={() => markTouched('fullName')}
@@ -292,7 +357,8 @@ export function SignupScreen({
 
             <AppTextField
               label="Email Address"
-              placeholder="Enter email address"
+              required
+              placeholder="you@example.com"
               value={form.email}
               onChangeText={value => updateField('email', value)}
               autoCapitalize="none"
@@ -303,12 +369,13 @@ export function SignupScreen({
 
             <AppTextField
               label="Mobile Number"
-              placeholder="Enter mobile number"
+              required
+              placeholder="10-digit mobile number"
               value={form.mobile}
               onChangeText={value =>
                 updateField('mobile', value.replace(/[^0-9+]/g, ''))
               }
-              keyboardType="default"
+              keyboardType="number-pad"
               onBlur={() => markTouched('mobile')}
               error={getFieldError('mobile')}
             />
@@ -324,33 +391,39 @@ export function SignupScreen({
               <View
                 style={[
                   styles.checkbox,
-                  form.acceptedTerms
-                    ? {backgroundColor: theme?.primary || '#a16207'}
-                    : null,
+                  form.acceptedTerms && {
+                    backgroundColor: accent,
+                    borderColor: accent,
+                  },
                 ]}>
-                {form.acceptedTerms ? <Text style={styles.checkboxTick}>✓</Text> : null}
+                {form.acceptedTerms ? (
+                  <Icon name="check" size={14} color="#ffffff" />
+                ) : null}
               </View>
               <Text style={styles.termsText}>
-                By checking, you accept the terms and conditions and privacy
-                policy.
+                I agree to the{' '}
+                <Text
+                  style={[styles.termsLink, {color: accent}]}
+                  onPress={() =>
+                    openExternal(globalSetting?.features?.terms_url)
+                  }>
+                  Terms of Service
+                </Text>{' '}
+                and{' '}
+                <Text
+                  style={[styles.termsLink, {color: accent}]}
+                  onPress={() =>
+                    openExternal(globalSetting?.features?.privacy_url)
+                  }>
+                  Privacy Policy
+                </Text>
+                .
               </Text>
             </Pressable>
 
             {getFieldError('acceptedTerms') ? (
-              <Text style={styles.errorText}>{getFieldError('acceptedTerms')}</Text>
-            ) : null}
-
-            {message ? (
-              <Text
-                style={[
-                  styles.message,
-                  messageTone === 'error'
-                    ? styles.errorMessage
-                    : messageTone === 'success'
-                    ? styles.successMessage
-                    : styles.neutralMessage,
-                ]}>
-                {message}
+              <Text style={styles.errorText}>
+                {getFieldError('acceptedTerms')}
               </Text>
             ) : null}
 
@@ -361,16 +434,22 @@ export function SignupScreen({
               onPress={handleSubmit}
             />
 
-            <AppButton
-              label="Back to Login"
-              disabled={isSubmitting}
+            <Pressable
               onPress={onLogin}
-              variant="secondary"
-            />
+              disabled={isSubmitting}
+              style={styles.secondaryWrap}
+              hitSlop={10}>
+              <Text style={styles.secondaryPrefix}>
+                Already registered?{' '}
+                <Text style={[styles.secondaryLink, {color: accent}]}>
+                  Log in
+                </Text>
+              </Text>
+            </Pressable>
           </View>
         </AppCard>
       </ScrollView>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -382,78 +461,103 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     justifyContent: 'center',
-    padding: 24,
+    padding: spacing.xxl,
   },
   card: {
-    gap: 14,
+    gap: spacing.md,
   },
   logo: {
     alignSelf: 'center',
-    width: 132,
-    height: 56,
+    width: 140,
+    height: 60,
     resizeMode: 'contain',
-    marginBottom: 10,
+    marginBottom: spacing.xs,
   },
-  backLink: {
-    fontSize: 14,
-    color: '#334155',
+  brandFallback: {
+    alignSelf: 'center',
+    fontSize: typography.titleLg,
+    fontWeight: '800',
+    marginBottom: spacing.xs,
   },
-  linkStrong: {
-    color: '#0f172a',
+  backLinkWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  backText: {
+    fontSize: typography.body,
+    color: '#475569',
+  },
+  loginLink: {
     fontWeight: '700',
+  },
+  headerWrap: {
+    gap: spacing.xs,
+    marginTop: spacing.xs,
+    marginBottom: spacing.sm,
+  },
+  stepBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: spacing.md,
+    paddingVertical: 4,
+    borderRadius: radii.pill,
+  },
+  stepText: {
+    fontSize: typography.caption,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
   title: {
-    color: '#000',
-    fontSize: 28,
+    color: '#0f172a',
+    fontSize: typography.heading,
     fontWeight: '700',
-    marginTop: 8,
+    marginTop: spacing.xs,
   },
   subtitle: {
-    color: '#475569',
-    fontSize: 15,
-    lineHeight: 22,
-    marginBottom: 8,
+    color: '#64748b',
+    fontSize: typography.body,
+    lineHeight: 20,
   },
   termsRow: {
     flexDirection: 'row',
-    gap: 12,
+    gap: spacing.md,
     alignItems: 'flex-start',
+    marginTop: spacing.xs,
   },
   checkbox: {
     width: 22,
     height: 22,
     borderRadius: 6,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: '#cbd5e1',
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 2,
   },
-  checkboxTick: {
-    color: '#fff',
-    fontWeight: '700',
-  },
   termsText: {
     flex: 1,
     color: '#334155',
-    fontSize: 14,
+    fontSize: typography.body,
     lineHeight: 20,
   },
-  message: {
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  neutralMessage: {
-    color: '#334155',
-  },
-  successMessage: {
-    color: '#15803d',
-  },
-  errorMessage: {
-    color: '#dc2626',
+  termsLink: {
+    fontWeight: '700',
+    textDecorationLine: 'underline',
   },
   errorText: {
     color: '#dc2626',
-    fontSize: 12,
+    fontSize: typography.small,
+  },
+  secondaryWrap: {
+    alignSelf: 'center',
+    paddingVertical: spacing.sm,
+  },
+  secondaryPrefix: {
+    color: '#64748b',
+    fontSize: typography.body,
+  },
+  secondaryLink: {
+    fontWeight: '700',
+    fontSize: typography.body,
   },
 });
