@@ -113,19 +113,52 @@ export function InvestorInvestmentsTab({
     text: string;
     tone: 'success' | 'error';
   } | null>(null);
+  // Inline field-level errors. Mirrors the useFormValidation pattern but
+  // kept lightweight here since the shape includes multi-selects we don't
+  // currently route through the hook.
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
+  const [submitted, setSubmitted] = useState(false);
+  const markTouched = (key: string) =>
+    setTouched(prev => ({...prev, [key]: true}));
+
+  // Per-field validators (raw — visibility gating applied below).
+  const rawErrors: Record<string, string | undefined> = {
+    ticketSizeMin: !form.ticketSizeMin.trim()
+      ? 'Minimum ticket size is required.'
+      : !/^\d+$/.test(form.ticketSizeMin.trim())
+      ? 'Enter digits only.'
+      : undefined,
+    ticketSizeMax: !form.ticketSizeMax.trim()
+      ? 'Maximum ticket size is required.'
+      : !/^\d+$/.test(form.ticketSizeMax.trim())
+      ? 'Enter digits only.'
+      : Number(form.ticketSizeMax) < Number(form.ticketSizeMin)
+      ? 'Must be greater than the minimum.'
+      : undefined,
+    turnAroundTime: !form.turnAroundTime.trim()
+      ? 'Turnaround time is required.'
+      : !/^\d+$/.test(form.turnAroundTime.trim())
+      ? 'Enter digits only.'
+      : undefined,
+  };
+  const errors: Record<string, string | undefined> = {};
+  Object.entries(rawErrors).forEach(([k, v]) => {
+    if (v && (submitted || touched[k])) errors[k] = v;
+  });
+  const hasErrors = Object.values(rawErrors).some(Boolean);
 
   useEffect(() => {
     setForm(seedForm(initialData));
+    setTouched({});
+    setSubmitted(false);
   }, [initialData]);
 
   const onSave = async () => {
     setMessage(null);
-
-    const min = Number(form.ticketSizeMin || 0);
-    const max = Number(form.ticketSizeMax || 0);
-    if (form.ticketSizeMin && form.ticketSizeMax && max < min) {
+    setSubmitted(true);
+    if (hasErrors) {
       setMessage({
-        text: 'Maximum ticket size must be greater than minimum.',
+        text: 'Please complete the highlighted fields.',
         tone: 'error',
       });
       return;
@@ -171,26 +204,35 @@ export function InvestorInvestmentsTab({
         <View style={{flex: 1}}>
           <AppTextField
             label="Ticket Size — Min"
+            required
+            error={errors.ticketSizeMin}
             keyboardType="number-pad"
             value={form.ticketSizeMin}
             onChangeText={t => setForm(p => ({...p, ticketSizeMin: t}))}
+            onBlur={() => markTouched('ticketSizeMin')}
           />
         </View>
         <View style={{flex: 1}}>
           <AppTextField
             label="Ticket Size — Max"
+            required
+            error={errors.ticketSizeMax}
             keyboardType="number-pad"
             value={form.ticketSizeMax}
             onChangeText={t => setForm(p => ({...p, ticketSizeMax: t}))}
+            onBlur={() => markTouched('ticketSizeMax')}
           />
         </View>
       </View>
 
       <AppTextField
         label="Turnaround Time (days)"
+        required
+        error={errors.turnAroundTime}
         keyboardType="number-pad"
         value={form.turnAroundTime}
         onChangeText={t => setForm(p => ({...p, turnAroundTime: t}))}
+        onBlur={() => markTouched('turnAroundTime')}
       />
 
       {industryOptions.length > 0 ? (

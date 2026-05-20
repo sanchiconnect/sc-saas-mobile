@@ -1,8 +1,9 @@
-import React from 'react';
+import React, {useState} from 'react';
 import {Image, Pressable, StyleSheet, Text, View} from 'react-native';
 
 import {AppTextField} from '../../../../core/components/AppTextField';
 import {Icon} from '../../../../core/components/Icon';
+import {url as urlValidator} from '../../../../core/form/validators';
 import {colors} from '../../../../core/theme/colors';
 import {
   BUSINESS_MODELS,
@@ -46,6 +47,16 @@ export function BasicInfoForm({
   onOpenLeadershipRole,
   onChange,
 }: Props) {
+  // Local "touched" set tracks which social URL fields the user has blurred
+  // at least once. Error UI only renders once the field is touched (matches
+  // the auth-flow pattern from useFormValidation, but kept local here since
+  // this component's data flow stays controlled by the parent).
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
+  const markTouched = (key: string) =>
+    setTouched(prev => ({...prev, [key]: true}));
+  const urlError = (key: string, val: string): string | undefined =>
+    touched[key] ? urlValidator(val) : undefined;
+
   const updateLeadership = (index: number, patch: Partial<TeamMember>) => {
     const next = value.leadership.map((member, idx) =>
       idx === index ? {...member, ...patch} : member,
@@ -394,9 +405,11 @@ export function BasicInfoForm({
         <View style={styles.field}>
           <AppTextField
             label="Website"
-            placeholder="Enter website URL"
+            placeholder="https://example.com"
             value={value.social.website}
             onChangeText={text => updateSocial('website', text)}
+            onBlur={() => markTouched('website')}
+            error={urlError('website', value.social.website)}
             autoCapitalize="none"
             keyboardType="url"
           />
@@ -404,9 +417,11 @@ export function BasicInfoForm({
         <View style={styles.field}>
           <AppTextField
             label="LinkedIn"
-            placeholder="LinkedIn URL"
+            placeholder="https://linkedin.com/..."
             value={value.social.linkedin}
             onChangeText={text => updateSocial('linkedin', text)}
+            onBlur={() => markTouched('linkedin')}
+            error={urlError('linkedin', value.social.linkedin)}
             autoCapitalize="none"
             keyboardType="url"
           />
@@ -414,9 +429,11 @@ export function BasicInfoForm({
         <View style={styles.field}>
           <AppTextField
             label="X / Twitter"
-            placeholder="X / Twitter URL"
+            placeholder="https://x.com/..."
             value={value.social.twitter}
             onChangeText={text => updateSocial('twitter', text)}
+            onBlur={() => markTouched('twitter')}
+            error={urlError('twitter', value.social.twitter)}
             autoCapitalize="none"
             keyboardType="url"
           />
@@ -424,9 +441,11 @@ export function BasicInfoForm({
         <View style={styles.field}>
           <AppTextField
             label="YouTube"
-            placeholder="YouTube URL"
+            placeholder="https://youtube.com/..."
             value={value.social.youtube}
             onChangeText={text => updateSocial('youtube', text)}
+            onBlur={() => markTouched('youtube')}
+            error={urlError('youtube', value.social.youtube)}
             autoCapitalize="none"
             keyboardType="url"
           />
@@ -434,9 +453,11 @@ export function BasicInfoForm({
         <View style={styles.field}>
           <AppTextField
             label="Facebook"
-            placeholder="Facebook URL"
+            placeholder="https://facebook.com/..."
             value={value.social.facebook}
             onChangeText={text => updateSocial('facebook', text)}
+            onBlur={() => markTouched('facebook')}
+            error={urlError('facebook', value.social.facebook)}
             autoCapitalize="none"
             keyboardType="url"
           />
@@ -444,9 +465,11 @@ export function BasicInfoForm({
         <View style={styles.field}>
           <AppTextField
             label="Instagram"
-            placeholder="Instagram URL"
+            placeholder="https://instagram.com/..."
             value={value.social.instagram}
             onChangeText={text => updateSocial('instagram', text)}
+            onBlur={() => markTouched('instagram')}
+            error={urlError('instagram', value.social.instagram)}
             autoCapitalize="none"
             keyboardType="url"
           />
