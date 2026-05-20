@@ -48,34 +48,70 @@ export function DashboardContent({
   canToggleStatus,
 }: DashboardContentProps) {
   const progress = Math.max(0, Math.min(profileCompletion, 100));
-  // Progress-bar fill on the white track. Computed once per render.
-  const progressFillWidth = `${progress}%` as const;
+  // Two half-rotations make up the ring without an SVG dependency. The right
+  // half handles the first 50% of progress, the left half handles 50→100.
+  const rightRotation = Math.min(progress, 50) * 3.6;
+  const leftRotation = progress > 50 ? (progress - 50) * 3.6 : 0;
+  const showLeftHalf = progress > 50;
 
   return (
     <>
       <View style={[styles.heroPanel, {backgroundColor: primaryColor}]}>
-        <Text style={styles.greeting}>{getGreeting()},</Text>
-        <Text style={styles.heroName}>{userFirstName}</Text>
-
-        <View style={styles.profileRow}>
-          <View style={styles.progressTrack}>
-            <View
-              style={[
-                styles.progressFill,
-                {width: progressFillWidth, backgroundColor: '#ffffff'},
-              ]}
-            />
+        <View style={styles.heroTopRow}>
+          <View style={styles.heroCopy}>
+            <Text style={styles.greeting}>{getGreeting()}</Text>
+            <Text style={styles.heroName}>{userFirstName}</Text>
           </View>
-          <Pressable
-            onPress={onEditProfile}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel="Edit profile">
-            <Text style={styles.profileMeta}>
-              {progress}% complete{'  '}·{'  '}
-              <Text style={styles.editProfileLink}>Edit profile</Text>
-            </Text>
-          </Pressable>
+
+          <View style={styles.heroAside}>
+            <View style={styles.progressRingOuter}>
+              <View style={styles.progressRingTrack} />
+              {progress >= 100 ? (
+                <View
+                  style={[styles.progressRingFull, {borderColor: '#ffffff'}]}
+                />
+              ) : (
+                <>
+                  <View style={styles.progressHalfWrapperRight}>
+                    <View
+                      style={[
+                        styles.progressHalf,
+                        styles.progressHalfRight,
+                        {transform: [{rotate: `${rightRotation}deg`}]},
+                      ]}
+                    />
+                  </View>
+                  {showLeftHalf ? (
+                    <View style={styles.progressHalfWrapperLeft}>
+                      <View
+                        style={[
+                          styles.progressHalf,
+                          styles.progressHalfLeft,
+                          {transform: [{rotate: `${leftRotation}deg`}]},
+                        ]}
+                      />
+                    </View>
+                  ) : null}
+                </>
+              )}
+              <View style={styles.progressRingInner}>
+                <Text
+                  style={[styles.progressValue, {color: primaryColor}]}
+                  numberOfLines={1}>
+                  {progress}%
+                </Text>
+              </View>
+            </View>
+
+            <Pressable
+              style={styles.editProfileButton}
+              onPress={onEditProfile}
+              accessibilityRole="button"
+              accessibilityLabel="Edit profile">
+              <Icon name="pencil-outline" size={14} color="#ffffff" />
+              <Text style={styles.editProfileText}>Edit profile</Text>
+            </Pressable>
+          </View>
         </View>
 
         <View style={styles.searchRow}>
@@ -304,6 +340,17 @@ const styles = StyleSheet.create({
     paddingTop: spacing.xl,
     paddingBottom: spacing.xxl + spacing.md,
   },
+  heroTopRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: spacing.lg,
+    marginBottom: spacing.lg,
+  },
+  heroCopy: {
+    flex: 1,
+    paddingTop: spacing.xs,
+  },
   greeting: {
     color: 'rgba(255,255,255,0.78)',
     fontSize: typography.body,
@@ -313,34 +360,93 @@ const styles = StyleSheet.create({
     fontSize: 26,
     fontWeight: '800',
     marginTop: 2,
-    marginBottom: spacing.lg,
   },
-  // Slim profile-completion row. A 6px bar on a translucent track plus a
-  // single line of meta text with the Edit-profile link inline.
-  profileRow: {
-    gap: spacing.sm,
-    marginBottom: spacing.lg,
+  heroAside: {
+    alignItems: 'center',
+    gap: spacing.md,
   },
-  progressTrack: {
-    height: 6,
-    width: '100%',
-    borderRadius: radii.pill,
-    backgroundColor: 'rgba(255,255,255,0.18)',
+  // Circular progress ring built from two rotating half-borders so we don't
+  // need an SVG dependency. Uses translucent-white on the dark hero.
+  progressRingOuter: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 96,
+    height: 96,
+    position: 'relative',
+  },
+  progressRingTrack: {
+    position: 'absolute',
+    width: 96,
+    height: 96,
+    borderRadius: 999,
+    borderWidth: 8,
+    borderColor: 'rgba(255,255,255,0.22)',
+  },
+  progressRingFull: {
+    position: 'absolute',
+    width: 96,
+    height: 96,
+    borderRadius: 999,
+    borderWidth: 8,
+  },
+  progressHalfWrapperRight: {
+    position: 'absolute',
+    width: 48,
+    height: 96,
+    right: 0,
+    top: 0,
     overflow: 'hidden',
   },
-  progressFill: {
-    height: '100%',
-    borderRadius: radii.pill,
+  progressHalfWrapperLeft: {
+    position: 'absolute',
+    width: 48,
+    height: 96,
+    left: 0,
+    top: 0,
+    overflow: 'hidden',
   },
-  profileMeta: {
-    color: 'rgba(255,255,255,0.85)',
-    fontSize: typography.small,
-    fontWeight: '500',
+  progressHalf: {
+    position: 'absolute',
+    width: 96,
+    height: 96,
+    left: 0,
+    top: 0,
+    borderRadius: 999,
+    borderWidth: 8,
+    borderColor: 'transparent',
   },
-  editProfileLink: {
+  progressHalfRight: {
+    borderLeftColor: '#ffffff',
+  },
+  progressHalfLeft: {
+    borderRightColor: '#ffffff',
+  },
+  progressRingInner: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 72,
+    height: 72,
+    borderRadius: 999,
+    backgroundColor: '#ffffff',
+  },
+  progressValue: {
+    fontSize: typography.subhead,
+    fontWeight: '800',
+  },
+  editProfileButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 8,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.5)',
+  },
+  editProfileText: {
     color: '#ffffff',
+    fontSize: typography.small,
     fontWeight: '700',
-    textDecorationLine: 'underline',
   },
   // Full-width single-row search bar — no nested "All" filter row.
   searchRow: {
