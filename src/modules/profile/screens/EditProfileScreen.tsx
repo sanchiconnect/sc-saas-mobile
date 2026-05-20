@@ -16,9 +16,15 @@ import {colors} from '../../../core/theme/colors';
 import {TenantContext} from '../../../core/tenant/TenantProvider';
 import {authService} from '../../auth/services/auth.service';
 import {BasicInfoForm} from './editProfile/BasicInfoForm';
+import {CorporateEngagementTab} from './editProfile/CorporateEngagementTab';
+import {CustomFormTab, DynamicForm} from './editProfile/CustomFormTab';
 import {Documents} from './editProfile/Documents';
 import {FinancialsForm} from './editProfile/FinancialsForm';
+import {InvestorInvestmentsTab} from './editProfile/InvestorInvestmentsTab';
+import {InvestorRepresentativeTab} from './editProfile/InvestorRepresentativeTab';
+import {MentorDomainExpertiseTab} from './editProfile/MentorDomainExpertiseTab';
 import {Picker} from './editProfile/Picker';
+import {RoleBasicInfoTab} from './editProfile/RoleBasicInfoTab';
 import {YourPitchDeck} from './editProfile/YourPitchDeck';
 import {
   buildBaseTabs,
@@ -234,6 +240,36 @@ const slugify = (value: string) =>
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
 
+const toIdName = (raw: any): Array<{id: number; name: string}> => {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item: any) => ({
+      id: Number(item?.id ?? item?.value),
+      name: String(item?.name ?? item?.label ?? ''),
+    }))
+    .filter(
+      (item: {id: number; name: string}) =>
+        Number.isFinite(item.id) && item.name.length > 0,
+    );
+};
+
+const PLACEHOLDER_COPY: Record<string, string> = {
+  investment_details:
+    'Investment ticket sizes, stages, and sectoral preferences are still desktop-only. Open the web app to edit these.',
+  representative:
+    'Representative details are still desktop-only. Open the web app to add or update the contact person.',
+  investment_thesis:
+    'Your detailed investment thesis is still edited on the web app for now.',
+  domain_expertise:
+    'Mentor expertise (industries, technologies, domain areas) is still desktop-only.',
+  engagement:
+    'Corporate engagement details are still desktop-only. Open the web app to fill these in.',
+};
+
+const placeholderCopyFor = (tabKey: string): string =>
+  PLACEHOLDER_COPY[tabKey] ||
+  'This section is part of the upcoming mobile release. Use the web app for now.';
+
 const buildEditTabs = (
   basicInfo: BasicInfoFormType,
   startupInfo: Record<string, any> | null,
@@ -295,6 +331,23 @@ export function EditProfileScreen({
   const [activeTab, setActiveTab] = useState<string>('basic');
   const [investorSubtype, setInvestorSubtype] =
     useState<InvestorSubtype>('organization');
+  const [customForms, setCustomForms] = useState<DynamicForm[]>([]);
+  // Extra picker options used by the per-role secondary tabs. Fetched once
+  // per session when the user lands on a non-startup role.
+  const [investmentStageOptions, setInvestmentStageOptions] = useState<
+    Array<{id: number; name: string}>
+  >([]);
+  const [investmentPreferenceOptions, setInvestmentPreferenceOptions] =
+    useState<Array<{id: number; name: string}>>([]);
+  const [abilityMetricOptions, setAbilityMetricOptions] = useState<
+    Array<{id: number; name: string}>
+  >([]);
+  const [businessModelOptions, setBusinessModelOptions] = useState<
+    Array<{id: number; name: string}>
+  >([]);
+  const [domainAreaOptions, setDomainAreaOptions] = useState<
+    Array<{id: number; name: string}>
+  >([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -403,6 +456,75 @@ export function EditProfileScreen({
       cancelled = true;
     };
   }, []);
+
+  // Fetch tenant-defined custom profile forms for this account type.
+  useEffect(() => {
+    if (!accountType) {
+      return;
+    }
+    let cancelled = false;
+    authService
+      .listProfileForms(token, accountType)
+      .then(res => {
+        if (cancelled) return;
+        const items = Array.isArray(res?.data) ? res.data : [];
+        const forms: DynamicForm[] = items
+          .map((raw: any) => ({
+            uuid: String(raw?.uuid || raw?.id || ''),
+            formTitle: raw?.formTitle || raw?.title,
+            formCode: raw?.formCode || raw?.code,
+            fields: Array.isArray(raw?.fields) ? raw.fields : [],
+          }))
+          .filter((f: DynamicForm) => f.uuid && f.fields.length > 0);
+        setCustomForms(forms);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCustomForms([]);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token, accountType]);
+
+  // Fetch role-specific picker options used by secondary tabs.
+  useEffect(() => {
+    if (!baseUrl || !accountType) {
+      return;
+    }
+    if (accountType !== 'investor' && accountType !== 'mentor') {
+      return;
+    }
+    let cancelled = false;
+
+    const keys =
+      accountType === 'investor'
+        ? 'investment_stages,investment_preferences,investability_metrics,business_models'
+        : 'domain_areas';
+
+    fetch(`${baseUrl}api/v1/public/global/custom/${keys}`)
+      .then(res => res.json())
+      .then(payload => {
+        if (cancelled) return;
+        const d = payload?.data || {};
+        if (accountType === 'investor') {
+          setInvestmentStageOptions(toIdName(d.investment_stages));
+          setInvestmentPreferenceOptions(toIdName(d.investment_preferences));
+          setAbilityMetricOptions(toIdName(d.investability_metrics));
+          setBusinessModelOptions(toIdName(d.business_models));
+        } else {
+          setDomainAreaOptions(toIdName(d.domain_areas));
+        }
+      })
+      .catch(() => {
+        // Picker options absent — secondary tab will simply hide those sections.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [baseUrl, accountType]);
 
   useEffect(() => {
     let cancelled = false;
@@ -592,7 +714,12 @@ export function EditProfileScreen({
     return () => {
       cancelled = true;
     };
-  }, [token, logoBaseUrl, accountType]);
+    // logoBaseUrl deliberately omitted from deps: it changes once when the
+    // tenant config finishes loading and would otherwise re-fetch the whole
+    // profile. extractProfile only uses it to build image URLs — stale by
+    // one tick is acceptable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, accountType]);
 
   useEffect(() => {
     const countryId = getCountryIdByName(basicInfo.country, countryOptions);
@@ -656,7 +783,7 @@ export function EditProfileScreen({
     };
   }, [basicInfo.country, basicInfo.state, stateOptions, baseUrl]);
 
-  const tabs: EditProfileTab[] = buildEditTabs(
+  const baseTabsForRole: EditProfileTab[] = buildEditTabs(
     basicInfo,
     {
       ...startupInfo,
@@ -667,6 +794,17 @@ export function EditProfileScreen({
     accountType || 'startup',
     investorSubtype,
   );
+
+  // Tenant-defined custom profile forms appended after the built-in tabs.
+  // Each form is one tab keyed by `custom:<uuid>` so we can dispatch by key.
+  const tabs: EditProfileTab[] = [
+    ...baseTabsForRole,
+    ...customForms.map(form => ({
+      key: `custom:${form.uuid}`,
+      label: form.formTitle || form.formCode || 'Form',
+      status: 'incomplete' as const,
+    })),
+  ];
 
   useEffect(() => {
     if (!tabs.some(tab => tab.key === activeTab) && tabs.length > 0) {
@@ -736,6 +874,7 @@ export function EditProfileScreen({
         await authService.updateProfile(
           token,
           buildBasicInfoPayload(basicInfo),
+          accountType || undefined,
         );
       }
 
@@ -1103,20 +1242,54 @@ export function EditProfileScreen({
         overScrollMode="never"
         keyboardShouldPersistTaps="handled">
         {activeTab === 'basic' ? (
-          <BasicInfoForm
-            primaryColor={primaryColor}
-            value={basicInfo}
-            onLogoPress={handleLogoPress}
-            onOpenCompanySize={() => setPicker('companySize')}
-            onOpenCountry={() => setPicker('country')}
-            onOpenState={() => setPicker('state')}
-            onOpenCity={() => setPicker('city')}
-            onOpenProductStage={() => setPicker('productStage')}
-            onOpenLeadershipRole={index =>
-              setPicker({kind: 'leadershipRole', index})
-            }
-            onChange={updateBasic}
-          />
+          accountType === 'startup' || !accountType ? (
+            <BasicInfoForm
+              primaryColor={primaryColor}
+              value={basicInfo}
+              onLogoPress={handleLogoPress}
+              onOpenCompanySize={() => setPicker('companySize')}
+              onOpenCountry={() => setPicker('country')}
+              onOpenState={() => setPicker('state')}
+              onOpenCity={() => setPicker('city')}
+              onOpenProductStage={() => setPicker('productStage')}
+              onOpenLeadershipRole={index =>
+                setPicker({kind: 'leadershipRole', index})
+              }
+              onChange={updateBasic}
+            />
+          ) : (
+            <RoleBasicInfoTab
+              accountType={accountType}
+              investorSubtype={investorSubtype}
+              initialData={startupInfo}
+              primaryColor={primaryColor}
+              isSaving={isSaving}
+              onSave={async payload => {
+                try {
+                  setIsSaving(true);
+                  await authService.updateProfile(
+                    token,
+                    payload,
+                    accountType || undefined,
+                  );
+                  setSaveMessage({
+                    text: 'Profile updated.',
+                    tone: 'success',
+                  });
+                } catch (error) {
+                  setSaveMessage({
+                    text:
+                      error instanceof Error
+                        ? error.message
+                        : 'Could not save your profile.',
+                    tone: 'error',
+                  });
+                } finally {
+                  setIsSaving(false);
+                }
+              }}
+            />
+          )
         ) : activeTab === 'industry' ? (
           <View style={styles.industryCard}>
             <Text style={styles.industryTitle}>Industry / Technology</Text>
@@ -1254,12 +1427,70 @@ export function EditProfileScreen({
               onUploaded={() => loadProfile()}
             />
           </View>
+        ) : activeTab === 'investment_details' ||
+          activeTab === 'investment_thesis' ? (
+          <InvestorInvestmentsTab
+            token={token}
+            primaryColor={primaryColor}
+            initialData={startupInfo}
+            industryOptions={industryOptions}
+            mechanismOptions={investmentMechanismOptions}
+            stageOptions={investmentStageOptions}
+            preferenceOptions={investmentPreferenceOptions}
+            abilityMetricOptions={abilityMetricOptions}
+            businessModelOptions={businessModelOptions}
+          />
+        ) : activeTab === 'representative' ? (
+          <InvestorRepresentativeTab
+            token={token}
+            primaryColor={primaryColor}
+          />
+        ) : activeTab === 'domain_expertise' ? (
+          <MentorDomainExpertiseTab
+            token={token}
+            primaryColor={primaryColor}
+            initialData={startupInfo}
+            industryOptions={industryOptions}
+            technologyOptions={technologyOptions}
+            domainAreaOptions={domainAreaOptions}
+          />
+        ) : activeTab === 'engagement' ? (
+          <CorporateEngagementTab
+            token={token}
+            primaryColor={primaryColor}
+            initialData={startupInfo}
+            reasonOptions={
+              Array.isArray(globalSetting?.features?.connect_with_startups)
+                ? globalSetting.features.connect_with_startups.map(
+                    (item: any, i: number) => ({
+                      id: item.id ?? item.value ?? i,
+                      name: String(item.name ?? item.label ?? item),
+                    }),
+                  )
+                : []
+            }
+          />
+        ) : activeTab.startsWith('custom:') ? (
+          (() => {
+            const uuid = activeTab.slice('custom:'.length);
+            const form = customForms.find(f => f.uuid === uuid);
+            if (!form) {
+              return null;
+            }
+            return (
+              <CustomFormTab
+                token={token}
+                form={form}
+                primaryColor={primaryColor}
+              />
+            );
+          })()
         ) : (
           <View style={styles.placeholder}>
             <Icon name="hammer-wrench" size={32} color="#94a3b8" />
-            <Text style={styles.placeholderTitle}>Coming soon</Text>
+            <Text style={styles.placeholderTitle}>Available on web</Text>
             <Text style={styles.placeholderBody}>
-              This section is part of the upcoming release.
+              {placeholderCopyFor(activeTab)}
             </Text>
           </View>
         )}

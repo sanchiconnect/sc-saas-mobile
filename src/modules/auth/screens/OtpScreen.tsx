@@ -26,7 +26,8 @@ export function OtpScreen({
 }: Props) {
   const [otp, setOtp] = useState(['', '', '', '']);
   const inputs = useRef<Array<TextInput | null>>([]);
-  const {globalSetting} = useContext(TenantContext);
+  const {globalSetting, theme} = useContext(TenantContext);
+  const accent = theme?.primary || '#a16207';
 
   const logoBaseUrl = globalSetting?.imgKitUrl || globalSetting?.assetsImgKitUrl;
   const logoPath = globalSetting?.logo;
@@ -114,7 +115,12 @@ export function OtpScreen({
                 ref={ref => {
                   if (ref) inputs.current[index] = ref;
                 }}
-                style={[styles.otpInput, digit ? styles.otpActive : null]}
+                style={[
+                  styles.otpInput,
+                  digit
+                    ? [styles.otpActive, {borderColor: accent}]
+                    : null,
+                ]}
                 keyboardType="number-pad"
                 maxLength={1}
                 value={digit}
@@ -141,14 +147,14 @@ export function OtpScreen({
           <View style={styles.footer}>
             <Text style={styles.text}>
               Didn't get the code?{' '}
-              <Text style={styles.link} onPress={onResend}>
+              <Text style={[styles.link, {color: accent}]} onPress={onResend}>
                 Resend
               </Text>
             </Text>
           </View>
 
           <Pressable onPress={onLogin}>
-            <Text style={styles.link}>Back to Login</Text>
+            <Text style={[styles.link, {color: accent}]}>Back to Login</Text>
           </Pressable>
         </View>
       </AppCard>

@@ -1,6 +1,18 @@
 import {getBaseUrl, saveBaseUrl} from '../storage/tenantStorage';
 import {fetchTenantsSetting} from '../tenant/tenant.service';
 
+// Mirrors the frontend's "Session expired" behavior in ProfileService — any
+// authenticated 401 from the backend tears down the session. App.tsx registers
+// a handler on mount that clears Keychain and routes back to login.
+type SessionInvalidHandler = () => void;
+let sessionInvalidHandler: SessionInvalidHandler | null = null;
+
+export const setSessionInvalidHandler = (
+  handler: SessionInvalidHandler | null,
+): void => {
+  sessionInvalidHandler = handler;
+};
+
 export const normalizeBaseUrl = (url: string): string =>
   url.endsWith('/') ? url : `${url}/`;
 
@@ -75,6 +87,9 @@ export const requestJson = async <T>(
   const data = raw ? safeJsonParse(raw) : null;
 
   if (!response.ok) {
+    if (response.status === 401 && sessionInvalidHandler) {
+      sessionInvalidHandler();
+    }
     throw new Error(
       getErrorMessage(data) || `Request failed with status ${response.status}.`,
     );

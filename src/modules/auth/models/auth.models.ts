@@ -36,6 +36,10 @@ export type OtpRequestPayload = {
   fullName?: string;
   role?: string;
   investorType?: string;
+  // Set to true when re-sending an OTP for an already-validated signup.
+  // Skips the email/mobile availability pre-flight (mirrors frontend behavior:
+  // pre-flight runs on input-change in the signup form, not on every send).
+  resend?: boolean;
 };
 
 export type OtpRequestResult = {

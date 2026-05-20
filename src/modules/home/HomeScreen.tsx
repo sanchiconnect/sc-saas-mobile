@@ -41,6 +41,9 @@ type HomeScreenProps = {
   onLogout: () => void;
   showWelcomePopup: boolean;
   onCloseWelcomePopup: () => void;
+  // Initial section to open on mount. Used after signup to drop the user
+  // straight into Edit Profile, mirroring the frontend's role-specific redirect.
+  initialSection?: AppSection;
 };
 
 export function HomeScreen({
@@ -48,12 +51,13 @@ export function HomeScreen({
   onLogout,
   showWelcomePopup,
   onCloseWelcomePopup,
+  initialSection,
 }: HomeScreenProps) {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [searchText, setSearchText] = useState('');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [selectedMenu, setSelectedMenu] = useState<AppMenuSelection>({
-    section: 'dashboard',
+    section: initialSection || 'dashboard',
   });
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -71,7 +75,20 @@ export function HomeScreen({
     setIsLoading(true);
     loadSummary(session.token)
       .then(next => {
-        if (!cancelled) setSummary(next);
+        if (cancelled) return;
+        setSummary(next);
+        // Mirror frontend startup-dashboard guard:
+        //   if (!brandDetails.features['show_dashboard']) redirect to Edit Profile.
+        // Same idea on mobile — push the user into Edit Profile until the
+        // tenant enables the dashboard. Honored only on first mount so the
+        // user can still navigate to Dashboard manually via the side menu.
+        const showDashboard = globalSetting?.features?.show_dashboard;
+        if (
+          showDashboard === false &&
+          selectedMenu.section === 'dashboard'
+        ) {
+          setSelectedMenu({section: 'edit-profile'});
+        }
       })
       .finally(() => {
         if (!cancelled) setIsLoading(false);
@@ -79,6 +96,7 @@ export function HomeScreen({
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.token]);
 
   const handleRefresh = async () => {
@@ -196,6 +214,7 @@ export function HomeScreen({
           primaryColor={primaryColor}
           selectedMenu={selectedMenu}
           session={session}
+          accountType={summary?.accountType}
         />
 
         <EditProfileScreen
@@ -219,6 +238,7 @@ export function HomeScreen({
           primaryColor={primaryColor}
           selectedMenu={selectedMenu}
           session={session}
+          accountType={summary?.accountType}
         />
 
         <ProfileScreen
@@ -244,6 +264,7 @@ export function HomeScreen({
           primaryColor={primaryColor}
           selectedMenu={selectedMenu}
           session={session}
+          accountType={summary?.accountType}
         />
 
         <ProgramsScreen
@@ -279,6 +300,7 @@ export function HomeScreen({
           primaryColor={primaryColor}
           selectedMenu={selectedMenu}
           session={session}
+          accountType={summary?.accountType}
         />
 
         <TicketsScreen
@@ -302,6 +324,7 @@ export function HomeScreen({
           primaryColor={primaryColor}
           selectedMenu={selectedMenu}
           session={session}
+          accountType={summary?.accountType}
         />
 
         <AccountSettingsScreen
@@ -394,17 +417,42 @@ export function HomeScreen({
         }
         showsVerticalScrollIndicator={false}>
         {selectedMenu.section === 'dashboard' ? (
-          <DashboardContent
-            onSearchChange={setSearchText}
-            onEditProfile={() =>
-              setSelectedMenu({section: 'edit-profile'})
-            }
-            primaryColor={primaryColor}
-            profileCompletion={summary?.profileCompletion ?? 0}
-            searchText={searchText}
-            stats={summary?.stats ?? []}
-            userFirstName={userFirstName}
-          />
+          <>
+            {/* Limited-access banner mirrors frontend's app-limited-access-message-box.
+                Rendered when the tenant has limited_access enabled and the
+                user's approval flagged them. */}
+            {summary?.isRejected &&
+            globalSetting?.features?.limited_access &&
+            summary?.approvalStatus === 'limited_access' ? (
+              <View style={styles.limitedAccessBanner}>
+                <Icon
+                  name="alert-circle-outline"
+                  size={20}
+                  color="#b45309"
+                />
+                <Text style={styles.limitedAccessText}>
+                  Your account has limited access. Complete your profile and
+                  contact support to unlock the full platform.
+                </Text>
+              </View>
+            ) : null}
+            <DashboardContent
+              onSearchChange={setSearchText}
+              onEditProfile={() =>
+                setSelectedMenu({section: 'edit-profile'})
+              }
+              primaryColor={primaryColor}
+              profileCompletion={summary?.profileCompletion ?? 0}
+              searchText={searchText}
+              stats={summary?.stats ?? []}
+              userFirstName={userFirstName}
+              accountType={summary?.accountType}
+              roleDashboard={summary?.roleDashboard}
+              tenantUsers={globalSetting?.users}
+              logoBaseUrl={logoBaseUrl ?? undefined}
+              canToggleStatus={summary?.canToggleStatus}
+            />
+          </>
         ) : null}
         {selectedMenu.section !== 'dashboard' &&
         sectionConfigs[selectedMenu.section] ? (
@@ -533,5 +581,23 @@ const styles = StyleSheet.create({
   loadingSubtitle: {
     color: '#64748b',
     marginTop: 6,
+  },
+  limitedAccessBanner: {
+    flexDirection: 'row',
+    gap: 12,
+    backgroundColor: '#fef3c7',
+    borderColor: '#fcd34d',
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 14,
+    marginHorizontal: 16,
+    marginTop: 12,
+    alignItems: 'flex-start',
+  },
+  limitedAccessText: {
+    flex: 1,
+    color: '#92400e',
+    fontSize: 13,
+    lineHeight: 18,
   },
 });

@@ -67,6 +67,13 @@ export function AuthForm({
       resizeMode: 'contain',
       marginBottom: 10,
     },
+    brandFallback: {
+      alignSelf: 'center',
+      fontSize: 24,
+      fontWeight: '700',
+      color: theme?.primary || '#0f172a',
+      marginBottom: 10,
+    },
     card: {
       gap: 14,
       width: '100%',
@@ -100,7 +107,11 @@ export function AuthForm({
     <View style={styles.page}>
       <AppCard>
         <View style={styles.card}>
-        {logoUri ? <Image source={{uri: logoUri}} style={styles.logo} /> : null}
+        {logoUri ? (
+          <Image source={{uri: logoUri}} style={styles.logo} />
+        ) : globalSetting?.brandName ? (
+          <Text style={styles.brandFallback}>{globalSetting.brandName}</Text>
+        ) : null}
         <Text style={styles.title}>{title}</Text>
         <Text style={styles.subtitle}>{subtitle}</Text>
 

@@ -13,6 +13,7 @@ import {Icon} from '../../../core/components/Icon';
 import {
   accountSettingItems,
   connectItems,
+  filterMenuItems,
   programItems,
   ticketItems,
 } from '../config/menus';
@@ -23,6 +24,8 @@ type TenantBranding = {
   logo?: string;
   assetsImgKitUrl?: string;
   imgKitUrl?: string;
+  features?: Record<string, any> | null;
+  users?: Record<string, any> | null;
 } | null | undefined;
 
 type SideMenuProps = {
@@ -34,6 +37,9 @@ type SideMenuProps = {
   globalSetting?: TenantBranding;
   primaryColor: string;
   selectedMenu: AppMenuSelection;
+  // The current user's account type — drives per-role menu filtering and the
+  // exclusion of self ("Investors" is hidden for investor users, etc.).
+  accountType?: string | null;
 };
 
 type ExpandableSectionProps = {
@@ -188,10 +194,26 @@ export function SideMenu({
   globalSetting,
   primaryColor,
   selectedMenu,
+  accountType,
 }: SideMenuProps) {
   if (!isVisible) {
     return null;
   }
+
+  // Apply tenant + role-aware filtering. Empty results → entire section is
+  // hidden so the user doesn't see an empty drawer category.
+  const filterCtx = {
+    features: globalSetting?.features,
+    users: globalSetting?.users,
+    accountType,
+  };
+  const visibleConnectItems = filterMenuItems(connectItems, filterCtx);
+  const visibleProgramItems = filterMenuItems(programItems, filterCtx);
+  const visibleTicketItems = filterMenuItems(ticketItems, filterCtx);
+  const visibleAccountSettingItems = filterMenuItems(
+    accountSettingItems,
+    filterCtx,
+  );
 
   const logoBaseUrl =
     globalSetting?.imgKitUrl || globalSetting?.assetsImgKitUrl;
@@ -296,49 +318,57 @@ export function SideMenu({
             </Text>
           </Pressable>
 
-          <ExpandableSection
-            title="Connect"
-            section="connect"
-            icon="account-group"
-            items={connectItems}
-            onSelectMenu={onSelectMenu}
-            onClose={onClose}
-            primaryColor={primaryColor}
-            selectedMenu={selectedMenu}
-          />
+          {visibleConnectItems.length > 0 ? (
+            <ExpandableSection
+              title="Connect"
+              section="connect"
+              icon="account-group"
+              items={visibleConnectItems}
+              onSelectMenu={onSelectMenu}
+              onClose={onClose}
+              primaryColor={primaryColor}
+              selectedMenu={selectedMenu}
+            />
+          ) : null}
 
-          <ExpandableSection
-            title="Program"
-            section="program"
-            icon="briefcase-outline"
-            items={programItems}
-            onSelectMenu={onSelectMenu}
-            onClose={onClose}
-            primaryColor={primaryColor}
-            selectedMenu={selectedMenu}
-          />
+          {visibleProgramItems.length > 0 ? (
+            <ExpandableSection
+              title="Program"
+              section="program"
+              icon="briefcase-outline"
+              items={visibleProgramItems}
+              onSelectMenu={onSelectMenu}
+              onClose={onClose}
+              primaryColor={primaryColor}
+              selectedMenu={selectedMenu}
+            />
+          ) : null}
 
-          <SingleSection
-            title="Tickets"
-            section="tickets"
-            icon={ticketItems[0].icon || 'ticket-confirmation-outline'}
-            item={ticketItems[0]}
-            onSelectMenu={onSelectMenu}
-            onClose={onClose}
-            primaryColor={primaryColor}
-            selectedMenu={selectedMenu}
-          />
+          {visibleTicketItems.length > 0 ? (
+            <SingleSection
+              title="Tickets"
+              section="tickets"
+              icon={visibleTicketItems[0].icon || 'ticket-confirmation-outline'}
+              item={visibleTicketItems[0]}
+              onSelectMenu={onSelectMenu}
+              onClose={onClose}
+              primaryColor={primaryColor}
+              selectedMenu={selectedMenu}
+            />
+          ) : null}
 
-          <SingleSection
-            title="Account Settings"
-            section="account-settings"
-            icon={accountSettingItems[0].icon || 'account-outline'}
-            item={accountSettingItems[0]}
-            onSelectMenu={onSelectMenu}
-            onClose={onClose}
-            primaryColor={primaryColor}
-            selectedMenu={selectedMenu}
-          />
+          {visibleAccountSettingItems.length > 0 ? (
+            <SingleSection
+              title="Account Settings"
+              section="account-settings"
+              icon={visibleAccountSettingItems[0].icon || 'account-outline'}
+              item={visibleAccountSettingItems[0]}
+              onSelectMenu={onSelectMenu}
+              onClose={onClose}
+              primaryColor={primaryColor}
+              selectedMenu={selectedMenu}
+            />
+          ) : null}
 
           <Pressable style={styles.logoutButton} onPress={onLogout}>
             <Icon name="logout" size={18} color="#ffffff" />

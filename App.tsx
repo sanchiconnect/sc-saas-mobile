@@ -14,6 +14,7 @@ import {
 } from './src/modules/auth/models/auth.models';
 import {authService} from './src/modules/auth/services/auth.service';
 import {AUTH_SCREENS, AuthScreen} from './src/modules/auth/types';
+import {setSessionInvalidHandler} from './src/core/api/apiClient';
 import {TenantProvider} from './src/core/tenant/TenantProvider';
 import {
   clearSession,
@@ -26,6 +27,10 @@ function App() {
   const [session, setSession] = useState<AuthSession | null>(null);
   const [authScreen, setAuthScreen] = useState<AuthScreen>('login');
   const [showWelcomePopup, setShowWelcomePopup] = useState(false);
+  // Set to true immediately after signup so HomeScreen mounts straight into
+  // Edit Profile. Mirrors the frontend's role-specific redirect to edit/<role>
+  // after register. Cleared once the user navigates away.
+  const [justSignedUp, setJustSignedUp] = useState(false);
   const shouldShowFeedback =
     session !== null ||
     (authScreen !== AUTH_SCREENS.LOGIN && authScreen !== AUTH_SCREENS.SIGNUP);
@@ -42,18 +47,33 @@ function App() {
       });
   }, []);
 
+  // Mirrors the frontend's "Session expired" handler in ProfileService: any
+  // authenticated 401 from the backend tears down the session and routes back
+  // to login. apiClient.requestJson invokes the handler.
+  useEffect(() => {
+    setSessionInvalidHandler(() => {
+      setSession(null);
+      setAuthScreen(AUTH_SCREENS.LOGIN);
+      clearSession().catch(() => {});
+    });
+    return () => setSessionInvalidHandler(null);
+  }, []);
+
   const handleLogin = async (payload: LoginPayload) => {
     const nextSession = await authService.login(payload);
-    setSession(nextSession);
+    // Persist before flipping in-memory state so a crash between the two
+    // doesn't leave Keychain empty while the UI thinks the user is logged in.
     await saveSession(nextSession);
+    setSession(nextSession);
     return nextSession;
   };
 
   const handleSignup = async (payload: SignupPayload) => {
     const nextSession = await authService.signup(payload);
-    setSession(nextSession);
     await saveSession(nextSession);
+    setSession(nextSession);
     setShowWelcomePopup(true);
+    setJustSignedUp(true);
     return nextSession;
   };
 
@@ -66,6 +86,7 @@ function App() {
   const handleLogout = () => {
     setSession(null);
     setAuthScreen(AUTH_SCREENS.LOGIN);
+    setJustSignedUp(false);
     clearSession().catch(() => {
       // Keychain reset failure is non-blocking — in-memory state is already cleared.
     });
@@ -85,7 +106,11 @@ function App() {
               session={session}
               onLogout={handleLogout}
               showWelcomePopup={showWelcomePopup}
-              onCloseWelcomePopup={() => setShowWelcomePopup(false)}
+              onCloseWelcomePopup={() => {
+                setShowWelcomePopup(false);
+                setJustSignedUp(false);
+              }}
+              initialSection={justSignedUp ? 'edit-profile' : undefined}
             />
           ) : (
             <AuthNavigator

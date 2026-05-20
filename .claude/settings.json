@@ -25,7 +25,12 @@
       "Bash(git check-ignore *)",
       "Bash(echo \"\\(exit $?\\)\")",
       "Bash(git restore *)",
-      "Bash(echo \"\\(exit $?  — exit 1 means NOT ignored, which is what we want\\)\")"
+      "Bash(echo \"\\(exit $?  — exit 1 means NOT ignored, which is what we want\\)\")",
+      "Bash(grep -E \"\\\\.\\(ts|js\\)$\")",
+      "Bash(grep \"ENDPOINT\\\\|:\\\\`\")",
+      "Bash(grep -E \"\\\\.\\(ts|html\\)$\")",
+      "Bash(grep -E \"\\\\.ts$\")",
+      "Bash(git add *)"
     ],
     "additionalDirectories": [
       "/Users/mac"

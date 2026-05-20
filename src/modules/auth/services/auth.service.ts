@@ -73,10 +73,29 @@ const buildOngoingCommitmentsPath = (accountType?: string) => {
 
 const PROFILE_COMPLETENESS_PATH_OVERRIDES: Record<string, string> = {
   investor: 'api/v1/investors/organization/profile_completeness',
+  // Frontend dispatches a separate `GetIndividualProfileCompleteness` action
+  // when `investorType === 'individual'`. Mirror via this override key —
+  // resolved by `getProfileCompletion(token, accountType, investorType)`.
+  'investor:individual': 'api/v1/investors/profile_completeness',
 };
 
-const buildProfileCompletenessPath = (accountType?: string) => {
+const buildDashboardPath = (accountType?: string): string => {
   const type = (accountType || 'startup').toLowerCase();
+  const plural = ACCOUNT_TYPE_TO_PLURAL[type] || `${type}s`;
+  return `api/v1/${plural}/dashboard`;
+};
+
+const NOTIFICATIONS_COUNT_PATH = 'api/v1/users/notifications/counts';
+
+const buildProfileCompletenessPath = (
+  accountType?: string,
+  investorType?: string,
+) => {
+  const type = (accountType || 'startup').toLowerCase();
+  // Investor individual gets its own completeness endpoint.
+  if (type === 'investor' && (investorType || '').toLowerCase() === 'individual') {
+    return PROFILE_COMPLETENESS_PATH_OVERRIDES['investor:individual'];
+  }
   const override = PROFILE_COMPLETENESS_PATH_OVERRIDES[type];
   if (override) {
     return override;
@@ -226,6 +245,15 @@ const buildSession = (
   token: string | undefined,
   fallback: {email: string; fullName?: string},
 ): AuthSession => {
+  const normalizedToken = normalizeTokenValue(token);
+  if (!normalizedToken) {
+    // Without a real token every authenticated call 401s on the next screen
+    // — surface the failure loud rather than silently entering Home with a stub.
+    throw new Error(
+      'Authentication succeeded but the server did not return a token. Please try again.',
+    );
+  }
+
   const user = profile?.data?.user || profile?.data || profile?.user || {};
   const fullName =
     user?.fullName ||
@@ -235,7 +263,7 @@ const buildSession = (
     fallback.email.split('@')[0];
 
   return {
-    token: normalizeTokenValue(token) || 'pending-token',
+    token: normalizedToken,
     user: {
       id: String(user?.id || user?._id || fallback.email),
       email: user?.email || user?.emailAddress || fallback.email,
@@ -270,54 +298,6 @@ async function fetchStartupInformation(
   );
 }
 
-// async function verifyOtpAndFetchProfile(
-//   payload: LoginPayload | SignupPayload,
-//   fallbackFullName?: string,
-// ) {
-//   const baseUrl = await resolveBaseUrl();
-//   const email = payload.email.trim().toLowerCase();
-//   const hashedOtp = md5(payload.otp);
-//   const verifyPayload: Record<string, any> = {
-//     countryCode: payload.countryCode || DEFAULT_COUNTRY_CODE,
-//     code: hashedOtp,
-//   };
-
-//   if ('mobile' in payload) {
-//     verifyPayload.type = 'email';
-//     verifyPayload.emailAddress = email;
-//     verifyPayload.mobileNumber = Number(payload.mobile?.trim());
-//   }else{
-//     verifyPayload.email = email;
-//   }
-  
-//   const PATH= 'mobile' in payload ? SIGNUP_VERIFY_PATH : LOGIN_VERIFY_PATH;
-//   const verifyData = await requestJson<ApiResponse>(
-//     PATH,
-//     {
-//       method: 'POST',
-//       body: JSON.stringify(verifyPayload),
-//     },
-//     baseUrl,
-//   );
-//   const token = getToken(verifyData);
-
-//   if (!token) {
-//     throw new Error('Login verification succeeded but token was missing.');
-//   }
-
-//   const profile = await fetchProfile(baseUrl, token);
-
-//   return {
-//     baseUrl,
-//     email,
-//     token,
-//     verifyData,
-//     session: buildSession(profile, token, {
-//       email,
-//       fullName: fallbackFullName,
-//     }),
-//   };
-// }
 async function verifyOtpAndFetchProfile(
   payload: LoginPayload | SignupPayload,
   fallbackFullName?: string,
@@ -386,6 +366,16 @@ async function verifyOtpAndFetchProfile(
     session,
   };
 }
+// Endpoints for secondary tabs + custom forms (Phase H).
+const INVESTOR_INVESTMENTS_PATH = 'api/v1/investors/investments-information';
+const INVESTOR_REPRESENTATIVE_PATH =
+  'api/v1/investors/representative-information';
+const CORPORATE_ENGAGEMENT_PATH = 'api/v1/corporates/engagement-information';
+const buildFormsListPath = (accountType?: string) =>
+  `api/v1/forms-management/list/${(accountType || 'startup').toLowerCase()}`;
+const buildFormSubmissionPath = (formUuid: string) =>
+  `api/v1/forms-management/submission/${formUuid}`;
+
 export const authService = {
   async getApiBaseUrl(): Promise<string> {
     return resolveBaseUrl();
@@ -585,14 +575,36 @@ export const authService = {
   async getProfileCompletion(
     token: string,
     accountType?: string,
+    investorType?: string,
   ): Promise<ApiResponse> {
     const baseUrl = await resolveBaseUrl();
     return requestJson<ApiResponse>(
-      buildProfileCompletenessPath(accountType),
+      buildProfileCompletenessPath(accountType, investorType),
       {
         method: 'GET',
         headers: getAuthHeader(token),
       },
+      baseUrl,
+    );
+  },
+
+  async getRoleDashboard(
+    token: string,
+    accountType?: string,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      buildDashboardPath(accountType),
+      {method: 'GET', headers: getAuthHeader(token)},
+      baseUrl,
+    );
+  },
+
+  async getNotificationsCount(token: string): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      NOTIFICATIONS_COUNT_PATH,
+      {method: 'GET', headers: getAuthHeader(token)},
       baseUrl,
     );
   },
@@ -792,12 +804,115 @@ export const authService = {
   async updateProfile(
     token: string,
     payload: Record<string, any>,
+    accountType?: string,
   ): Promise<ApiResponse> {
     const baseUrl = await resolveBaseUrl();
     return requestJson<ApiResponse>(
-      STARTUP_INFORMATION_PATH,
+      buildInformationPath(accountType),
       {
         method: 'PATCH',
+        headers: getAuthHeader(token),
+        body: JSON.stringify(payload),
+      },
+      baseUrl,
+    );
+  },
+
+  // ── Investor: Investment Details ──
+  async updateInvestorInvestments(
+    token: string,
+    payload: Record<string, any>,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      INVESTOR_INVESTMENTS_PATH,
+      {
+        method: 'PATCH',
+        headers: getAuthHeader(token),
+        body: JSON.stringify(payload),
+      },
+      baseUrl,
+    );
+  },
+
+  // ── Investor: Representative Details ──
+  async getInvestorRepresentative(token: string): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      INVESTOR_REPRESENTATIVE_PATH,
+      {method: 'GET', headers: getAuthHeader(token)},
+      baseUrl,
+    );
+  },
+
+  async updateInvestorRepresentative(
+    token: string,
+    payload: Record<string, any>,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      INVESTOR_REPRESENTATIVE_PATH,
+      {
+        method: 'PATCH',
+        headers: getAuthHeader(token),
+        body: JSON.stringify(payload),
+      },
+      baseUrl,
+    );
+  },
+
+  // ── Corporate: Engagement ──
+  async updateCorporateEngagement(
+    token: string,
+    payload: Record<string, any>,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      CORPORATE_ENGAGEMENT_PATH,
+      {
+        method: 'PATCH',
+        headers: getAuthHeader(token),
+        body: JSON.stringify(payload),
+      },
+      baseUrl,
+    );
+  },
+
+  // ── Custom (tenant-defined) profile forms ──
+  async listProfileForms(
+    token: string,
+    accountType?: string,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      buildFormsListPath(accountType),
+      {method: 'GET', headers: getAuthHeader(token)},
+      baseUrl,
+    );
+  },
+
+  async getProfileFormSubmission(
+    token: string,
+    formUuid: string,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      buildFormSubmissionPath(formUuid),
+      {method: 'GET', headers: getAuthHeader(token)},
+      baseUrl,
+    );
+  },
+
+  async submitProfileForm(
+    token: string,
+    formUuid: string,
+    payload: Record<string, any>,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      buildFormSubmissionPath(formUuid),
+      {
+        method: 'POST',
         headers: getAuthHeader(token),
         body: JSON.stringify(payload),
       },
@@ -1244,22 +1359,39 @@ export const authService = {
         throw new Error('Mobile number is required.');
       }
 
-      const userType = normalizeRole(payload.role);
-      const investorType = normalizeInvestorType(payload.investorType);
+      // On resend, skip the email/mobile availability pre-flight — those were
+      // already validated when the user first hit "Send OTP", and re-running
+      // them against a now-taken number would (incorrectly) reject the resend.
+      // Mirrors the frontend: pre-flight runs only on input-change.
+      let emailVerificationId: string | undefined;
 
-      const [emailCheck, mobileCheck] = await Promise.all([
-        verifyEmail(baseUrl, email, userType, investorType),
-        verifyMobileNumber(baseUrl, payload.mobile.trim(), userType, investorType),
-      ]);
+      if (!payload.resend) {
+        const userType = normalizeRole(payload.role);
+        const investorType = normalizeInvestorType(payload.investorType);
 
-      if (isFailureResponse(emailCheck)) {
-        throw new Error(getErrorMessage(emailCheck) || 'Email verification failed.');
-      }
+        const [emailCheck, mobileCheck] = await Promise.all([
+          verifyEmail(baseUrl, email, userType, investorType),
+          verifyMobileNumber(
+            baseUrl,
+            payload.mobile.trim(),
+            userType,
+            investorType,
+          ),
+        ]);
 
-      if (isFailureResponse(mobileCheck)) {
-        throw new Error(
-          getErrorMessage(mobileCheck) || 'Mobile verification failed.',
-        );
+        if (isFailureResponse(emailCheck)) {
+          throw new Error(
+            getErrorMessage(emailCheck) || 'Email verification failed.',
+          );
+        }
+
+        if (isFailureResponse(mobileCheck)) {
+          throw new Error(
+            getErrorMessage(mobileCheck) || 'Mobile verification failed.',
+          );
+        }
+
+        emailVerificationId = getEmailVerificationId(emailCheck);
       }
 
       await requestJson(
@@ -1276,9 +1408,7 @@ export const authService = {
         baseUrl,
       );
 
-      return {
-        emailVerificationId: getEmailVerificationId(emailCheck),
-      };
+      return {emailVerificationId};
     }
 
     await requestJson(

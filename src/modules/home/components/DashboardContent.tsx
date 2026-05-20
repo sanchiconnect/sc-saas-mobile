@@ -4,6 +4,9 @@ import {Pressable, StyleSheet, Text, TextInput, View} from 'react-native';
 import {Icon} from '../../../core/components/Icon';
 import {editorTools} from '../config/menus';
 import {DashboardStat} from '../types';
+import {RecommendedSection} from './RecommendedSection';
+
+type TenantUsersFlags = Record<string, any> | null | undefined;
 
 type DashboardContentProps = {
   primaryColor: string;
@@ -13,6 +16,14 @@ type DashboardContentProps = {
   stats: DashboardStat[];
   profileCompletion: number;
   onEditProfile?: () => void;
+  // Phase J — recommended widgets. Driven by the role-specific `*/dashboard`
+  // payload + tenant flags. When fields are missing the sections silently
+  // collapse, so we can pass everything through without runtime branches.
+  accountType?: string;
+  roleDashboard?: Record<string, any> | null;
+  tenantUsers?: TenantUsersFlags;
+  logoBaseUrl?: string;
+  canToggleStatus?: boolean;
 };
 
 function getGreeting(date: Date = new Date()): string {
@@ -30,6 +41,11 @@ export function DashboardContent({
   stats,
   profileCompletion,
   onEditProfile,
+  accountType,
+  roleDashboard,
+  tenantUsers,
+  logoBaseUrl,
+  canToggleStatus,
 }: DashboardContentProps) {
   const progress = Math.max(0, Math.min(profileCompletion, 100));
   const rightRotation = Math.min(progress, 50) * 3.6;
@@ -175,8 +191,183 @@ export function DashboardContent({
           </Text>
         </View>
       </View>
+
+      <RecommendedSections
+        accountType={accountType}
+        roleDashboard={roleDashboard}
+        tenantUsers={tenantUsers}
+        logoBaseUrl={logoBaseUrl}
+        canToggleStatus={canToggleStatus}
+      />
     </>
   );
+}
+
+// Renders role-appropriate "Recommended …" carousels using the raw
+// role-specific dashboard payload. Mirrors the frontend's pattern:
+//   - startup → Recommended Investors, Recommended Mentors, Recently Added X
+//   - investor → Recommended Startups, Co-investing, Recently Added Startups
+//   - corporate → Recommended/Recently Added Startups
+//   - mentor → Recommended Startups
+// Each section is gated by tenant `users.<role>` so the carousel disappears
+// when that role isn't available on this tenant.
+function RecommendedSections({
+  accountType,
+  roleDashboard,
+  tenantUsers,
+  logoBaseUrl,
+  canToggleStatus,
+}: {
+  accountType?: string;
+  roleDashboard?: Record<string, any> | null;
+  tenantUsers?: TenantUsersFlags;
+  logoBaseUrl?: string;
+  canToggleStatus?: boolean;
+}) {
+  const role = (accountType || '').toLowerCase();
+  const dash = roleDashboard || {};
+  const flag = (key: string) => Boolean(tenantUsers?.[key]);
+  // Frontend gates the "Recommended …" carousels on profileCompleteness.canToggleStatus
+  // (the user has to be active/approved to see suggestions). Trending/Recent
+  // lists are not gated.
+  const showRecommended = canToggleStatus !== false;
+
+  if (role === 'startup') {
+    return (
+      <>
+        {showRecommended && flag('investors') ? (
+          <RecommendedSection
+            title="Recommended Investors"
+            kind="investor"
+            items={
+              dash.recommendedInvestors ||
+              dash.recommended_investors ||
+              []
+            }
+            logoBaseUrl={logoBaseUrl}
+          />
+        ) : null}
+        {showRecommended && flag('mentors') ? (
+          <RecommendedSection
+            title="Recommended Mentors"
+            kind="mentor"
+            items={
+              dash.recommendedMentors || dash.recommended_mentors || []
+            }
+            logoBaseUrl={logoBaseUrl}
+          />
+        ) : null}
+        {flag('investors') ? (
+          <RecommendedSection
+            title="Trending Investors"
+            kind="investor"
+            items={dash.trendingInvestors || []}
+            logoBaseUrl={logoBaseUrl}
+          />
+        ) : null}
+        {flag('investors') ? (
+          <RecommendedSection
+            title="Recently Added Investors"
+            kind="investor"
+            items={dash.recentlyAddedInvestors || []}
+            logoBaseUrl={logoBaseUrl}
+          />
+        ) : null}
+        {flag('corporates') ? (
+          <RecommendedSection
+            title="Recently Added Corporates"
+            kind="corporate"
+            items={dash.recentlyAddedCorporates || []}
+            logoBaseUrl={logoBaseUrl}
+          />
+        ) : null}
+        {flag('mentors') ? (
+          <RecommendedSection
+            title="Recently Added Mentors"
+            kind="mentor"
+            items={dash.recentlyAddedMentors || []}
+            logoBaseUrl={logoBaseUrl}
+          />
+        ) : null}
+      </>
+    );
+  }
+
+  if (role === 'investor') {
+    return (
+      <>
+        {showRecommended && flag('startups') ? (
+          <RecommendedSection
+            title="Recommended Startups"
+            kind="startup"
+            items={
+              dash.recommendedStartups || dash.recommended_startups || []
+            }
+            logoBaseUrl={logoBaseUrl}
+          />
+        ) : null}
+        {flag('startups') ? (
+          <RecommendedSection
+            title="Trending Startups"
+            kind="startup"
+            items={dash.trendingStartups || []}
+            logoBaseUrl={logoBaseUrl}
+          />
+        ) : null}
+        {flag('startups') ? (
+          <RecommendedSection
+            title="Co-Investing Opportunities"
+            kind="startup"
+            items={dash.coInvestingStartups || []}
+            logoBaseUrl={logoBaseUrl}
+          />
+        ) : null}
+        {flag('startups') ? (
+          <RecommendedSection
+            title="Recently Added Startups"
+            kind="startup"
+            items={dash.recentlyAddedStartup || dash.recentlyAddedStartups || []}
+            logoBaseUrl={logoBaseUrl}
+          />
+        ) : null}
+      </>
+    );
+  }
+
+  if (role === 'corporate' || role === 'mentor') {
+    return (
+      <>
+        {showRecommended && flag('startups') ? (
+          <RecommendedSection
+            title="Recommended Startups"
+            kind="startup"
+            items={
+              dash.recommendedStartups || dash.recommended_startups || []
+            }
+            logoBaseUrl={logoBaseUrl}
+          />
+        ) : null}
+        {flag('startups') ? (
+          <RecommendedSection
+            title="Trending Startups"
+            kind="startup"
+            items={dash.trendingStartups || []}
+            logoBaseUrl={logoBaseUrl}
+          />
+        ) : null}
+        {flag('startups') ? (
+          <RecommendedSection
+            title="Recently Added Startups"
+            kind="startup"
+            items={dash.recentlyAddedStartup || dash.recentlyAddedStartups || []}
+            logoBaseUrl={logoBaseUrl}
+          />
+        ) : null}
+      </>
+    );
+  }
+
+  return null;
 }
 
 const styles = StyleSheet.create({

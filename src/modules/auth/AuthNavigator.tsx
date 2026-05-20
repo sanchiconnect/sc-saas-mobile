@@ -159,6 +159,7 @@ export function AuthNavigator({
                   fullName: signupData.fullName,
                   role: signupData.role,
                   investorType: signupData.investorType,
+                  resend: true,
                 });
                 setMessage('OTP sent again.');
                 setMessageTone('success');
