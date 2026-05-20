@@ -201,7 +201,10 @@ export function RoleSelectionScreen({onNext, onLogin}: Props) {
                   styles.card,
                   isSelected && {
                     borderColor: accent,
-                    backgroundColor: tint,
+                    borderWidth: 2,
+                    // Compensate for the 1px → 2px border so the card
+                    // doesn't shift size when selected.
+                    padding: spacing.md - 1,
                   },
                 ]}
                 onPress={() => {
@@ -213,12 +216,12 @@ export function RoleSelectionScreen({onNext, onLogin}: Props) {
                 <View
                   style={[
                     styles.iconBubble,
-                    isSelected && {backgroundColor: accent},
+                    isSelected && {backgroundColor: tint},
                   ]}>
                   <Icon
                     name={role.icon}
-                    size={22}
-                    color={isSelected ? '#ffffff' : '#475569'}
+                    size={20}
+                    color={isSelected ? accent : '#64748b'}
                   />
                 </View>
                 <Text
@@ -229,6 +232,12 @@ export function RoleSelectionScreen({onNext, onLogin}: Props) {
                   numberOfLines={2}>
                   {role.label}
                 </Text>
+                {isSelected ? (
+                  <View
+                    style={[styles.checkBadge, {backgroundColor: accent}]}>
+                    <Icon name="check" size={12} color="#ffffff" />
+                  </View>
+                ) : null}
               </Pressable>
             );
           })}
@@ -250,19 +259,20 @@ export function RoleSelectionScreen({onNext, onLogin}: Props) {
                       styles.card,
                       isSelected && {
                         borderColor: accent,
-                        backgroundColor: tint,
+                        borderWidth: 2,
+                        padding: spacing.md - 1,
                       },
                     ]}
                     onPress={() => setSelectedInvestorType(option.value)}>
                     <View
                       style={[
                         styles.iconBubble,
-                        isSelected && {backgroundColor: accent},
+                        isSelected && {backgroundColor: tint},
                       ]}>
                       <Icon
                         name={option.icon}
-                        size={22}
-                        color={isSelected ? '#ffffff' : '#475569'}
+                        size={20}
+                        color={isSelected ? accent : '#64748b'}
                       />
                     </View>
                     <Text
@@ -273,6 +283,12 @@ export function RoleSelectionScreen({onNext, onLogin}: Props) {
                       numberOfLines={2}>
                       {option.label}
                     </Text>
+                    {isSelected ? (
+                      <View
+                        style={[styles.checkBadge, {backgroundColor: accent}]}>
+                        <Icon name="check" size={12} color="#ffffff" />
+                      </View>
+                    ) : null}
                   </Pressable>
                 );
               })}
@@ -367,7 +383,7 @@ const styles = StyleSheet.create({
     // Strict 2-column layout. flexGrow stays 0 so the last odd item doesn't
     // stretch to fill the row — it sits at the same width as the others.
     width: '47.5%',
-    minHeight: 84,
+    minHeight: 64,
     borderWidth: 1,
     borderColor: '#e2e8f0',
     borderRadius: radii.lg,
@@ -376,11 +392,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm + 2,
     backgroundColor: '#ffffff',
+    position: 'relative',
     ...shadows.sm,
   },
   iconBubble: {
-    width: 36,
-    height: 36,
+    width: 32,
+    height: 32,
     borderRadius: radii.md,
     backgroundColor: '#f1f5f9',
     alignItems: 'center',
@@ -389,11 +406,23 @@ const styles = StyleSheet.create({
   cardText: {
     flex: 1,
     // 13pt body fits 2-line wraps for "Service Provider" / "Program Office
-    // Member" without forcing tighter card padding.
+    // Member" without forcing taller cards.
     fontSize: 13,
     fontWeight: '600',
     color: '#0f172a',
     lineHeight: 17,
+  },
+  checkBadge: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#ffffff',
   },
   investorSection: {
     marginTop: spacing.xxl,
