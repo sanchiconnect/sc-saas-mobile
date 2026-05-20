@@ -1,13 +1,19 @@
-import React, {useEffect, useState} from 'react';
+import React, {useEffect} from 'react';
 import {StyleSheet, Text, View} from 'react-native';
 
 import {AppButton} from '../../../../core/components/AppButton';
 import {AppTextField} from '../../../../core/components/AppTextField';
+import {useFormValidation} from '../../../../core/form/useFormValidation';
+import {
+  combine,
+  required,
+  url,
+  Validator,
+} from '../../../../core/form/validators';
 
 import type {InvestorSubtype} from './tabConfig';
 
 // Field key in the API response/payload for this role's "basic info" tab.
-// Mirrors the frontend's per-role basic-info form bindings.
 type FieldKey =
   | 'companyName'
   | 'organizationName'
@@ -31,6 +37,8 @@ type FieldConfig = {
   placeholder?: string;
   multiline?: boolean;
   keyboardType?: 'default' | 'email-address' | 'url' | 'numeric';
+  required?: boolean;
+  validator?: Validator;
 };
 
 type RoleKey =
@@ -40,46 +48,74 @@ type RoleKey =
   | 'mentor';
 
 // Each role's field list mirrors the primary fields of the corresponding
-// frontend basic-info tab. Optional/secondary fields (logos, address pickers,
-// rich-text bios) are intentionally omitted — they belong in future iterations
-// once we add native equivalents (image picker, country/state/city cascading).
+// frontend basic-info tab. Required + format validators match the frontend's
+// FormGroup definitions on each role's edit page.
 const ROLE_FIELDS: Record<RoleKey, FieldConfig[]> = {
   'investor:organization': [
-    {key: 'organizationName', label: 'Organization Name'},
-    {key: 'aboutUs', label: 'About', multiline: true},
+    {key: 'organizationName', label: 'Organization Name', required: true},
+    {key: 'aboutUs', label: 'About', multiline: true, required: true},
     {key: 'portfolioSize', label: 'Portfolio Size', keyboardType: 'numeric'},
     {key: 'displayWebsite', label: 'Website', keyboardType: 'url'},
     {key: 'linkedinUrl', label: 'LinkedIn URL', keyboardType: 'url'},
     {key: 'twitterUrl', label: 'Twitter / X URL', keyboardType: 'url'},
   ],
   'investor:individual': [
-    {key: 'organizationName', label: 'Your Name'},
-    {key: 'aboutUs', label: 'About', multiline: true},
+    {key: 'organizationName', label: 'Your Name', required: true},
+    {key: 'aboutUs', label: 'About', multiline: true, required: true},
     {
       key: 'keyInvestments',
       label: 'Key Investments',
       multiline: true,
       placeholder: 'Brief summary of notable portfolio companies',
+      required: true,
     },
     {key: 'portfolioSize', label: 'Portfolio Size', keyboardType: 'numeric'},
-    {key: 'linkedinUrl', label: 'LinkedIn URL', keyboardType: 'url'},
+    {key: 'linkedinUrl', label: 'LinkedIn URL', keyboardType: 'url', required: true},
   ],
   corporate: [
-    {key: 'companyName', label: 'Company Name'},
-    {key: 'briefDescription', label: 'Brief Description', multiline: true},
+    {key: 'companyName', label: 'Company Name', required: true},
+    {
+      key: 'briefDescription',
+      label: 'Brief Description',
+      multiline: true,
+      required: true,
+    },
     {key: 'website', label: 'Website', keyboardType: 'url'},
     {key: 'linkedinUrl', label: 'LinkedIn URL', keyboardType: 'url'},
     {key: 'twitterUrl', label: 'Twitter / X URL', keyboardType: 'url'},
   ],
   mentor: [
-    {key: 'name', label: 'Full Name'},
-    {key: 'shortDescription', label: 'Headline / Tagline'},
-    {key: 'briefDescription', label: 'About', multiline: true},
+    {key: 'name', label: 'Full Name', required: true},
+    {key: 'shortDescription', label: 'Headline / Tagline', required: true},
+    {key: 'briefDescription', label: 'About', multiline: true, required: true},
     {key: 'designation', label: 'Designation'},
     {key: 'currentOrganization', label: 'Current Organization'},
     {key: 'websiteUrl', label: 'Website', keyboardType: 'url'},
-    {key: 'linkedinUrl', label: 'LinkedIn URL', keyboardType: 'url'},
+    {key: 'linkedinUrl', label: 'LinkedIn URL', keyboardType: 'url', required: true},
   ],
+};
+
+// Pre-compute per-field validators based on the FieldConfig flags.
+const buildValidators = (
+  fields: FieldConfig[],
+): Record<string, Validator> => {
+  const map: Record<string, Validator> = {};
+  fields.forEach(field => {
+    const validators: Validator[] = [];
+    if (field.required) {
+      validators.push(required(field.label));
+    }
+    if (field.keyboardType === 'url') {
+      validators.push(url);
+    }
+    if (field.validator) {
+      validators.push(field.validator);
+    }
+    if (validators.length > 0) {
+      map[field.key] = validators.length === 1 ? validators[0] : combine(...validators);
+    }
+  });
+  return map;
 };
 
 const resolveRoleKey = (
@@ -121,12 +157,13 @@ export function RoleBasicInfoTab({
   const roleKey = resolveRoleKey(accountType, investorSubtype);
   const fields = roleKey ? ROLE_FIELDS[roleKey] : [];
 
-  const [values, setValues] = useState<Record<string, string>>(() =>
-    seedValues(fields, initialData),
-  );
+  const form = useFormValidation({
+    initial: seedValues(fields, initialData),
+    validators: buildValidators(fields),
+  });
 
   useEffect(() => {
-    setValues(seedValues(fields, initialData));
+    form.reset(seedValues(fields, initialData));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialData, roleKey]);
 
@@ -146,13 +183,19 @@ export function RoleBasicInfoTab({
         <AppTextField
           key={field.key}
           label={field.label}
+          required={field.required}
+          error={form.errors[field.key]}
           placeholder={field.placeholder}
           keyboardType={field.keyboardType}
           multiline={field.multiline}
-          value={values[field.key] || ''}
-          onChangeText={text =>
-            setValues(prev => ({...prev, [field.key]: text}))
+          autoCapitalize={
+            field.keyboardType === 'url' || field.keyboardType === 'email-address'
+              ? 'none'
+              : undefined
           }
+          value={form.values[field.key] || ''}
+          onChangeText={text => form.setValue(field.key, text)}
+          onBlur={() => form.setTouched(field.key)}
         />
       ))}
 
@@ -160,7 +203,9 @@ export function RoleBasicInfoTab({
         label={isSaving ? 'Saving…' : 'Save'}
         disabled={isSaving}
         loading={isSaving}
-        onPress={() => onSave(buildPayload(values))}
+        onPress={() =>
+          form.handleSubmit(values => onSave(buildPayload(values)))
+        }
         style={{backgroundColor: primaryColor}}
       />
     </View>

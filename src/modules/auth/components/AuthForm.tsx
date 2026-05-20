@@ -21,6 +21,9 @@ type AuthField = {
   placeholder: string;
   value: string;
   onChangeText: (value: string) => void;
+  onBlur?: () => void;
+  error?: string;
+  required?: boolean;
   secureTextEntry?: boolean;
   keyboardType?: 'default' | 'email-address';
   autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
@@ -139,6 +142,9 @@ export function AuthForm({
             keyboardType={field.keyboardType}
             label={field.label}
             onChangeText={field.onChangeText}
+            onBlur={field.onBlur}
+            error={field.error}
+            required={field.required}
             placeholder={field.placeholder}
             secureTextEntry={field.secureTextEntry}
             value={field.value}

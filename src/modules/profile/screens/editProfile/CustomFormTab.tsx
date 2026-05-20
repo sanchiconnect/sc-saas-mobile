@@ -141,7 +141,40 @@ export function CustomFormTab({token, form, primaryColor}: Props) {
     };
   }, [token, form.uuid, form.fields]);
 
+  // Required-field validation: schema `field.required` is '1' / true / 'true'
+  // (the frontend uses strings). Empty value → block save with a per-field error.
+  const isRequiredField = (field: DynamicField): boolean => {
+    const raw = field.required;
+    if (typeof raw === 'boolean') return raw;
+    const s = String(raw ?? '').toLowerCase();
+    return s === '1' || s === 'true' || s === 'yes';
+  };
+
+  const isEmptyValue = (value: any): boolean => {
+    if (value == null) return true;
+    if (Array.isArray(value)) return value.length === 0;
+    if (typeof value === 'boolean') return false;
+    return String(value).trim().length === 0;
+  };
+
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+
   const onSave = async () => {
+    // Validate required fields locally before hitting the API.
+    const nextErrors: Record<string, string> = {};
+    form.fields.forEach(f => {
+      if (isRequiredField(f) && isEmptyValue(values[f.name])) {
+        nextErrors[f.name] = `${f.label || f.name} is required.`;
+      }
+    });
+    setFieldErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) {
+      setMessage({
+        text: 'Please complete the highlighted fields.',
+        tone: 'error',
+      });
+      return;
+    }
     setMessage(null);
     setSaving(true);
     try {
@@ -164,8 +197,18 @@ export function CustomFormTab({token, form, primaryColor}: Props) {
         const type = normaliseType(String(field.type || ''));
         const label = field.label || field.name;
         const value = values[field.name];
-        const setValue = (next: any) =>
+        const required = isRequiredField(field);
+        const fieldError = fieldErrors[field.name];
+        const setValue = (next: any) => {
           setValues(prev => ({...prev, [field.name]: next}));
+          // Clear this field's error as soon as the user starts typing/picking.
+          if (fieldError) {
+            setFieldErrors(prev => {
+              const {[field.name]: _, ...rest} = prev;
+              return rest;
+            });
+          }
+        };
 
         if (type === 'unsupported') {
           return (
@@ -184,6 +227,8 @@ export function CustomFormTab({token, form, primaryColor}: Props) {
             <AppTextField
               key={field.name}
               label={label}
+              required={required}
+              error={fieldError}
               placeholder={field.placeholder}
               value={String(value || '')}
               onChangeText={setValue}
@@ -198,6 +243,8 @@ export function CustomFormTab({token, form, primaryColor}: Props) {
             <AppTextField
               key={field.name}
               label={label}
+              required={required}
+              error={fieldError}
               placeholder={field.placeholder}
               keyboardType="numeric"
               value={String(value || '')}
@@ -211,6 +258,8 @@ export function CustomFormTab({token, form, primaryColor}: Props) {
             <AppTextField
               key={field.name}
               label={label}
+              required={required}
+              error={fieldError}
               placeholder={field.placeholder}
               keyboardType="email-address"
               autoCapitalize="none"
@@ -225,6 +274,8 @@ export function CustomFormTab({token, form, primaryColor}: Props) {
             <AppTextField
               key={field.name}
               label={label}
+              required={required}
+              error={fieldError}
               placeholder={field.placeholder}
               keyboardType="url"
               autoCapitalize="none"
@@ -240,6 +291,8 @@ export function CustomFormTab({token, form, primaryColor}: Props) {
             <AppTextField
               key={field.name}
               label={label}
+              required={required}
+              error={fieldError}
               placeholder={field.placeholder || 'YYYY-MM-DD'}
               value={String(value || '')}
               onChangeText={setValue}
@@ -304,6 +357,8 @@ export function CustomFormTab({token, form, primaryColor}: Props) {
           <AppTextField
             key={field.name}
             label={label}
+            required={required}
+            error={fieldError}
             placeholder={field.placeholder}
             value={String(value || '')}
             onChangeText={setValue}

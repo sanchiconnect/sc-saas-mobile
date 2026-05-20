@@ -3,6 +3,14 @@ import {StyleSheet, Text, View} from 'react-native';
 
 import {AppButton} from '../../../../core/components/AppButton';
 import {AppTextField} from '../../../../core/components/AppTextField';
+import {useFormValidation} from '../../../../core/form/useFormValidation';
+import {
+  combine,
+  email,
+  mobileNumber,
+  required,
+  url,
+} from '../../../../core/form/validators';
 import {authService} from '../../../auth/services/auth.service';
 
 type Props = {
@@ -27,13 +35,24 @@ const EMPTY: FormState = {
 };
 
 export function InvestorRepresentativeTab({token, primaryColor}: Props) {
-  const [form, setForm] = useState<FormState>(EMPTY);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{
     text: string;
     tone: 'success' | 'error';
   } | null>(null);
+
+  const form = useFormValidation<FormState>({
+    initial: EMPTY,
+    validators: {
+      personName: required('Full name'),
+      designation: required('Designation'),
+      mobileNumber: combine(required('Mobile number'), mobileNumber(7, 15)),
+      email: combine(required('Email'), email),
+      // LinkedIn URL is required per the frontend FormGroup (LINKDIN_URL_REGEX).
+      linkedinUrl: combine(required('LinkedIn URL'), url),
+    },
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -43,7 +62,7 @@ export function InvestorRepresentativeTab({token, primaryColor}: Props) {
       .then(res => {
         if (cancelled) return;
         const data = res?.data || res || {};
-        setForm({
+        form.reset({
           personName: String(data.personName || ''),
           designation: String(data.designation || ''),
           mobileNumber:
@@ -54,8 +73,7 @@ export function InvestorRepresentativeTab({token, primaryColor}: Props) {
       })
       .catch(() => {
         if (!cancelled) {
-          // Treat "no representative on file yet" as empty form.
-          setForm(EMPTY);
+          // No representative on file yet — keep empty form.
         }
       })
       .finally(() => {
@@ -64,20 +82,19 @@ export function InvestorRepresentativeTab({token, primaryColor}: Props) {
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
-  const onSave = async () => {
+  const submitNetwork = async (values: FormState) => {
     setMessage(null);
     setSaving(true);
     try {
       await authService.updateInvestorRepresentative(token, {
-        personName: form.personName.trim(),
-        designation: form.designation.trim(),
-        mobileNumber: form.mobileNumber.trim()
-          ? Number(form.mobileNumber.trim())
-          : undefined,
-        email: form.email.trim(),
-        linkedinUrl: form.linkedinUrl.trim(),
+        personName: values.personName.trim(),
+        designation: values.designation.trim(),
+        mobileNumber: Number(values.mobileNumber.replace(/\D/g, '')),
+        email: values.email.trim(),
+        linkedinUrl: values.linkedinUrl.trim(),
       });
       setMessage({text: 'Representative details saved.', tone: 'success'});
     } catch (error) {
@@ -103,33 +120,48 @@ export function InvestorRepresentativeTab({token, primaryColor}: Props) {
 
       <AppTextField
         label="Full Name"
-        value={form.personName}
-        onChangeText={t => setForm(p => ({...p, personName: t}))}
+        required
+        error={form.errors.personName}
+        value={form.values.personName}
+        onChangeText={t => form.setValue('personName', t)}
+        onBlur={() => form.setTouched('personName')}
       />
       <AppTextField
         label="Designation"
-        value={form.designation}
-        onChangeText={t => setForm(p => ({...p, designation: t}))}
+        required
+        error={form.errors.designation}
+        value={form.values.designation}
+        onChangeText={t => form.setValue('designation', t)}
+        onBlur={() => form.setTouched('designation')}
       />
       <AppTextField
         label="Mobile Number"
+        required
+        error={form.errors.mobileNumber}
         keyboardType="number-pad"
-        value={form.mobileNumber}
-        onChangeText={t => setForm(p => ({...p, mobileNumber: t}))}
+        value={form.values.mobileNumber}
+        onChangeText={t => form.setValue('mobileNumber', t)}
+        onBlur={() => form.setTouched('mobileNumber')}
       />
       <AppTextField
         label="Email Address"
+        required
+        error={form.errors.email}
         keyboardType="email-address"
         autoCapitalize="none"
-        value={form.email}
-        onChangeText={t => setForm(p => ({...p, email: t}))}
+        value={form.values.email}
+        onChangeText={t => form.setValue('email', t)}
+        onBlur={() => form.setTouched('email')}
       />
       <AppTextField
         label="LinkedIn URL"
+        required
+        error={form.errors.linkedinUrl}
         keyboardType="url"
         autoCapitalize="none"
-        value={form.linkedinUrl}
-        onChangeText={t => setForm(p => ({...p, linkedinUrl: t}))}
+        value={form.values.linkedinUrl}
+        onChangeText={t => form.setValue('linkedinUrl', t)}
+        onBlur={() => form.setTouched('linkedinUrl')}
       />
 
       {message ? (
@@ -148,7 +180,7 @@ export function InvestorRepresentativeTab({token, primaryColor}: Props) {
         label={loading ? 'Loading…' : saving ? 'Saving…' : 'Save'}
         disabled={loading || saving}
         loading={saving}
-        onPress={onSave}
+        onPress={() => form.handleSubmit(submitNetwork)}
         style={{backgroundColor: primaryColor}}
       />
     </View>

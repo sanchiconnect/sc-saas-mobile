@@ -1,5 +1,7 @@
-import React, {useState} from 'react';
+import React from 'react';
 
+import {useFormValidation} from '../../../core/form/useFormValidation';
+import {combine, email, required} from '../../../core/form/validators';
 import {AuthForm} from '../components/AuthForm';
 import {LoginRequestPayload} from '../models/auth.models';
 
@@ -18,7 +20,12 @@ export function LoginScreen({
   message,
   messageTone = 'neutral',
 }: LoginScreenProps) {
-  const [email, setEmail] = useState('');
+  const form = useFormValidation({
+    initial: {email: ''},
+    validators: {
+      email: combine(required('Email'), email),
+    },
+  });
 
   return (
     <AuthForm
@@ -26,9 +33,12 @@ export function LoginScreen({
         {
           key: 'email',
           label: 'Email address',
-          placeholder: 'Email address',
-          value: email,
-          onChangeText: setEmail,
+          placeholder: 'you@example.com',
+          value: form.values.email,
+          onChangeText: v => form.setValue('email', v),
+          onBlur: () => form.setTouched('email'),
+          error: form.errors.email,
+          required: true,
           autoCapitalize: 'none',
           keyboardType: 'email-address',
         },
@@ -40,7 +50,11 @@ export function LoginScreen({
       subtitle="If you are already registered, enter your email address to receive a login OTP."
       primaryLabel="Send OTP"
       secondaryLabel="Don't have an account? Sign up"
-      onPrimaryPress={() => onLogin({email: email.trim().toLowerCase()})}
+      onPrimaryPress={() =>
+        form.handleSubmit(values =>
+          onLogin({email: values.email.trim().toLowerCase()}),
+        )
+      }
       onSecondaryPress={onSignup}
     />
   );
