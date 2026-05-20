@@ -1,5 +1,15 @@
-import React, {useContext, useRef, useState} from 'react';
-import {Image, Pressable, StyleSheet, Text, TextInput, View} from 'react-native';
+import React, {useContext, useEffect, useRef, useState} from 'react';
+import {
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 
 import {AppButton} from '../../../core/components/AppButton';
 import {AppCard} from '../../../core/components/AppCard';
@@ -27,7 +37,23 @@ export function OtpScreen({
   const [otp, setOtp] = useState(['', '', '', '']);
   const inputs = useRef<Array<TextInput | null>>([]);
   const {globalSetting, theme} = useContext(TenantContext);
-  const accent = theme?.primary || '#a16207';
+  const accent = theme?.primary || '#0f172a';
+
+  // Resend cooldown — 30s after each tap. Prevents abusive resends and gives
+  // the user a clear sense of "wait, the code is on its way." Counter is
+  // reset on mount (first send is exempt) but engages on every Resend tap.
+  const [resendCooldown, setResendCooldown] = useState(0);
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const id = setTimeout(() => setResendCooldown(c => c - 1), 1000);
+    return () => clearTimeout(id);
+  }, [resendCooldown]);
+  const canResend = resendCooldown === 0 && !isSubmitting;
+  const handleResend = () => {
+    if (!canResend) return;
+    setResendCooldown(30);
+    onResend?.();
+  };
 
   const logoBaseUrl = globalSetting?.imgKitUrl || globalSetting?.assetsImgKitUrl;
   const logoPath = globalSetting?.logo;
@@ -81,7 +107,12 @@ export function OtpScreen({
   };
 
   return (
-    <View style={styles.page}>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      style={styles.page}>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        keyboardShouldPersistTaps="handled">
       <AppCard>
         <View style={styles.container}>
           {logoUri ? <Image source={{uri: logoUri}} style={styles.logo} /> : null}
@@ -147,8 +178,13 @@ export function OtpScreen({
           <View style={styles.footer}>
             <Text style={styles.text}>
               Didn't get the code?{' '}
-              <Text style={[styles.link, {color: accent}]} onPress={onResend}>
-                Resend
+              <Text
+                style={[
+                  styles.link,
+                  {color: canResend ? accent : '#94a3b8'},
+                ]}
+                onPress={handleResend}>
+                {canResend ? 'Resend' : `Resend in ${resendCooldown}s`}
               </Text>
             </Text>
           </View>
@@ -158,7 +194,8 @@ export function OtpScreen({
           </Pressable>
         </View>
       </AppCard>
-    </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -166,6 +203,9 @@ const styles = StyleSheet.create({
   page: {
     flex: 1,
     backgroundColor: '#f8fafc',
+  },
+  scroll: {
+    flexGrow: 1,
     justifyContent: 'center',
     padding: 24,
   },

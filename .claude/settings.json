@@ -30,7 +30,10 @@
       "Bash(grep \"ENDPOINT\\\\|:\\\\`\")",
       "Bash(grep -E \"\\\\.\\(ts|html\\)$\")",
       "Bash(grep -E \"\\\\.ts$\")",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(awk 'NR>=510 && NR<=590' /Users/mac/Desktop/Work/SanchiConnect/sc-saas-mobile/src/modules/programs/screens/ProgramsScreen.tsx)"
     ],
     "additionalDirectories": [
       "/Users/mac"

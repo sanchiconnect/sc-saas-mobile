@@ -1,5 +1,6 @@
 import React, {useState} from 'react';
 import {
+  Alert,
   Image,
   Pressable,
   ScrollView,
@@ -370,7 +371,22 @@ export function SideMenu({
             />
           ) : null}
 
-          <Pressable style={styles.logoutButton} onPress={onLogout}>
+          <Pressable
+            style={styles.logoutButton}
+            onPress={() =>
+              Alert.alert(
+                'Sign out?',
+                'You will need to sign in again to access your account.',
+                [
+                  {text: 'Cancel', style: 'cancel'},
+                  {
+                    text: 'Sign out',
+                    style: 'destructive',
+                    onPress: onLogout,
+                  },
+                ],
+              )
+            }>
             <Icon name="logout" size={18} color="#ffffff" />
             <Text style={styles.logoutText}>Logout</Text>
           </Pressable>
@@ -420,7 +436,7 @@ const styles = StyleSheet.create({
     width: 170,
   },
   brandName: {
-    color: '#172554',
+    color: '#0f172a',
     fontSize: 24,
     fontWeight: '800',
   },
@@ -438,7 +454,7 @@ const styles = StyleSheet.create({
   },
   avatarWrap: {
     alignItems: 'center',
-    backgroundColor: '#eef2ff',
+    backgroundColor: '#f1f5f9',
     borderRadius: 16,
     height: 52,
     justifyContent: 'center',
@@ -446,7 +462,7 @@ const styles = StyleSheet.create({
     width: 52,
   },
   avatarText: {
-    color: '#1941c6',
+    color: '#475569',
     fontSize: 18,
     fontWeight: '800',
   },
@@ -595,7 +611,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
   },
   sectionItemActive: {
-    backgroundColor: '#f1f5ff',
+    backgroundColor: '#f1f5f9',
   },
   sectionItemText: {
     color: '#1f2937',
@@ -604,7 +620,7 @@ const styles = StyleSheet.create({
   },
   logoutButton: {
     alignItems: 'center',
-    backgroundColor: '#1b2140',
+    backgroundColor: '#0f172a',
     borderRadius: 12,
     flexDirection: 'row',
     gap: 10,

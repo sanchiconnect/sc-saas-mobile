@@ -483,11 +483,13 @@ const styles = StyleSheet.create({
     top: 0,
     width: 110,
   },
+  // Static fallbacks — actual tenant primary is overridden inline at render
+  // time via the `{borderLeftColor: primaryColor}` spread in the hero panel.
   progressHalfRight: {
-    borderLeftColor: '#4f46e5',
+    borderLeftColor: '#0f172a',
   },
   progressHalfLeft: {
-    borderRightColor: '#4f46e5',
+    borderRightColor: '#0f172a',
   },
   progressRingInner: {
     alignItems: 'center',

@@ -13,6 +13,7 @@ import {
 import {TenantContext} from '../../core/tenant/TenantProvider';
 import {AppButton} from '../../core/components/AppButton';
 import {Icon} from '../../core/components/Icon';
+import {useToast} from '../../core/toast/ToastProvider';
 
 type FeedbackReaction =
   | 'below_average'
@@ -62,6 +63,7 @@ type FeedbackModalProps = {
 
 export function FeedbackModal({visible, onClose}: FeedbackModalProps) {
   const {theme, globalSetting, baseUrl} = useContext(TenantContext);
+  const toast = useToast();
   const [selectedReaction, setSelectedReaction] =
     useState<FeedbackReaction | null>(null);
   const [feedback, setFeedback] = useState('');
@@ -115,9 +117,10 @@ export function FeedbackModal({visible, onClose}: FeedbackModalProps) {
       resetAndClose();
     } catch (error) {
       setLoading(false);
-      Alert.alert(
-        'Feedback failed',
-        'We could not submit your feedback. Please try again.',
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : 'We could not submit your feedback. Please try again.',
       );
     }
   };

@@ -56,7 +56,8 @@ export function RoleSelectionScreen({onNext, onLogin}: Props) {
   const [selectedInvestorType, setSelectedInvestorType] = useState<
     string | null
   >(null);
-  const {globalSetting} = useContext(TenantContext);
+  const {globalSetting, theme} = useContext(TenantContext);
+  const accent = theme?.primary || '#0f172a';
 
   const roleOptions = useMemo<RoleOption[]>(() => {
     const users = globalSetting?.users || {};
@@ -158,7 +159,10 @@ export function RoleSelectionScreen({onNext, onLogin}: Props) {
           return (
             <Pressable
               key={role.value}
-              style={[styles.card, isSelected ? styles.cardSelected : null]}
+              style={[
+                styles.card,
+                isSelected ? [styles.cardSelected, {borderColor: accent}] : null,
+              ]}
               onPress={() => {
                 setSelectedRole(role.value);
                 if (role.value !== 'investor') {
@@ -166,7 +170,12 @@ export function RoleSelectionScreen({onNext, onLogin}: Props) {
                 }
               }}>
               <View
-                style={[styles.radio, isSelected ? styles.radioSelected : null]}
+                style={[
+                  styles.radio,
+                  isSelected
+                    ? [styles.radioSelected, {backgroundColor: accent, borderColor: accent}]
+                    : null,
+                ]}
               />
 
               <Text style={styles.cardText}>{role.label}</Text>
@@ -186,12 +195,17 @@ export function RoleSelectionScreen({onNext, onLogin}: Props) {
               return (
                 <Pressable
                   key={option.value}
-                  style={[styles.card, isSelected ? styles.cardSelected : null]}
+                  style={[
+                    styles.card,
+                    isSelected ? [styles.cardSelected, {borderColor: accent}] : null,
+                  ]}
                   onPress={() => setSelectedInvestorType(option.value)}>
                   <View
                     style={[
                       styles.radio,
-                      isSelected ? styles.radioSelected : null,
+                      isSelected
+                        ? [styles.radioSelected, {backgroundColor: accent, borderColor: accent}]
+                        : null,
                     ]}
                   />
                   <Text style={styles.cardText}>{option.label}</Text>

@@ -1198,7 +1198,11 @@ export function EditProfileScreen({
 
       <View style={styles.tabsSection}>
         <View style={styles.tabsShell}>
-          <View style={styles.tabsRow}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={styles.tabsRow}>
             {tabs.map(tab => {
               const isActive = tab.key === activeTab;
               const isComplete = tab.status === 'complete';
@@ -1229,7 +1233,7 @@ export function EditProfileScreen({
                 </Pressable>
               );
             })}
-          </View>
+          </ScrollView>
         </View>
       </View>
 
@@ -1645,8 +1649,10 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   tabsRow: {
+    // Horizontal scrollable row (was: flexWrap: 'wrap' — wrapped to 3+ lines
+    // with custom-form tabs added). gap separates pills; the parent ScrollView
+    // shows them inline with overflow scroll.
     flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: 12,
     paddingHorizontal: 12,
     paddingVertical: 12,

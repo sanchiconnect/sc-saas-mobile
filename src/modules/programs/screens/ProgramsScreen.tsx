@@ -15,6 +15,7 @@ import {authService} from '../../auth/services/auth.service';
 import {AppButton} from '../../../core/components/AppButton';
 import {Icon} from '../../../core/components/Icon';
 import {colors} from '../../../core/theme/colors';
+import {useToast} from '../../../core/toast/ToastProvider';
 
 type ProgramsScreenProps = {
   token: string;
@@ -157,6 +158,7 @@ export function ProgramsScreen({
   onModeChange,
   onBack,
 }: ProgramsScreenProps) {
+  const toast = useToast();
   const [isLoading, setIsLoading] = useState(true);
   const [screenMode, setScreenMode] = useState<ScreenMode>(defaultMode);
   const [searchText, setSearchText] = useState('');
@@ -206,8 +208,7 @@ export function ProgramsScreen({
         if (!cancelled) {
           setPrograms([]);
           setApplicationPrograms([]);
-          Alert.alert(
-            'Programs unavailable',
+          toast.error(
             error instanceof Error
               ? error.message
               : 'Could not load programs right now.',
@@ -571,7 +572,7 @@ function ProgramCard({
         </Text>
 
         <Pressable
-          style={styles.programAction}
+          style={[styles.programAction, {backgroundColor: primaryColor}]}
           onPress={onPress}
           accessibilityRole="button"
           accessibilityLabel={`View ${program.programTitle}`}>

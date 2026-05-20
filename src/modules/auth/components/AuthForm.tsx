@@ -1,5 +1,13 @@
 import React, {useContext} from 'react';
-import {Image, StyleSheet, Text, View} from 'react-native';
+import {
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 
 import {AppButton} from '../../../core/components/AppButton';
 import {AppCard} from '../../../core/components/AppCard';
@@ -55,8 +63,11 @@ export function AuthForm({
   const styles = StyleSheet.create({
     page: {
       backgroundColor: '#f8fafc',
-      alignItems: 'center',
       flex: 1,
+    },
+    scroll: {
+      flexGrow: 1,
+      alignItems: 'center',
       justifyContent: 'center',
       padding: 24,
     },
@@ -104,7 +115,13 @@ export function AuthForm({
     },
   });
   return (
-    <View style={styles.page}>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      style={styles.page}>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}>
       <AppCard>
         <View style={styles.card}>
         {logoUri ? (
@@ -158,7 +175,8 @@ export function AuthForm({
         />
         </View>
       </AppCard>
-    </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 

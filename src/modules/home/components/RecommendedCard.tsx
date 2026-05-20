@@ -201,11 +201,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 999,
-    backgroundColor: '#eef2ff',
+    backgroundColor: '#f1f5f9',
   },
   tagText: {
     fontSize: 10,
-    color: '#3730a3',
+    color: '#475569',
     fontWeight: '600',
   },
 });

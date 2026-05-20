@@ -633,7 +633,7 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   subheading: {
-    color: '#1d4ed8',
+    color: '#0f172a',
     fontSize: 14,
     fontWeight: '700',
     marginBottom: 4,

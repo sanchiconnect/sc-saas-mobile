@@ -16,6 +16,7 @@ import {authService} from './src/modules/auth/services/auth.service';
 import {AUTH_SCREENS, AuthScreen} from './src/modules/auth/types';
 import {setSessionInvalidHandler} from './src/core/api/apiClient';
 import {TenantProvider} from './src/core/tenant/TenantProvider';
+import {ToastProvider} from './src/core/toast/ToastProvider';
 import {
   clearSession,
   loadSession,
@@ -95,6 +96,7 @@ function App() {
   return (
     <TenantProvider>
       <SafeAreaProvider>
+        <ToastProvider>
         <SafeAreaView
           style={[
             styles.appShell,
@@ -123,6 +125,7 @@ function App() {
           )}
           {shouldShowFeedback ? <FeedbackWidget /> : null}
         </SafeAreaView>
+        </ToastProvider>
       </SafeAreaProvider>
     </TenantProvider>
   );
