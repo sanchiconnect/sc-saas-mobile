@@ -49,7 +49,8 @@ export function LoginScreen({
       title="Login"
       subtitle="If you are already registered, enter your email address to receive a login OTP."
       primaryLabel="Send OTP"
-      secondaryLabel="Don't have an account? Sign up"
+      secondaryPrefix="Don't have an account?"
+      secondaryLabel="Sign up"
       onPrimaryPress={() =>
         form.handleSubmit(values =>
           onLogin({email: values.email.trim().toLowerCase()}),
