@@ -5,7 +5,6 @@ import {
   Image,
   Modal,
   Pressable,
-  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -237,7 +236,6 @@ export function AccountSettingsScreen({
   const [activeTab, setActiveTab] =
     useState<AccountSettingsTabKey>('personal-information');
   const [isLoading, setIsLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const [isDeleteModalVisible, setIsDeleteModalVisible] = useState(false);
@@ -288,41 +286,29 @@ export function AccountSettingsScreen({
     tenantFeatures?.wa_enable === true ||
     tenantFeatures?.whatsapp_otp_verification === true;
 
-  const loadProfile = useCallback(
-    async (mode: 'initial' | 'refresh' = 'initial') => {
-      if (mode === 'initial') {
-        setIsLoading(true);
-      } else {
-        setIsRefreshing(true);
-      }
+  const loadProfile = useCallback(async () => {
+    setIsLoading(true);
+    setLoadError(null);
 
-      setLoadError(null);
-
-      try {
-        const response = await authService.getProfile(token);
-        const nextPersonalInformation = extractPersonalInformation(
-          response,
-          session,
-          logoBaseUrl,
-        );
-        setPersonalInformation(nextPersonalInformation);
-        setInitialPersonalInformation(nextPersonalInformation);
-      } catch (error) {
-        const message =
-          error instanceof Error
-            ? error.message
-            : 'Could not load your account settings.';
-        setLoadError(message);
-      } finally {
-        if (mode === 'initial') {
-          setIsLoading(false);
-        } else {
-          setIsRefreshing(false);
-        }
-      }
-    },
-    [logoBaseUrl, session, token],
-  );
+    try {
+      const response = await authService.getProfile(token);
+      const nextPersonalInformation = extractPersonalInformation(
+        response,
+        session,
+        logoBaseUrl,
+      );
+      setPersonalInformation(nextPersonalInformation);
+      setInitialPersonalInformation(nextPersonalInformation);
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Could not load your account settings.';
+      setLoadError(message);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [logoBaseUrl, session, token]);
 
   useEffect(() => {
     loadProfile();
@@ -1190,13 +1176,11 @@ export function AccountSettingsScreen({
       <ScrollView
         style={styles.page}
         contentContainerStyle={styles.pageContent}
-        refreshControl={
-          <RefreshControl
-            refreshing={isRefreshing}
-            onRefresh={() => loadProfile('refresh')}
-            tintColor={primaryColor}
-          />
-        }>
+        keyboardShouldPersistTaps="handled">
+        {/* No RefreshControl: Account Settings is a form, and pull-to-refresh
+            would reload server data over the user's in-progress edits. The
+            "Try again" button on the load-error state covers the recovery
+            case. */}
         <View style={styles.headerRow}>
           <Pressable
             accessibilityRole="button"

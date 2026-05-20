@@ -408,12 +408,19 @@ export function HomeScreen({
 
       <ScrollView
         contentContainerStyle={styles.content}
+        // Pull-to-refresh only makes sense on the Dashboard (it reloads
+        // summary + recommended widgets). On sidebar section pages there's
+        // nothing to refresh, and the gesture was firing unexpectedly when
+        // users scrolled vertically. Refresh is therefore scoped to the
+        // dashboard branch.
         refreshControl={
-          <RefreshControl
-            refreshing={isRefreshing}
-            onRefresh={handleRefresh}
-            colors={[primaryColor]}
-          />
+          selectedMenu.section === 'dashboard' ? (
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={handleRefresh}
+              colors={[primaryColor]}
+            />
+          ) : undefined
         }
         showsVerticalScrollIndicator={false}>
         {selectedMenu.section === 'dashboard' ? (
