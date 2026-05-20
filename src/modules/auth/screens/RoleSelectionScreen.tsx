@@ -162,16 +162,17 @@ export function RoleSelectionScreen({onNext, onLogin}: Props) {
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
-      <ScrollView
-        contentContainerStyle={styles.scroll}
-        showsVerticalScrollIndicator={false}>
+      {/* Sticky header — always visible so the user can read the prompt and
+          back out at any scroll position. */}
+      <View style={styles.stickyHeader}>
         <Pressable
           onPress={onLogin}
           style={styles.backLinkWrap}
-          accessibilityLabel="Back to login">
+          accessibilityLabel="Back to login"
+          hitSlop={10}>
           <Icon name="arrow-left" size={18} color="#475569" />
           <Text style={styles.backText}>
-            Already have an account?{' '}
+            Have an account?{' '}
             <Text style={[styles.loginLink, {color: accent}]}>Log in</Text>
           </Text>
         </Pressable>
@@ -185,7 +186,11 @@ export function RoleSelectionScreen({onNext, onLogin}: Props) {
             Choose the role that best describes you on the platform.
           </Text>
         </View>
+      </View>
 
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}>
         <View style={styles.grid}>
           {roleOptions.map(role => {
             const isSelected = selectedRole === role.value;
@@ -302,14 +307,23 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
   },
   scroll: {
-    padding: spacing.xl,
+    paddingHorizontal: spacing.xl,
     paddingBottom: spacing.lg,
+    paddingTop: spacing.md,
+  },
+  stickyHeader: {
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
+    backgroundColor: '#ffffff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
   },
   backLinkWrap: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    marginBottom: spacing.xl,
+    marginBottom: spacing.md,
   },
   backText: {
     fontSize: typography.body,
@@ -319,8 +333,8 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   headerWrap: {
-    gap: spacing.sm,
-    marginBottom: spacing.xl,
+    gap: spacing.xs,
+    marginBottom: spacing.md,
   },
   stepBadge: {
     alignSelf: 'flex-start',
@@ -350,22 +364,23 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   card: {
-    width: '47%',
-    flexGrow: 1,
-    minHeight: 86,
-    borderWidth: 1.5,
+    // Strict 2-column layout. flexGrow stays 0 so the last odd item doesn't
+    // stretch to fill the row — it sits at the same width as the others.
+    width: '47.5%',
+    minHeight: 84,
+    borderWidth: 1,
     borderColor: '#e2e8f0',
     borderRadius: radii.lg,
     padding: spacing.md,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
+    gap: spacing.sm + 2,
     backgroundColor: '#ffffff',
     ...shadows.sm,
   },
   iconBubble: {
-    width: 40,
-    height: 40,
+    width: 36,
+    height: 36,
     borderRadius: radii.md,
     backgroundColor: '#f1f5f9',
     alignItems: 'center',
@@ -373,9 +388,12 @@ const styles = StyleSheet.create({
   },
   cardText: {
     flex: 1,
-    fontSize: typography.body,
+    // 13pt body fits 2-line wraps for "Service Provider" / "Program Office
+    // Member" without forcing tighter card padding.
+    fontSize: 13,
     fontWeight: '600',
     color: '#0f172a',
+    lineHeight: 17,
   },
   investorSection: {
     marginTop: spacing.xxl,

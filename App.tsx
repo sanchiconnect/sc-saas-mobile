@@ -32,9 +32,10 @@ function App() {
   // Edit Profile. Mirrors the frontend's role-specific redirect to edit/<role>
   // after register. Cleared once the user navigates away.
   const [justSignedUp, setJustSignedUp] = useState(false);
-  const shouldShowFeedback =
-    session !== null ||
-    (authScreen !== AUTH_SCREENS.LOGIN && authScreen !== AUTH_SCREENS.SIGNUP);
+  // Feedback FAB only appears when the user is signed in. Hiding it across
+  // the entire auth flow avoids competing with primary CTAs (Continue on
+  // role selection, Verify OTP, etc.) at the bottom of those screens.
+  const shouldShowFeedback = session !== null;
 
   useEffect(() => {
     loadSession()
