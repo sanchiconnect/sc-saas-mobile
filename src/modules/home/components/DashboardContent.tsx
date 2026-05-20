@@ -1,10 +1,38 @@
-import React from 'react';
-import {Pressable, StyleSheet, Text, TextInput, View} from 'react-native';
+import React, {useState} from 'react';
+import {
+  Modal,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 
 import {Icon} from '../../../core/components/Icon';
 import {radii, spacing, typography, withAlpha} from '../../../core/theme/colors';
 import {DashboardStat} from '../types';
 import {RecommendedSection} from './RecommendedSection';
+
+// Search-scope chips, in display order. `userKey` matches the tenant.users.*
+// flag — chip is hidden if the tenant has disabled that role. Users can
+// search any stakeholder type, including their own (a startup may want to
+// connect with other startups).
+type SearchScope = {
+  key: string;
+  label: string;
+  userKey?: string;
+};
+
+const SEARCH_SCOPES: SearchScope[] = [
+  {key: 'all', label: 'All'},
+  {key: 'startups', label: 'Startups', userKey: 'startups'},
+  {key: 'investors', label: 'Investors', userKey: 'investors'},
+  {key: 'corporates', label: 'Corporates', userKey: 'corporates'},
+  {key: 'mentors', label: 'Mentors', userKey: 'mentors'},
+  {key: 'service_providers', label: 'Service Providers', userKey: 'service_providers'},
+  {key: 'partners', label: 'Partners', userKey: 'partners'},
+  {key: 'individuals', label: 'Individuals', userKey: 'individuals'},
+];
 
 type TenantUsersFlags = Record<string, any> | null | undefined;
 
@@ -53,6 +81,23 @@ export function DashboardContent({
   const rightRotation = Math.min(progress, 50) * 3.6;
   const leftRotation = progress > 50 ? (progress - 50) * 3.6 : 0;
   const showLeftHalf = progress > 50;
+
+  // Search-scope state. Visible options filtered by tenant flags only —
+  // every user can search any stakeholder type the tenant has enabled.
+  const [scope, setScope] = useState<string>('all');
+  const [scopePickerOpen, setScopePickerOpen] = useState(false);
+  const visibleScopes = SEARCH_SCOPES.filter(s => {
+    // Default to showing — only hide when the tenant has *explicitly*
+    // disabled the role (users.<role> === false). undefined / not-loaded
+    // means show, so the dropdown is populated as soon as the tenant
+    // config arrives, not after a full reload.
+    if (s.userKey && tenantUsers && tenantUsers[s.userKey] === false) {
+      return false;
+    }
+    return true;
+  });
+  const activeScope =
+    visibleScopes.find(s => s.key === scope) || visibleScopes[0];
 
   return (
     <>
@@ -117,14 +162,72 @@ export function DashboardContent({
         <View style={styles.searchRow}>
           <Icon name="magnify" size={20} color="#64748b" />
           <TextInput
-            placeholder="Search startups, investors, programs…"
+            placeholder="Enter a keyword"
             placeholderTextColor="#94a3b8"
             style={styles.searchInput}
             value={searchText}
             onChangeText={onSearchChange}
           />
+          {visibleScopes.length > 1 ? (
+            <Pressable
+              style={styles.scopeTrigger}
+              onPress={() => setScopePickerOpen(true)}
+              accessibilityRole="button"
+              accessibilityLabel={`Search scope: ${activeScope?.label || 'All'}`}>
+              <Text style={styles.scopeTriggerText} numberOfLines={1}>
+                {activeScope?.label || 'All'}
+              </Text>
+              <Icon name="chevron-down" size={18} color="#475569" />
+            </Pressable>
+          ) : null}
         </View>
       </View>
+
+      {/* Scope picker bottom sheet */}
+      <Modal
+        visible={scopePickerOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setScopePickerOpen(false)}>
+        <Pressable
+          style={styles.scopeBackdrop}
+          onPress={() => setScopePickerOpen(false)}>
+          <Pressable style={styles.scopeSheet} onPress={() => {}}>
+            <Text style={styles.scopeSheetTitle}>Search in</Text>
+            {visibleScopes.map(s => {
+              const isActive = scope === s.key;
+              return (
+                <Pressable
+                  key={s.key}
+                  style={[
+                    styles.scopeOption,
+                    isActive && {
+                      backgroundColor: withAlpha(primaryColor, 0.08),
+                    },
+                  ]}
+                  onPress={() => {
+                    setScope(s.key);
+                    setScopePickerOpen(false);
+                  }}>
+                  <Text
+                    style={[
+                      styles.scopeOptionText,
+                      isActive && {
+                        color: primaryColor,
+                        fontWeight: '700',
+                      },
+                    ]}>
+                    {s.label}
+                  </Text>
+                  {isActive ? (
+                    <Icon name="check" size={18} color={primaryColor} />
+                  ) : null}
+                </Pressable>
+              );
+            })}
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <View style={styles.statsGrid}>
         {stats.map(item => (
@@ -337,19 +440,18 @@ function RecommendedSections({
 const styles = StyleSheet.create({
   heroPanel: {
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.xl,
-    paddingBottom: spacing.xxl + spacing.md,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.xxl + spacing.lg,
   },
   heroTopRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     justifyContent: 'space-between',
     gap: spacing.lg,
     marginBottom: spacing.lg,
   },
   heroCopy: {
     flex: 1,
-    paddingTop: spacing.xs,
   },
   greeting: {
     color: 'rgba(255,255,255,0.78)',
@@ -363,56 +465,56 @@ const styles = StyleSheet.create({
   },
   heroAside: {
     alignItems: 'center',
-    gap: spacing.md,
+    gap: spacing.sm,
   },
   // Circular progress ring built from two rotating half-borders so we don't
   // need an SVG dependency. Uses translucent-white on the dark hero.
   progressRingOuter: {
     alignItems: 'center',
     justifyContent: 'center',
-    width: 96,
-    height: 96,
+    width: 80,
+    height: 80,
     position: 'relative',
   },
   progressRingTrack: {
     position: 'absolute',
-    width: 96,
-    height: 96,
+    width: 80,
+    height: 80,
     borderRadius: 999,
-    borderWidth: 8,
+    borderWidth: 6,
     borderColor: 'rgba(255,255,255,0.22)',
   },
   progressRingFull: {
     position: 'absolute',
-    width: 96,
-    height: 96,
+    width: 80,
+    height: 80,
     borderRadius: 999,
-    borderWidth: 8,
+    borderWidth: 6,
   },
   progressHalfWrapperRight: {
     position: 'absolute',
-    width: 48,
-    height: 96,
+    width: 40,
+    height: 80,
     right: 0,
     top: 0,
     overflow: 'hidden',
   },
   progressHalfWrapperLeft: {
     position: 'absolute',
-    width: 48,
-    height: 96,
+    width: 40,
+    height: 80,
     left: 0,
     top: 0,
     overflow: 'hidden',
   },
   progressHalf: {
     position: 'absolute',
-    width: 96,
-    height: 96,
+    width: 80,
+    height: 80,
     left: 0,
     top: 0,
     borderRadius: 999,
-    borderWidth: 8,
+    borderWidth: 6,
     borderColor: 'transparent',
   },
   progressHalfRight: {
@@ -424,13 +526,13 @@ const styles = StyleSheet.create({
   progressRingInner: {
     alignItems: 'center',
     justifyContent: 'center',
-    width: 72,
-    height: 72,
+    width: 60,
+    height: 60,
     borderRadius: 999,
     backgroundColor: '#ffffff',
   },
   progressValue: {
-    fontSize: typography.subhead,
+    fontSize: typography.body,
     fontWeight: '800',
   },
   editProfileButton: {
@@ -438,7 +540,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     paddingHorizontal: spacing.md,
-    paddingVertical: 8,
+    paddingVertical: 6,
     borderRadius: radii.md,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.5)',
@@ -464,19 +566,73 @@ const styles = StyleSheet.create({
     fontSize: typography.bodyLg,
     padding: 0,
   },
+  // Inline scope dropdown trigger — sits at the right end of the search
+  // input, divided from the text by a thin vertical border. Mirrors the
+  // frontend's "All ▾" pattern.
+  scopeTrigger: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    paddingLeft: spacing.md,
+    marginLeft: spacing.sm,
+    borderLeftWidth: 1,
+    borderLeftColor: '#e2e8f0',
+    maxWidth: 120,
+  },
+  scopeTriggerText: {
+    color: '#0f172a',
+    fontSize: typography.body,
+    fontWeight: '600',
+  },
+  // Bottom-sheet modal for picking the search scope.
+  scopeBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+    justifyContent: 'flex-end',
+  },
+  scopeSheet: {
+    backgroundColor: '#ffffff',
+    borderTopLeftRadius: radii.xl,
+    borderTopRightRadius: radii.xl,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.xxl,
+    paddingHorizontal: spacing.lg,
+    gap: 2,
+  },
+  scopeSheetTitle: {
+    color: '#64748b',
+    fontSize: typography.small,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: spacing.sm,
+  },
+  scopeOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    borderRadius: radii.md,
+  },
+  scopeOptionText: {
+    color: '#0f172a',
+    fontSize: typography.bodyLg,
+  },
   statsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.md,
-    marginTop: -spacing.xxl,
+    marginTop: -spacing.xxxl,
     paddingHorizontal: spacing.lg,
   },
   statCard: {
     backgroundColor: '#ffffff',
     borderRadius: radii.lg,
     elevation: 2,
-    flexBasis: '48%',
-    flexGrow: 1,
+    // Strict 2-column. flexGrow stays 0 so a stranded 5th tile sits in the
+    // left column at the same width — no awkward full-width stretch.
+    width: '48%',
     paddingHorizontal: spacing.md + 2,
     paddingVertical: spacing.md + 2,
     shadowColor: '#0f172a',

@@ -41,7 +41,8 @@
       "Bash(nc -zv -w 3 192.168.1.15 41147)",
       "Bash(nc -zv -w 3 192.168.1.15 37837)",
       "Bash(pkill -f \"gradlew assembleIsbaRelease\")",
-      "Bash(pkill -f \"GradleDaemon\")"
+      "Bash(pkill -f \"GradleDaemon\")",
+      "Bash(sips -Z 1200 /tmp/emu-screen.png --out /tmp/emu-screen-small.png)"
     ],
     "additionalDirectories": [
       "/Users/mac"
