@@ -31,7 +31,9 @@ import {
   startupBoosterKitItems,
   ticketItems,
 } from './config/menus';
+import {ConnectionsScreen} from './screens/ConnectionsScreen';
 import {EditProfileScreen} from './screens/EditProfileScreen';
+import {StartupsScreen} from './screens/StartupsScreen';
 import {TicketsScreen} from './screens/TicketsScreen';
 import {dashboardService} from './services/dashboard.service';
 import {AppMenuSelection, AppSection, DashboardSummary, MenuItem} from './types';
@@ -290,6 +292,64 @@ export function HomeScreen({
     );
   }
 
+  console.log(
+    '[HomeScreen] selectedMenu =',
+    JSON.stringify(selectedMenu),
+  );
+
+  if (selectedMenu.section === 'my-connections') {
+    return (
+      <View style={styles.page}>
+        <SideMenu
+          globalSetting={globalSetting}
+          isVisible={isMenuOpen}
+          onClose={() => setIsMenuOpen(false)}
+          onLogout={onLogout}
+          onSelectMenu={setSelectedMenu}
+          primaryColor={primaryColor}
+          selectedMenu={selectedMenu}
+          session={session}
+        />
+
+        <ConnectionsScreen
+          token={session.token}
+          primaryColor={primaryColor}
+          logoBaseUrl={logoBaseUrl}
+          onBack={() => setSelectedMenu({section: 'dashboard'})}
+        />
+      </View>
+    );
+  }
+
+  if (
+    selectedMenu.section === 'connect' &&
+    (!selectedMenu.item || selectedMenu.item === 'Startups')
+  ) {
+    console.log('[HomeScreen] -> rendering StartupsScreen branch');
+    return (
+      <View style={styles.page}>
+        <SideMenu
+          globalSetting={globalSetting}
+          isVisible={isMenuOpen}
+          onClose={() => setIsMenuOpen(false)}
+          onLogout={onLogout}
+          onSelectMenu={setSelectedMenu}
+          primaryColor={primaryColor}
+          selectedMenu={selectedMenu}
+          session={session}
+        />
+
+        <StartupsScreen
+          token={session.token}
+          userId={session.user.id}
+          primaryColor={primaryColor}
+          logoBaseUrl={logoBaseUrl}
+          onBack={() => setSelectedMenu({section: 'dashboard'})}
+        />
+      </View>
+    );
+  }
+
   if (selectedMenu.section === 'account-settings') {
     return (
       <View style={styles.page}>
@@ -353,8 +413,9 @@ export function HomeScreen({
           </Pressable>
           <Pressable
             style={styles.iconButton}
+            onPress={() => setSelectedMenu({section: 'my-connections'})}
             accessibilityRole="button"
-            accessibilityLabel="Team">
+            accessibilityLabel="My connections">
             <Icon name="account-group-outline" size={22} color="#475569" />
           </Pressable>
         </View>

@@ -114,6 +114,7 @@ const INDIVIDUAL_PUBLIC_INFORMATION_PATH =
   'api/v1/individuals/public/individual-information';
 const PROGRAM_OFFICE_PUBLIC_INFORMATION_PATH =
   'api/v1/program_office_members/public/program-office-member-information';
+const STARTUPS_SEARCH_PATH = 'api/v1/public/search/startups';
 
 type ApiResponse = Record<string, any>;
 
@@ -659,6 +660,212 @@ export const authService = {
       {
         method: 'GET',
         headers: getAuthHeader(token),
+      },
+      baseUrl,
+    );
+  },
+
+  async searchStartups(
+    token: string,
+    options: {
+      pageNumber?: number;
+      sortBy?: string;
+      orderBy?: 'ASC' | 'DESC';
+      partnerId?: string | null;
+      keyword?: string;
+      extraParams?: Record<string, string | number | undefined | null>;
+    } = {},
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    const params = new URLSearchParams();
+    params.append('pageNumber', String(options.pageNumber ?? 1));
+    params.append('sortBy', options.sortBy || 'priority');
+    params.append('orderBy', options.orderBy || 'ASC');
+    if (options.keyword?.trim()) {
+      params.append('keyword', options.keyword.trim());
+    }
+    params.append(
+      'partnerId',
+      options.partnerId === undefined || options.partnerId === null
+        ? 'null'
+        : String(options.partnerId),
+    );
+    if (options.extraParams) {
+      for (const [key, value] of Object.entries(options.extraParams)) {
+        if (value === undefined || value === null || value === '') {
+          continue;
+        }
+        params.append(key, String(value));
+      }
+    }
+    const normalizedToken = normalizeTokenValue(token);
+    return requestJson<ApiResponse>(
+      `${STARTUPS_SEARCH_PATH}?${params.toString()}`,
+      {
+        method: 'GET',
+        headers: normalizedToken
+          ? {Authorization: `Bearer ${normalizedToken}`}
+          : undefined,
+      },
+      baseUrl,
+    );
+  },
+
+  async sendConnectionRequest(
+    token: string,
+    toUserUUID: string,
+    message: string,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      'api/v1/connections/send/request',
+      {
+        method: 'POST',
+        headers: getAuthHeader(token),
+        body: JSON.stringify({toUserUUID, message}),
+      },
+      baseUrl,
+    );
+  },
+
+  async checkConnectionRequest(
+    token: string,
+    userUuid: string,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      `api/v1/connections/check/request/${userUuid}`,
+      {
+        method: 'POST',
+        headers: getAuthHeader(token),
+        body: JSON.stringify({}),
+      },
+      baseUrl,
+    );
+  },
+
+  async createWishlistEntry(
+    token: string,
+    userUuid: string,
+    notes?: string,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      `api/v1/wishlist/create/${userUuid}`,
+      {
+        method: 'POST',
+        headers: getAuthHeader(token),
+        body: JSON.stringify(notes ? {notes} : {}),
+      },
+      baseUrl,
+    );
+  },
+
+  async deleteWishlistEntry(
+    token: string,
+    userUuid: string,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      `api/v1/wishlist/${userUuid}`,
+      {
+        method: 'DELETE',
+        headers: getAuthHeader(token),
+      },
+      baseUrl,
+    );
+  },
+
+  async getConnections(
+    token: string,
+    options: {
+      pageNumber?: number;
+      limit?: number;
+      sortBy?: string;
+      orderBy?: 'ASC' | 'DESC';
+    } = {},
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    const params = new URLSearchParams();
+    params.append('sortBy', options.sortBy || 'connectedAt');
+    params.append('orderBy', options.orderBy || 'DESC');
+    params.append('pageNumber', String(options.pageNumber ?? 1));
+    params.append('limit', String(options.limit ?? 500));
+    return requestJson<ApiResponse>(
+      `api/v1/connections?${params.toString()}`,
+      {
+        method: 'GET',
+        headers: getAuthHeader(token),
+      },
+      baseUrl,
+    );
+  },
+
+  async getReceivedConnectionRequests(
+    token: string,
+    options: {pageNumber?: number; limit?: number} = {},
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    const params = new URLSearchParams();
+    params.append('pageNumber', String(options.pageNumber ?? 1));
+    params.append('limit', String(options.limit ?? 500));
+    return requestJson<ApiResponse>(
+      `api/v1/connections/requests/received?${params.toString()}`,
+      {
+        method: 'GET',
+        headers: getAuthHeader(token),
+      },
+      baseUrl,
+    );
+  },
+
+  async getRejectedConnectionRequests(
+    token: string,
+    options: {pageNumber?: number; limit?: number} = {},
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    const params = new URLSearchParams();
+    params.append('pageNumber', String(options.pageNumber ?? 1));
+    params.append('limit', String(options.limit ?? 500));
+    return requestJson<ApiResponse>(
+      `api/v1/connections/requests/rejected?${params.toString()}`,
+      {
+        method: 'GET',
+        headers: getAuthHeader(token),
+      },
+      baseUrl,
+    );
+  },
+
+  async getWishlist(
+    token: string,
+    userId: string | number,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      `api/v1/wishlist/${userId}`,
+      {
+        method: 'GET',
+        headers: getAuthHeader(token),
+      },
+      baseUrl,
+    );
+  },
+
+  async getStartupSearchConfig(token?: string): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    const path =
+      'api/v1/public/global/custom/industries,technologies,business_models,' +
+      'product_stages,funding_stages,investment_mechanisms,investment_stages,' +
+      'domain_areas,industries_primary,programs_management,industry_sub_categories';
+    const normalizedToken = token ? normalizeTokenValue(token) : undefined;
+    return requestJson<ApiResponse>(
+      path,
+      {
+        method: 'GET',
+        headers: normalizedToken
+          ? {Authorization: `Bearer ${normalizedToken}`}
+          : undefined,
       },
       baseUrl,
     );
