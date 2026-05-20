@@ -1,20 +1,25 @@
-import React, {useState} from 'react';
+import React, {useEffect, useState} from 'react';
 import {StatusBar, StyleSheet, useColorScheme} from 'react-native';
 import {SafeAreaProvider, SafeAreaView} from 'react-native-safe-area-context';
 
-import {FeedbackWidget} from './src/app/components/FeedbackWidget';
-import {HomeScreen} from './src/app/HomeScreen';
-import {AuthNavigator} from './src/auth/AuthNavigator';
+import {FeedbackWidget} from './src/modules/feedback/FeedbackWidget';
+import {HomeScreen} from './src/modules/home/HomeScreen';
+import {AuthNavigator} from './src/modules/auth/AuthNavigator';
 import {
   AuthSession,
   LoginPayload,
   OtpRequestPayload,
   OtpRequestResult,
   SignupPayload,
-} from './src/auth/models/auth.models';
-import {authService} from './src/auth/services/auth.service';
-import {AUTH_SCREENS, AuthScreen} from './src/auth/types';
-import {TenantProvider} from './src/context/TenantProvider';
+} from './src/modules/auth/models/auth.models';
+import {authService} from './src/modules/auth/services/auth.service';
+import {AUTH_SCREENS, AuthScreen} from './src/modules/auth/types';
+import {TenantProvider} from './src/core/tenant/TenantProvider';
+import {
+  clearSession,
+  loadSession,
+  saveSession,
+} from './src/core/storage/sessionStorage';
 
 function App() {
   const isDarkMode = useColorScheme() === 'dark';
@@ -25,15 +30,29 @@ function App() {
     session !== null ||
     (authScreen !== AUTH_SCREENS.LOGIN && authScreen !== AUTH_SCREENS.SIGNUP);
 
+  useEffect(() => {
+    loadSession()
+      .then(restored => {
+        if (restored) {
+          setSession(restored);
+        }
+      })
+      .catch(() => {
+        // Restoring is best-effort; failure just means user re-logs in.
+      });
+  }, []);
+
   const handleLogin = async (payload: LoginPayload) => {
     const nextSession = await authService.login(payload);
     setSession(nextSession);
+    await saveSession(nextSession);
     return nextSession;
   };
 
   const handleSignup = async (payload: SignupPayload) => {
     const nextSession = await authService.signup(payload);
     setSession(nextSession);
+    await saveSession(nextSession);
     setShowWelcomePopup(true);
     return nextSession;
   };
@@ -47,6 +66,9 @@ function App() {
   const handleLogout = () => {
     setSession(null);
     setAuthScreen(AUTH_SCREENS.LOGIN);
+    clearSession().catch(() => {
+      // Keychain reset failure is non-blocking — in-memory state is already cleared.
+    });
   };
 
   return (

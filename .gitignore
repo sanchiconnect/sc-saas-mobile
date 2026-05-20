@@ -1,6 +1,20 @@
 # OSX
 #
 .DS_Store
+._*
+.AppleDouble
+.Spotlight-V100
+.Trashes
+
+# Windows
+Thumbs.db
+ehthumbs.db
+
+# Editor / IDE
+*.swp
+*.swo
+*~
+.vscode/
 
 # Xcode
 #
@@ -19,6 +33,9 @@ xcuserdata
 DerivedData
 *.hmap
 *.ipa
+*.app
+*.dSYM.zip
+*.dSYM
 *.xcuserstate
 **/.xcode.env.local
 
@@ -35,11 +52,20 @@ local.properties
 !debug.keystore
 .kotlin/
 
+# Per-tenant release signing properties (referenced in MULTITENANCY.md).
+# Never commit production keystore passwords/aliases.
+keystore.*.properties
+
+# Android release artifacts
+*.apk
+*.aab
+
 # node.js
 #
 node_modules/
 npm-debug.log
 yarn-error.log
+*.log
 
 # fastlane
 #
@@ -62,6 +88,15 @@ yarn-error.log
 
 # Temporary files created by Metro to check the health of the file watcher
 .metro-health-check*
+
+# Environment files
+# Per-env files (.env.development / .env.staging / .env.production) are checked
+# in — they contain no secrets, only public API hosts and tenant slugs that get
+# baked into the native build at compile time. Local-only overrides go in
+# .env.local or .env, which are ignored.
+.env
+.env.local
+.env.*.local
 
 # testing
 /coverage

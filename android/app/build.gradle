@@ -2,6 +2,15 @@ apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 
+// react-native-config: reads the env file specified by the ENVFILE env var
+// at build time (defaults to ".env" — which we don't ship). Each tenant has
+// its own npm script that sets ENVFILE explicitly:
+//   npm run android:isba          → ENVFILE=.env.isba.development
+//   npm run android:isba:release  → ENVFILE=.env.isba.production
+// Add a new tenant by creating .env.<tenant>.<env> files, copying the `isba`
+// productFlavor below, and adding matching npm scripts.
+apply from: project(':react-native-config').projectDir.getPath() + "/dotenv.gradle"
+
 project.ext.vectoricons = [
     iconFontNames: ['Feather.ttf', 'MaterialCommunityIcons.ttf']
 ]
@@ -89,6 +98,24 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0"
+        // react-native-config locates BuildConfig at runtime by `${packageName}.BuildConfig`,
+        // where packageName defaults to the applicationId. Per-tenant flavors override the
+        // applicationId (e.g. com.sanchiconnect.isba) but BuildConfig is still generated under
+        // the namespace (com.mobileapp). This resource pins the lookup.
+        resValue "string", "build_config_package", "com.mobileapp"
+    }
+    // Each tenant is a separate installable app (own applicationId, icon, name).
+    // To add a new tenant: copy the `isba` block and adjust applicationId + app_name.
+    flavorDimensions "tenant"
+    productFlavors {
+        isba {
+            dimension "tenant"
+            applicationId "com.sanchiconnect.isba"
+            versionCode 1
+            versionName "1.0"
+            // app_name override lives in android/app/src/isba/res/values/strings.xml.
+            // Drop a flavor-specific ic_launcher into android/app/src/isba/res/mipmap-*/ to override the icon.
+        }
     }
     signingConfigs {
         debug {

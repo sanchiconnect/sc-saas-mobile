@@ -11,7 +11,21 @@
       "Bash(sysctl -n kern.hv_support)",
       "Bash(sysctl -n hw.memsize)",
       "Bash(awk '{print $1/1024/1024/1024\" GB\"}')",
-      "Bash(awk '{print $2, $3\"%CPU\", $4\"%MEM\", $11, $12, $13, $14, $15, $16, $17}')"
+      "Bash(awk '{print $2, $3\"%CPU\", $4\"%MEM\", $11, $12, $13, $14, $15, $16, $17}')",
+      "Bash(awk -F= '/^[A-Za-z_]/ {print $1\"=***\"}' /Users/mac/Desktop/Work/SanchiConnect/sc-saas-mobile/.env)",
+      "Bash(node -e \"const p=require\\('./package.json'\\); console.log\\('react-native-config:', p.dependencies['react-native-config']\\); console.log\\('react-native-keychain:', p.dependencies['react-native-keychain']\\); console.log\\('react-native:', p.dependencies['react-native']\\)\")",
+      "Bash(curl -sS -o /dev/null -w \"HTTP %{http_code}\\\\n\" \"https://api-dev.tenants.sanchiconnect.com/api/v1/public/global/verify_tenant/thub.sanchidev.i\" --max-time 15)",
+      "Bash(curl -sS -o /dev/null -w \"HTTP %{http_code}\\\\n\" \"https://api.tenants.sanchidev.in/api/v1/public/global/verify_tenant/thub.sanchidev.i\" --max-time 15)",
+      "Bash(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 https://api-dev.tenants.sanchiconnect.com/api/v1/public/global/verify_tenant/__TRACKED_VAR__)",
+      "Bash(curl -sS -o /dev/null -w \"thub on prod -> HTTP %{http_code}\\\\n\" --max-time 10 \"https://api.tenants.sanchiconnect.com/api/v1/public/global/verify_tenant/thub\")",
+      "Bash(curl -sS -o /dev/null -w \"thub on dev  -> HTTP %{http_code}\\\\n\" --max-time 10 \"https://api-dev.tenants.sanchiconnect.com/api/v1/public/global/verify_tenant/thub\")",
+      "Bash(curl -sS \"https://api.thub.sncnt.in/api/v1/public/global/settings\" --max-time 15)",
+      "Bash(curl -sS \"https://api.thub.sanchidev.in/api/v1/public/global/settings\" --max-time 15)",
+      "Bash(python3 /tmp/rewrite_imports.py)",
+      "Bash(git check-ignore *)",
+      "Bash(echo \"\\(exit $?\\)\")",
+      "Bash(git restore *)",
+      "Bash(echo \"\\(exit $?  — exit 1 means NOT ignored, which is what we want\\)\")"
     ],
     "additionalDirectories": [
       "/Users/mac"
