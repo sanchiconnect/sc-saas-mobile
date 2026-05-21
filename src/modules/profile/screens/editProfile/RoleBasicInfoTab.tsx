@@ -64,7 +64,12 @@ type FieldKey =
   | 'registeredStateId'
   | 'registeredCityId'
   | 'providerTypeId'
-  | 'provideCategoryId';
+  | 'provideCategoryId'
+  | 'tagline'
+  | 'partnerType'
+  | 'address'
+  | 'applicationLink'
+  | 'longDescription';
 
 type FieldConfig = {
   key: FieldKey;
@@ -90,7 +95,8 @@ type RoleKey =
   | 'investor:individual'
   | 'corporate'
   | 'mentor'
-  | 'service_provider';
+  | 'service_provider'
+  | 'partner';
 
 // Each role's field list mirrors the primary fields of the corresponding
 // frontend basic-info tab. Required + format validators match the frontend's
@@ -242,6 +248,56 @@ const ROLE_FIELDS: Record<RoleKey, FieldConfig[]> = {
     {key: 'instagramUrl', label: 'Instagram URL', keyboardType: 'url'},
     {key: 'youtubeUrl', label: 'YouTube URL', keyboardType: 'url'},
   ],
+  partner: [
+    {key: 'name', label: 'Organization Name', required: true},
+    {key: 'tagline', label: 'Tagline / Slogan', required: true},
+    {
+      key: 'partnerType',
+      label: 'Organization Type',
+      kind: 'dropdown',
+      dropdownSource: 'partner_types',
+      required: true,
+    },
+    {
+      key: 'establishmentYear',
+      label: 'Established in',
+      required: true,
+      keyboardType: 'numeric',
+    },
+    {key: 'shortDescription', label: 'Headline', required: true},
+    {
+      key: 'longDescription',
+      label: 'About your organization',
+      multiline: true,
+      required: true,
+    },
+    {
+      key: 'registeredCountryId',
+      label: 'Country',
+      kind: 'dropdown',
+      dropdownSource: 'countries',
+      required: true,
+    },
+    {
+      key: 'registeredStateId',
+      label: 'State',
+      kind: 'dropdown',
+      dropdownSource: 'states',
+    },
+    {
+      key: 'registeredCityId',
+      label: 'City',
+      kind: 'dropdown',
+      dropdownSource: 'cities',
+    },
+    {key: 'address', label: 'Address', multiline: true},
+    {key: 'applicationLink', label: 'Application Link', keyboardType: 'url'},
+    {key: 'linkedinUrl', label: 'LinkedIn URL', keyboardType: 'url'},
+    {key: 'twitterUrl', label: 'X URL', keyboardType: 'url'},
+    {key: 'facebookUrl', label: 'Facebook URL', keyboardType: 'url'},
+    {key: 'instagramUrl', label: 'Instagram URL', keyboardType: 'url'},
+    {key: 'youtubeUrl', label: 'YouTube URL', keyboardType: 'url'},
+  ],
   service_provider: [
     {key: 'name', label: 'Company Name', required: true},
     {
@@ -345,6 +401,9 @@ const resolveRoleKey = (
   }
   if (type === 'service_provider') {
     return 'service_provider';
+  }
+  if (type === 'partner') {
+    return 'partner';
   }
   return null;
 };
@@ -478,11 +537,11 @@ export function RoleBasicInfoTab({
   const isCorporate = roleKey === 'corporate';
   const isMentor = roleKey === 'mentor';
   const isServiceProvider = roleKey === 'service_provider';
-  // Investor (org + individual), corporate, mentor, and service-provider
-  // roles all support a logo / profile-photo upload — same UI, different
-  // endpoint chosen at upload time.
+  const isPartner = roleKey === 'partner';
+  // Every multi-tenant role except plain startup supports a logo /
+  // profile-photo upload — same UI, different endpoint chosen at upload time.
   const supportsLogoUpload =
-    isInvestor || isCorporate || isMentor || isServiceProvider;
+    isInvestor || isCorporate || isMentor || isServiceProvider || isPartner;
   const [countryOptions, setCountryOptions] = useState<
     Array<{id: number; name: string}>
   >([]);
@@ -653,6 +712,8 @@ export function RoleBasicInfoTab({
           await authService.uploadMentorLogo(token, file);
         } else if (isServiceProvider) {
           await authService.uploadServiceProviderLogo(token, file);
+        } else if (isPartner) {
+          await authService.uploadPartnerLogo(token, file);
         } else {
           await authService.uploadInvestorLogo(token, file);
         }
@@ -760,9 +821,11 @@ export function RoleBasicInfoTab({
                 ? 'Company logo'
                 : isMentor
                   ? 'Profile photo'
-                  : investorSubtype === 'individual'
-                    ? 'Profile photo'
-                    : 'Organization logo'}
+                  : isPartner
+                    ? 'Organization logo'
+                    : investorSubtype === 'individual'
+                      ? 'Profile photo'
+                      : 'Organization logo'}
             </Text>
             <Text style={styles.logoHint}>
               {logoUploading

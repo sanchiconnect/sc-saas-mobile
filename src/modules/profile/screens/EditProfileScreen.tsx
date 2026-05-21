@@ -26,6 +26,7 @@ import {InvestorInvestmentsTab} from './editProfile/InvestorInvestmentsTab';
 import {InvestorRepresentativeTab} from './editProfile/InvestorRepresentativeTab';
 import {MentorDomainExpertiseTab} from './editProfile/MentorDomainExpertiseTab';
 import {Picker} from './editProfile/Picker';
+import {PartnerIndustryTab} from './editProfile/PartnerIndustryTab';
 import {RoleBasicInfoTab} from './editProfile/RoleBasicInfoTab';
 import {ServiceProviderIndustryTab} from './editProfile/ServiceProviderIndustryTab';
 import {YourPitchDeck} from './editProfile/YourPitchDeck';
@@ -1399,6 +1400,18 @@ export function EditProfileScreen({
                 ),
                 service_provider_types: serviceProviderTypeOptions,
                 service_provider_categories: serviceProviderCategoryOptions,
+                // Static list — frontend's partner-intro page hardcodes the
+                // same three values (incubator / accelerator /
+                // association-organization). String IDs because the backend
+                // stores `partnerType` as a slug, not a numeric id.
+                partner_types: [
+                  {id: 'incubator', name: 'Incubator'},
+                  {id: 'accelerator', name: 'Accelerator'},
+                  {
+                    id: 'association-organization',
+                    name: 'Association / Organization',
+                  },
+                ],
               }}
               onSave={async payload => {
                 try {
@@ -1432,6 +1445,14 @@ export function EditProfileScreen({
             primaryColor={primaryColor}
             initialData={startupInfo}
             industryOptions={industryOptions}
+          />
+        ) : activeTab === 'industry' && accountType === 'partner' ? (
+          <PartnerIndustryTab
+            token={token}
+            primaryColor={primaryColor}
+            initialData={startupInfo}
+            industryOptions={industryOptions}
+            technologyOptions={technologyOptions}
           />
         ) : activeTab === 'industry' ? (
           <View style={styles.industryCard}>

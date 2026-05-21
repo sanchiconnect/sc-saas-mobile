@@ -21,6 +21,7 @@ export type AccountType =
   // (api/v1/service_providers/...). The hyphenated string is accepted via
   // normalizeRole() in auth.service.ts for backward compatibility.
   | 'service_provider'
+  | 'partner'
   | string;
 
 export type InvestorSubtype = 'organization' | 'individual';
@@ -51,6 +52,7 @@ const TAB_LAYOUTS: Record<string, TabBlueprint[]> = {
     BASIC,
     {key: 'industry', label: 'Industry / Vertical Focus'},
   ],
+  partner: [BASIC, {key: 'industry', label: 'Industry / Technology'}],
 };
 
 const BASIC_ONLY: TabBlueprint[] = [BASIC];
