@@ -41,6 +41,9 @@ export type Message = {
   createdAt?: string;
   isRead?: boolean;
   isDeleted?: boolean;
+  // Server-counted child replies. Drives the "Reply (N)" indicator under each
+  // bubble and bumps optimistically after the user posts in the thread sheet.
+  replyCount?: number;
 };
 
 export type PaginationMeta = {

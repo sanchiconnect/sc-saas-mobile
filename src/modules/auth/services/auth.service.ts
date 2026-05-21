@@ -872,6 +872,48 @@ export const authService = {
     );
   },
 
+  // Patches editable ticket metadata (status, priority, title, description).
+  // The frontend uses this for status changes; mobile just needs status flips
+  // (open ↔ closed) for now but the method takes a free-form payload.
+  async updateTicket(
+    token: string,
+    uuid: string,
+    payload: Record<string, any>,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      `api/v1/tickets/${uuid}`,
+      {
+        method: 'PATCH',
+        headers: getAuthHeader(token),
+        body: JSON.stringify(payload),
+      },
+      baseUrl,
+    );
+  },
+
+  async deleteTicket(token: string, uuid: string): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      `api/v1/tickets/${uuid}`,
+      {method: 'DELETE', headers: getAuthHeader(token)},
+      baseUrl,
+    );
+  },
+
+  async deleteTicketComment(
+    token: string,
+    ticketUuid: string,
+    commentUuid: string,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      `api/v1/tickets/${ticketUuid}/conversation/${commentUuid}`,
+      {method: 'DELETE', headers: getAuthHeader(token)},
+      baseUrl,
+    );
+  },
+
   async uploadTicketAttachments(
     token: string,
     files: Array<{uri: string; name: string; type: string}>,

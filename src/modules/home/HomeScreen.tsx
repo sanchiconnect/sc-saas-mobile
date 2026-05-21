@@ -48,6 +48,9 @@ type HomeScreenProps = {
   // Initial section to open on mount. Used after signup to drop the user
   // straight into Edit Profile, mirroring the frontend's role-specific redirect.
   initialSection?: AppSection;
+  // Called whenever the current view shouldn't show the global feedback FAB
+  // (chat thread, primarily). App.tsx mirrors this into the FAB render gate.
+  onSuppressFeedbackFab?: (suppress: boolean) => void;
 };
 
 export function HomeScreen({
@@ -56,6 +59,7 @@ export function HomeScreen({
   showWelcomePopup,
   onCloseWelcomePopup,
   initialSection,
+  onSuppressFeedbackFab,
 }: HomeScreenProps) {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [searchText, setSearchText] = useState('');
@@ -69,6 +73,14 @@ export function HomeScreen({
   // detail screen. Cleared when the user leaves the chat section.
   const [activeConversation, setActiveConversation] =
     useState<Conversation | null>(null);
+
+  // Tell App.tsx to hide the floating feedback FAB while the user is inside
+  // a chat thread — otherwise it overlaps the send button.
+  useEffect(() => {
+    const suppress =
+      selectedMenu.section === 'chat' && activeConversation !== null;
+    onSuppressFeedbackFab?.(suppress);
+  }, [selectedMenu.section, activeConversation, onSuppressFeedbackFab]);
 
   const {globalSetting, theme} = useContext(TenantContext);
 
@@ -355,6 +367,7 @@ export function HomeScreen({
             token={session.token}
             conversation={activeConversation}
             currentUserUuid={session.user.id}
+            currentUserName={session.user.fullName}
             onBack={() => setActiveConversation(null)}
           />
         </View>

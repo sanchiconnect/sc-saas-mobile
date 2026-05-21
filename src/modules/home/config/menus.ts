@@ -117,11 +117,14 @@ export const resourceItems: MenuItem[] = [
 ];
 
 export const ticketItems: MenuItem[] = [
+  // Tickets is universally available — every tenant has a support flow.
+  // Frontend has a `ticket_management` feature gate but the mobile build
+  // always exposes the link so the menu doesn't silently hide on tenants
+  // whose verify_tenant response omits the flag.
   {
     key: 'support-tickets',
     label: 'Tickets',
     icon: 'ticket-confirmation-outline',
-    featureKey: 'ticket_management',
   },
 ];
 

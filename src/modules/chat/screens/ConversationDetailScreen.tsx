@@ -23,6 +23,11 @@ import {
 import {Icon} from '../../../core/components/Icon';
 import {colors} from '../../../core/theme/colors';
 import {TenantContext} from '../../../core/tenant/TenantProvider';
+import {launchImageLibrary} from 'react-native-image-picker';
+import {pick, types as DocumentPickerTypes} from '@react-native-documents/picker';
+import EmojiPicker from 'rn-emoji-keyboard';
+
+import {ReplyThreadSheet} from '../components/ReplyThreadSheet';
 import {chatService} from '../services/chat.service';
 import {chatSocket} from '../services/chat.socket';
 import type {Conversation, Message} from '../types';
@@ -32,6 +37,9 @@ type Props = {
   token: string;
   conversation: Conversation;
   currentUserUuid?: string;
+  // Used to label the user's own messages (e.g. "Brock Lesnar") so the
+  // sender header matches the web design.
+  currentUserName?: string;
   onBack: () => void;
 };
 
@@ -82,6 +90,7 @@ export function ConversationDetailScreen({
   token,
   conversation,
   currentUserUuid,
+  currentUserName,
   onBack,
 }: Props) {
   const {theme, globalSetting} = useContext(TenantContext);
@@ -101,14 +110,24 @@ export function ConversationDetailScreen({
   // Track messages we just sent locally so the socket echo doesn't dupe them.
   const sentMessageIdsRef = useRef<Set<string>>(new Set());
 
-  // Android only: Vivo + many OEM keyboards layer an autocomplete strip on
-  // top of the resized window, hiding the bottom 40–60dp of content. Bump the
-  // composer up while the keyboard is open so the input stays visible.
+  // Active reply target — when set, the ReplyThreadSheet renders for this
+  // parent message. Null = no thread open.
+  const [replyParent, setReplyParent] = useState<Message | null>(null);
+
+  // Attachment + emoji UI state. `attachmentUploading` blocks send and shows
+  // a spinner on the active attachment icon. `emojiPickerOpen` toggles the
+  // rn-emoji-keyboard sheet.
+  const [attachmentUploading, setAttachmentUploading] = useState(false);
+  const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
+
+  // Track keyboard visibility to keep the composer flush with the keyboard —
+  // adjustResize + flex-end on the FlatList does most of the lift work; we
+  // only nudge a tiny 8dp on Android to clear any 1–2dp OEM cropping.
   const [androidKeyboardLift, setAndroidKeyboardLift] = useState(0);
   useEffect(() => {
     if (Platform.OS !== 'android') return;
     const showSub = Keyboard.addListener('keyboardDidShow', () => {
-      setAndroidKeyboardLift(56);
+      setAndroidKeyboardLift(8);
     });
     const hideSub = Keyboard.addListener('keyboardDidHide', () => {
       setAndroidKeyboardLift(0);
@@ -233,9 +252,128 @@ export function ConversationDetailScreen({
     setIsLoadingMore(false);
   };
 
+  // Append an attachment message to the local list after a successful upload.
+  // The backend returns the saved Message under `.data` or `.data.message`
+  // (or, on some installs, the root). Falls back to a temp row if the shape
+  // is unknown so the user still sees their upload reflected immediately.
+  const appendUploadedMessage = (raw: any, file: {name: string; type: string}) => {
+    const sent: Message | undefined =
+      raw?.data?.message || raw?.data || raw?.message || raw;
+    if (sent?.uuid) {
+      sentMessageIdsRef.current.add(sent.uuid);
+      setMessages(prev =>
+        prev.some(m => m.uuid === sent.uuid) ? prev : [...prev, sent],
+      );
+    } else {
+      const tempUuid = `temp_${Date.now()}_${Math.random()
+        .toString(36)
+        .slice(2, 8)}`;
+      setMessages(prev => [
+        ...prev,
+        {
+          uuid: tempUuid,
+          message: file.name,
+          messageType: file.type.startsWith('image/') ? 'image' : 'file',
+          senderUUID: currentUserUuid,
+          createdAt: new Date().toISOString(),
+        },
+      ]);
+    }
+  };
+
+  const handleAttachImage = async () => {
+    if (attachmentUploading) return;
+    try {
+      const result = await launchImageLibrary({
+        mediaType: 'photo',
+        selectionLimit: 1,
+        includeBase64: false,
+      });
+      if (result.didCancel) return;
+      if (result.errorCode) {
+        setError(result.errorMessage || 'Could not open image picker.');
+        return;
+      }
+      const asset = result.assets?.[0];
+      if (!asset?.uri) return;
+      // Reasonable cap so we don't time out on slow networks. 10MB matches
+      // the avatar / corporate logo cap the rest of the app uses.
+      if ((asset.fileSize ?? 0) > 10 * 1024 * 1024) {
+        setError('Please choose an image smaller than 10MB.');
+        return;
+      }
+      setAttachmentUploading(true);
+      try {
+        const raw = await chatService.uploadAttachment(token, conversation.uuid, {
+          uri: asset.uri,
+          name: asset.fileName || `photo-${Date.now()}.jpg`,
+          type: asset.type || 'image/jpeg',
+        });
+        appendUploadedMessage(raw, {
+          name: asset.fileName || 'photo.jpg',
+          type: asset.type || 'image/jpeg',
+        });
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Upload failed.');
+      } finally {
+        setAttachmentUploading(false);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not pick image.');
+    }
+  };
+
+  const handleAttachFile = async () => {
+    if (attachmentUploading) return;
+    try {
+      const [picked] = await pick({
+        type: [DocumentPickerTypes.allFiles],
+      });
+      if (!picked?.uri) return;
+      setAttachmentUploading(true);
+      try {
+        const raw = await chatService.uploadAttachment(token, conversation.uuid, {
+          uri: picked.uri,
+          name: picked.name || `file-${Date.now()}`,
+          type: picked.type || 'application/octet-stream',
+        });
+        appendUploadedMessage(raw, {
+          name: picked.name || 'file',
+          type: picked.type || 'application/octet-stream',
+        });
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Upload failed.');
+      } finally {
+        setAttachmentUploading(false);
+      }
+    } catch (err: any) {
+      // The document picker throws on user-cancel — silently ignore.
+      if (err?.code !== 'DOCUMENT_PICKER_CANCELED') {
+        setError(err instanceof Error ? err.message : 'Could not pick file.');
+      }
+    }
+  };
+
   const handleSend = async () => {
     const trimmed = draft.trim();
     if (!trimmed || isSending) return;
+
+    // Optimistic local message — appears instantly so the user doesn't sit
+    // staring at an empty input wondering if their tap registered. Replaced
+    // with the server's canonical message when the response lands (or by the
+    // socket echo, whichever wins).
+    const tempUuid = `temp_${Date.now()}_${Math.random()
+      .toString(36)
+      .slice(2, 8)}`;
+    const tempMessage: Message = {
+      uuid: tempUuid,
+      message: trimmed,
+      messageType: 'text',
+      senderUUID: currentUserUuid,
+      createdAt: new Date().toISOString(),
+    };
+    setMessages(prev => [...prev, tempMessage]);
+
     setIsSending(true);
     setDraft('');
     try {
@@ -244,16 +382,27 @@ export function ConversationDetailScreen({
         conversation.uuid,
         trimmed,
       );
-      const sent = res?.data;
+      // Backend may return {data: Message}, {data: {message: Message}}, or
+      // the message at the root — handle all three so the temp gets replaced
+      // by the canonical record.
+      const sent: Message | undefined =
+        (res as any)?.data?.message ||
+        (res as any)?.data ||
+        (res as any)?.message ||
+        (res as any);
       if (sent?.uuid) {
         sentMessageIdsRef.current.add(sent.uuid);
         setMessages(prev =>
-          prev.some(m => m.uuid === sent.uuid) ? prev : [...prev, sent],
+          prev.map(m => (m.uuid === tempUuid ? sent : m)),
         );
       }
+      // If the response shape was unexpected, leave the temp in place — the
+      // socket echo will arrive shortly with the canonical uuid and dedupe
+      // against the temp (or just appear as a second row, which is rare).
     } catch (err) {
+      // Roll back: pull the temp row and restore the draft so the user can retry.
+      setMessages(prev => prev.filter(m => m.uuid !== tempUuid));
       setError(err instanceof Error ? err.message : 'Could not send message.');
-      // Restore draft so the user can retry.
       setDraft(trimmed);
     } finally {
       setIsSending(false);
@@ -265,35 +414,120 @@ export function ConversationDetailScreen({
     const time = formatTime(item.createdAt);
     const body = item.isDeleted
       ? 'Message deleted'
-      : stripHtml(item.message);
+      : item.messageType === 'image'
+        ? `📷 ${stripHtml(item.message) || 'Photo'}`
+        : item.messageType && item.messageType !== 'text'
+          ? `📎 ${stripHtml(item.message) || 'Attachment'}`
+          : stripHtml(item.message);
+    const replyCount = item.replyCount || 0;
+    const canReply =
+      !item.isDeleted && item.uuid && !item.uuid.startsWith('temp_');
+    // Sender chip — mirrors the web layout where each message shows the
+    // sender's name + a small avatar above the bubble. For own messages we
+    // use the session's display name; for received messages we fall back to
+    // the conversation header (1:1) when the message itself lacks a sender.
+    const senderName = own
+      ? currentUserName || 'You'
+      : item.sender?.name || headerName;
+    const senderInitials = (senderName || 'U')
+      .split(' ')
+      .map(n => n[0])
+      .filter(Boolean)
+      .slice(0, 2)
+      .join('')
+      .toUpperCase();
+    const senderRawAvatar =
+      !own && (item.sender?.avatar || headerAvatar) ? item.sender?.avatar || headerAvatar : null;
+    const senderAvatar = senderRawAvatar
+      ? senderRawAvatar.startsWith('http')
+        ? senderRawAvatar
+        : `${logoBaseUrl}${senderRawAvatar}`
+      : null;
     return (
       <View
         style={[
           styles.bubbleRow,
           own ? styles.bubbleRowOwn : styles.bubbleRowOther,
         ]}>
-        <View
-          style={[
-            styles.bubble,
-            own
-              ? [styles.bubbleOwn, {backgroundColor: primaryColor}]
-              : styles.bubbleOther,
-          ]}>
-          <Text
+        <View style={styles.bubbleColumn}>
+          <View
             style={[
-              styles.bubbleText,
-              own ? styles.bubbleTextOwn : styles.bubbleTextOther,
-              item.isDeleted && styles.bubbleTextDeleted,
+              styles.senderHeader,
+              own ? styles.senderHeaderOwn : styles.senderHeaderOther,
             ]}>
-            {body}
-          </Text>
-          <Text
+            {!own ? (
+              senderAvatar ? (
+                <Image source={{uri: senderAvatar}} style={styles.senderAvatar} />
+              ) : (
+                <View
+                  style={[
+                    styles.senderAvatarFallback,
+                    {backgroundColor: `${primaryColor}1f`},
+                  ]}>
+                  <Text
+                    style={[styles.senderInitials, {color: primaryColor}]}>
+                    {senderInitials}
+                  </Text>
+                </View>
+              )
+            ) : null}
+            <Text style={styles.senderName} numberOfLines={1}>
+              {senderName}
+            </Text>
+            {own ? (
+              <View
+                style={[
+                  styles.senderAvatarFallback,
+                  {backgroundColor: `${primaryColor}1f`},
+                ]}>
+                <Text style={[styles.senderInitials, {color: primaryColor}]}>
+                  {senderInitials}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+
+          <View
             style={[
-              styles.bubbleTime,
-              own ? styles.bubbleTimeOwn : styles.bubbleTimeOther,
+              styles.bubble,
+              own
+                ? [styles.bubbleOwn, {backgroundColor: primaryColor}]
+                : styles.bubbleOther,
             ]}>
-            {time}
-          </Text>
+            <Text
+              style={[
+                styles.bubbleText,
+                own ? styles.bubbleTextOwn : styles.bubbleTextOther,
+                item.isDeleted && styles.bubbleTextDeleted,
+              ]}>
+              {body}
+            </Text>
+            <Text
+              style={[
+                styles.bubbleTime,
+                own ? styles.bubbleTimeOwn : styles.bubbleTimeOther,
+              ]}>
+              {time}
+            </Text>
+          </View>
+          {canReply ? (
+            <Pressable
+              style={[
+                styles.replyAction,
+                own ? styles.replyActionOwn : styles.replyActionOther,
+              ]}
+              onPress={() => setReplyParent(item)}
+              hitSlop={6}>
+              <Icon
+                name="reply-outline"
+                size={13}
+                color={primaryColor}
+              />
+              <Text style={[styles.replyActionText, {color: primaryColor}]}>
+                {replyCount > 0 ? `Reply (${replyCount})` : 'Reply'}
+              </Text>
+            </Pressable>
+          ) : null}
         </View>
       </View>
     );
@@ -403,6 +637,33 @@ export function ConversationDetailScreen({
       ) : null}
 
       <View style={[styles.composer, {paddingBottom: 10 + androidKeyboardLift}]}>
+        <View style={styles.composerActionsRow}>
+          <Pressable
+            onPress={() => setEmojiPickerOpen(true)}
+            disabled={isSending || attachmentUploading}
+            hitSlop={6}
+            style={styles.composerIcon}>
+            <Icon name="emoticon-happy-outline" size={22} color="#64748b" />
+          </Pressable>
+          <Pressable
+            onPress={handleAttachImage}
+            disabled={attachmentUploading || isSending}
+            hitSlop={6}
+            style={styles.composerIcon}>
+            {attachmentUploading ? (
+              <ActivityIndicator color="#64748b" size="small" />
+            ) : (
+              <Icon name="image-outline" size={22} color="#64748b" />
+            )}
+          </Pressable>
+          <Pressable
+            onPress={handleAttachFile}
+            disabled={attachmentUploading || isSending}
+            hitSlop={6}
+            style={styles.composerIcon}>
+            <Icon name="paperclip" size={22} color="#64748b" />
+          </Pressable>
+        </View>
         <TextInput
           style={styles.composerInput}
           value={draft}
@@ -427,6 +688,35 @@ export function ConversationDetailScreen({
           )}
         </Pressable>
       </View>
+
+      <EmojiPicker
+        open={emojiPickerOpen}
+        onClose={() => setEmojiPickerOpen(false)}
+        onEmojiSelected={emoji => setDraft(prev => prev + emoji.emoji)}
+      />
+
+      <ReplyThreadSheet
+        visible={replyParent !== null}
+        token={token}
+        conversationId={conversation.uuid}
+        parent={replyParent}
+        currentUserUuid={currentUserUuid}
+        primaryColor={primaryColor}
+        onClose={() => setReplyParent(null)}
+        onReplyPosted={() => {
+          // Optimistically bump the parent's reply count so the badge under
+          // the bubble updates immediately. The next refetch will reconcile
+          // if the server's count diverges (rare).
+          if (!replyParent) return;
+          setMessages(prev =>
+            prev.map(m =>
+              m.uuid === replyParent.uuid
+                ? {...m, replyCount: (m.replyCount || 0) + 1}
+                : m,
+            ),
+          );
+        }}
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -484,7 +774,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   messagesContent: {
+    // flexGrow: 1 + justifyContent: 'flex-end' pins messages to the bottom
+    // (WhatsApp-style) when the thread doesn't yet fill the viewport.
     flexGrow: 1,
+    justifyContent: 'flex-end',
     padding: 12,
   },
   headerLoading: {
@@ -502,6 +795,61 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     marginBottom: 8,
   },
+  bubbleColumn: {
+    flexShrink: 1,
+    maxWidth: '85%',
+  },
+  senderHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 6,
+    marginBottom: 4,
+  },
+  senderHeaderOwn: {
+    alignSelf: 'flex-end',
+  },
+  senderHeaderOther: {
+    alignSelf: 'flex-start',
+  },
+  senderAvatar: {
+    borderRadius: 11,
+    height: 22,
+    width: 22,
+  },
+  senderAvatarFallback: {
+    alignItems: 'center',
+    borderRadius: 11,
+    height: 22,
+    justifyContent: 'center',
+    width: 22,
+  },
+  senderInitials: {
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  senderName: {
+    color: '#0f172a',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  replyAction: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 4,
+    marginTop: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  replyActionOwn: {
+    alignSelf: 'flex-end',
+  },
+  replyActionOther: {
+    alignSelf: 'flex-start',
+  },
+  replyActionText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
   bubbleRowOwn: {
     justifyContent: 'flex-end',
   },
@@ -510,7 +858,6 @@ const styles = StyleSheet.create({
   },
   bubble: {
     borderRadius: 14,
-    maxWidth: '80%',
     paddingHorizontal: 14,
     paddingVertical: 10,
   },
@@ -571,6 +918,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
     padding: 10,
+  },
+  composerActionsRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 4,
+  },
+  composerIcon: {
+    alignItems: 'center',
+    height: 36,
+    justifyContent: 'center',
+    width: 32,
   },
   composerInput: {
     backgroundColor: '#f8fafc',

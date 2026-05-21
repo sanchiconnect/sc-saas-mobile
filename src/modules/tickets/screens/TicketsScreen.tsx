@@ -22,6 +22,7 @@ import {authService} from '../../auth/services/auth.service';
 import {TenantContext} from '../../../core/tenant/TenantProvider';
 import {AppButton} from '../../../core/components/AppButton';
 import {AppTextField} from '../../../core/components/AppTextField';
+import {ConfirmModal} from '../../../core/components/ConfirmModal';
 import {Icon} from '../../../core/components/Icon';
 import {colors} from '../../../core/theme/colors';
 
@@ -208,6 +209,39 @@ export function TicketsScreen({
     [],
   );
   const [isSubmittingReply, setIsSubmittingReply] = useState(false);
+  // Detail-page lifecycle action state: close / delete entire ticket, plus
+  // per-comment delete. Each tracks the in-flight uuid so the row spinner
+  // can render without locking the whole screen.
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+  const [isDeletingTicket, setIsDeletingTicket] = useState(false);
+  const [deletingCommentUuid, setDeletingCommentUuid] = useState<string | null>(
+    null,
+  );
+
+  // Generic confirm-modal state. Native Alert.alert was replaced with an
+  // in-app ConfirmModal so the destructive flows match the app's visual
+  // language (FeedbackModal-style card instead of OS dialog).
+  type PendingConfirm = {
+    title: string;
+    message?: string;
+    confirmLabel: string;
+    variant?: 'default' | 'destructive';
+    onConfirm: () => void | Promise<void>;
+  };
+  const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(
+    null,
+  );
+  const [confirmRunning, setConfirmRunning] = useState(false);
+  const runConfirm = async () => {
+    if (!pendingConfirm) return;
+    setConfirmRunning(true);
+    try {
+      await pendingConfirm.onConfirm();
+    } finally {
+      setConfirmRunning(false);
+      setPendingConfirm(null);
+    }
+  };
 
   const selectedIssueType = useMemo(
     () => issueTypes.find(item => item.id === form.issueTypeId) || null,
@@ -413,6 +447,112 @@ export function TicketsScreen({
     }
   };
 
+  // Detail-page actions — flip status, delete the whole ticket, delete a
+  // single conversation entry. All confirm via Alert and refresh local state
+  // afterwards.
+  const handleToggleTicketStatus = () => {
+    if (!detailData || !selectedTicketUuid || isUpdatingStatus) return;
+    const current = (detailData.ticketStatus || 'open').toLowerCase();
+    const next = current === 'open' ? 'closed' : 'open';
+    setPendingConfirm({
+      title: next === 'closed' ? 'Close ticket?' : 'Reopen ticket?',
+      message:
+        next === 'closed'
+          ? 'Closing this ticket disables further replies.'
+          : 'Reopening lets you and support continue the conversation.',
+      confirmLabel: next === 'closed' ? 'Close ticket' : 'Reopen',
+      variant: next === 'closed' ? 'destructive' : 'default',
+      onConfirm: async () => {
+        setIsUpdatingStatus(true);
+        try {
+          await authService.updateTicket(token, selectedTicketUuid, {
+            ticketStatus: next,
+          });
+          setDetailData(prev =>
+            prev ? {...prev, ticketStatus: next} : prev,
+          );
+          loadTickets();
+        } catch (error) {
+          Alert.alert(
+            'Update failed',
+            error instanceof Error
+              ? error.message
+              : 'Could not update the ticket.',
+          );
+        } finally {
+          setIsUpdatingStatus(false);
+        }
+      },
+    });
+  };
+
+  const handleDeleteTicket = () => {
+    if (!selectedTicketUuid || isDeletingTicket) return;
+    setPendingConfirm({
+      title: 'Delete ticket?',
+      message: 'This permanently removes the ticket and its conversation.',
+      confirmLabel: 'Delete',
+      variant: 'destructive',
+      onConfirm: async () => {
+        setIsDeletingTicket(true);
+        try {
+          await authService.deleteTicket(token, selectedTicketUuid);
+          setSelectedTicketUuid(null);
+          setDetailData(null);
+          loadTickets();
+        } catch (error) {
+          Alert.alert(
+            'Delete failed',
+            error instanceof Error
+              ? error.message
+              : 'Could not delete the ticket.',
+          );
+        } finally {
+          setIsDeletingTicket(false);
+        }
+      },
+    });
+  };
+
+  const handleDeleteComment = (commentUuid: string) => {
+    if (!selectedTicketUuid || deletingCommentUuid) return;
+    setPendingConfirm({
+      title: 'Delete reply?',
+      message: 'This permanently removes your reply from the thread.',
+      confirmLabel: 'Delete',
+      variant: 'destructive',
+      onConfirm: async () => {
+        setDeletingCommentUuid(commentUuid);
+        try {
+          await authService.deleteTicketComment(
+            token,
+            selectedTicketUuid,
+            commentUuid,
+          );
+          setDetailData(prev =>
+            prev
+              ? {
+                  ...prev,
+                  conversations: (prev.conversations || []).filter(
+                    c => c.uuid !== commentUuid,
+                  ),
+                }
+              : prev,
+          );
+        } catch (error) {
+          Alert.alert(
+            'Delete failed',
+            error instanceof Error
+              ? error.message
+              : 'Could not delete the reply.',
+          );
+        } finally {
+          setDeletingCommentUuid(null);
+        }
+      },
+    });
+  };
+
   const openCreateModal = () => {
     setForm(INITIAL_FORM);
     setErrors({});
@@ -588,56 +728,120 @@ export function TicketsScreen({
     }
   };
 
-  const renderTicketCard = (ticket: RemoteTicket) => (
-    <View key={ticket.uuid || ticket.id} style={styles.ticketCard}>
-      <View style={styles.ticketHeader}>
-        <View
-          style={[styles.ticketBadge, {backgroundColor: `${primaryColor}1a`}]}>
-          <Text style={[styles.ticketBadgeText, {color: primaryColor}]}>
-            {ticket.issueType?.name || 'Issue'}
-          </Text>
-        </View>
-        <Text style={styles.ticketDate}>
-          {ticket.lastUpdate || formatTicketDate(ticket.createdAt)}
-        </Text>
-      </View>
-
-      <Text style={styles.ticketTitle}>{ticket.title}</Text>
-      <View style={styles.ticketMetaRow}>
-        <Text style={styles.ticketMeta}>#{ticket.ticketNumber}</Text>
-        <View
-          style={[
-            styles.ticketStatusBadge,
-            ticket.ticketStatus === 'closed'
-              ? styles.ticketStatusClosed
-              : styles.ticketStatusOpen,
-          ]}>
-          <Text style={styles.ticketStatusText}>
-            {ticket.ticketStatus?.toUpperCase() || 'OPEN'}
-          </Text>
-        </View>
-      </View>
-
+  const renderTicketCard = (ticket: RemoteTicket) => {
+    const isClosed = ticket.ticketStatus === 'closed';
+    // Status colour also tints the left accent bar so users can scan card
+    // status without reading the chip.
+    const accentColor = isClosed ? '#dc2626' : '#15803d';
+    return (
       <Pressable
+        key={ticket.uuid || ticket.id}
         accessibilityRole="button"
         accessibilityLabel={`Open details for ticket ${ticket.ticketNumber}`}
         onPress={() => handleOpenDetail(ticket.uuid)}
-        style={[styles.detailsButton, {backgroundColor: primaryColor}]}>
-        <Text style={styles.detailsButtonText}>DETAILS</Text>
+        style={styles.ticketCard}>
+        <View
+          style={[styles.ticketAccentBar, {backgroundColor: accentColor}]}
+        />
+        <View style={styles.ticketCardBody}>
+          <View style={styles.ticketHeader}>
+            <View
+              style={[
+                styles.ticketBadge,
+                {backgroundColor: `${primaryColor}1a`},
+              ]}>
+              <Text style={[styles.ticketBadgeText, {color: primaryColor}]}>
+                {ticket.issueType?.name || 'Issue'}
+              </Text>
+            </View>
+            <View
+              style={[
+                styles.ticketStatusBadge,
+                isClosed ? styles.ticketStatusClosed : styles.ticketStatusOpen,
+              ]}>
+              <Text style={styles.ticketStatusText}>
+                {ticket.ticketStatus?.toUpperCase() || 'OPEN'}
+              </Text>
+            </View>
+          </View>
+
+          <Text style={styles.ticketTitle} numberOfLines={2}>
+            {ticket.title}
+          </Text>
+
+          <View style={styles.ticketFooterRow}>
+            <View style={styles.ticketFooterLeft}>
+              <Text style={styles.ticketMeta}>#{ticket.ticketNumber}</Text>
+              <Text style={styles.ticketDot}>·</Text>
+              <Text style={styles.ticketDate}>
+                {ticket.lastUpdate || formatTicketDate(ticket.createdAt)}
+              </Text>
+            </View>
+            <Icon name="chevron-right" size={20} color="#94a3b8" />
+          </View>
+
+          {!isClosed ? (
+            <View style={styles.replyHintRow}>
+              <Icon
+                name={
+                  ticket.isSupportReplied
+                    ? 'message-reply-outline'
+                    : 'clock-outline'
+                }
+                size={13}
+                color={ticket.isSupportReplied ? '#15803d' : '#b45309'}
+              />
+              <Text
+                style={[
+                  styles.replyHintText,
+                  {
+                    color: ticket.isSupportReplied ? '#15803d' : '#b45309',
+                  },
+                ]}>
+                {ticket.isSupportReplied
+                  ? 'Awaiting your reply'
+                  : 'Waiting for support'}
+              </Text>
+            </View>
+          ) : null}
+        </View>
       </Pressable>
-    </View>
-  );
+    );
+  };
 
   const renderConversation = (conversation: TicketConversation) => {
     const authorName =
       conversation.admin?.name || conversation.user?.name || 'User';
+    // Treat any non-admin entry as "the current user's comment" — matches
+    // the frontend's permission gate (server enforces actual ownership).
+    const isOwnComment = !conversation.admin && Boolean(conversation.user);
+    const isDeleting = deletingCommentUuid === conversation.uuid;
     return (
       <View key={conversation.uuid} style={styles.conversationCard}>
         <View style={styles.conversationHeader}>
           <Text style={styles.conversationAuthor}>{authorName}</Text>
-          <Text style={styles.conversationTime}>
-            {formatRelativeTime(conversation.createdAt)}
-          </Text>
+          <View style={styles.conversationHeaderRight}>
+            <Text style={styles.conversationTime}>
+              {formatRelativeTime(conversation.createdAt)}
+            </Text>
+            {isOwnComment ? (
+              <Pressable
+                onPress={() => handleDeleteComment(conversation.uuid)}
+                disabled={isDeleting}
+                hitSlop={6}
+                style={styles.commentDeleteButton}>
+                {isDeleting ? (
+                  <ActivityIndicator size="small" color="#dc2626" />
+                ) : (
+                  <Icon
+                    name="trash-can-outline"
+                    size={16}
+                    color="#94a3b8"
+                  />
+                )}
+              </Pressable>
+            ) : null}
+          </View>
         </View>
         <View style={styles.conversationDivider} />
         {conversation.text ? (
@@ -681,8 +885,25 @@ export function TicketsScreen({
     );
   };
 
+  // Reusable confirm-modal node — both the detail and list returns include it
+  // so the popup appears on whichever screen the user pressed Delete/Close on
+  // (not on whatever screen happens to be mounted later).
+  const confirmModalNode = (
+    <ConfirmModal
+      visible={pendingConfirm !== null}
+      title={pendingConfirm?.title || ''}
+      message={pendingConfirm?.message}
+      confirmLabel={pendingConfirm?.confirmLabel || 'Confirm'}
+      variant={pendingConfirm?.variant}
+      loading={confirmRunning}
+      onCancel={() => setPendingConfirm(null)}
+      onConfirm={() => void runConfirm()}
+    />
+  );
+
   if (selectedTicketUuid) {
     return (
+      <>
       <View style={styles.page}>
         <View style={styles.detailHeader}>
           <Pressable
@@ -766,8 +987,80 @@ export function TicketsScreen({
               </View>
             </View>
 
+            {detailData ? (
+              <View style={styles.detailActionsRow}>
+                <Pressable
+                  onPress={handleToggleTicketStatus}
+                  disabled={isUpdatingStatus || isDeletingTicket}
+                  style={[
+                    styles.detailActionButton,
+                    {borderColor: primaryColor},
+                  ]}>
+                  {isUpdatingStatus ? (
+                    <ActivityIndicator size="small" color={primaryColor} />
+                  ) : (
+                    <>
+                      <Icon
+                        name={
+                          (detailData.ticketStatus || 'open').toLowerCase() ===
+                          'open'
+                            ? 'lock-outline'
+                            : 'lock-open-variant-outline'
+                        }
+                        size={16}
+                        color={primaryColor}
+                      />
+                      <Text
+                        style={[
+                          styles.detailActionText,
+                          {color: primaryColor},
+                        ]}>
+                        {(detailData.ticketStatus || 'open').toLowerCase() ===
+                        'open'
+                          ? 'Close ticket'
+                          : 'Reopen ticket'}
+                      </Text>
+                    </>
+                  )}
+                </Pressable>
+                <Pressable
+                  onPress={handleDeleteTicket}
+                  disabled={isUpdatingStatus || isDeletingTicket}
+                  style={[
+                    styles.detailActionButton,
+                    styles.detailActionDangerButton,
+                  ]}>
+                  {isDeletingTicket ? (
+                    <ActivityIndicator size="small" color="#dc2626" />
+                  ) : (
+                    <>
+                      <Icon
+                        name="trash-can-outline"
+                        size={16}
+                        color="#dc2626"
+                      />
+                      <Text style={styles.detailActionDangerText}>Delete</Text>
+                    </>
+                  )}
+                </Pressable>
+              </View>
+            ) : null}
+
             {(detailData?.conversations || []).map(renderConversation)}
 
+            {(detailData?.ticketStatus || 'open').toLowerCase() !== 'open' ? (
+              // Backend rejects replies on closed/resolved tickets — mirror
+              // the frontend's behaviour and replace the reply card with a
+              // read-only notice so users know why they can't type.
+              <View style={styles.closedNotice}>
+                <Icon name="lock-outline" size={18} color="#64748b" />
+                <Text style={styles.closedNoticeText}>
+                  This ticket is{' '}
+                  {(detailData?.ticketStatus || '').toLowerCase()} — replies are
+                  disabled.
+                </Text>
+              </View>
+            ) : (
             <View style={styles.replyCard}>
               <Text style={styles.replyHeading}>Submit your reply</Text>
               <View style={styles.replyDivider} />
@@ -831,24 +1124,37 @@ export function TicketsScreen({
               <View style={styles.replyActions}>
                 <Pressable
                   onPress={handleAddReplyAttachment}
-                  style={styles.addAttachmentButton}
+                  style={styles.replyAttachmentIcon}
                   accessibilityRole="button"
                   accessibilityLabel="Add attachments">
-                  <Text style={styles.addAttachmentText}>+ Add attachments</Text>
+                  <Icon name="paperclip" size={20} color="#475569" />
                 </Pressable>
-                <AppButton
-                  fullWidth={false}
-                  label={isSubmittingReply ? 'SUBMITTING...' : 'SUBMIT'}
+                <Pressable
                   onPress={() => void handleSubmitReply()}
                   disabled={isSubmittingReply || !replyText.trim()}
-                  style={styles.submitButton}
-                  labelStyle={styles.submitButtonLabel}
-                />
+                  style={[
+                    styles.replySubmitButton,
+                    {backgroundColor: primaryColor},
+                    (isSubmittingReply || !replyText.trim()) &&
+                      styles.replySubmitButtonDisabled,
+                  ]}>
+                  {isSubmittingReply ? (
+                    <ActivityIndicator size="small" color="#ffffff" />
+                  ) : (
+                    <>
+                      <Text style={styles.replySubmitText}>SEND</Text>
+                      <Icon name="send" size={16} color="#ffffff" />
+                    </>
+                  )}
+                </Pressable>
               </View>
             </View>
+            )}
           </ScrollView>
         )}
       </View>
+      {confirmModalNode}
+      </>
     );
   }
 
@@ -870,7 +1176,7 @@ export function TicketsScreen({
             accessibilityRole="button"
             accessibilityLabel="Raise a ticket"
             onPress={openCreateModal}
-            style={[styles.raiseButton, {backgroundColor: secondaryColor}]}>
+            style={[styles.raiseButton, {backgroundColor: primaryColor}]}>
             <Text style={styles.raiseButtonText}>+ RAISE A TICKET</Text>
           </Pressable>
         </View>
@@ -986,7 +1292,7 @@ export function TicketsScreen({
                 containerStyle={styles.fieldWrap}
               />
 
-              <Text style={styles.fieldLabel}>
+              <Text style={[styles.fieldLabel, styles.fieldLabelSpaced]}>
                 Description
                 <Text style={{color: dangerColor}}> *</Text>
               </Text>
@@ -1100,20 +1406,21 @@ export function TicketsScreen({
 
             <View style={styles.modalActions}>
               <AppButton
-                fullWidth={false}
                 label="CANCEL"
                 onPress={closeCreateModal}
                 variant="secondary"
-                style={styles.cancelButton}
+                style={styles.modalActionButton}
                 labelStyle={styles.cancelButtonLabel}
                 disabled={isSubmitting}
               />
               <AppButton
-                fullWidth={false}
                 label={isSubmitting ? 'SUBMITTING...' : 'SUBMIT'}
                 onPress={() => void handleSubmit()}
-                disabled={!isValid || isSubmitting}
-                style={styles.submitButton}
+                // Keep tappable when invalid — handleSubmit surfaces field
+                // errors instead. Only disabled while the request is in flight.
+                disabled={isSubmitting}
+                loading={isSubmitting}
+                style={styles.modalActionButton}
                 labelStyle={styles.submitButtonLabel}
               />
             </View>
@@ -1165,6 +1472,8 @@ export function TicketsScreen({
           </Pressable>
         </Pressable>
       </Modal>
+
+      {confirmModalNode}
     </>
   );
 }
@@ -1262,12 +1571,28 @@ const styles = StyleSheet.create({
     borderColor: '#e2e8f0',
     borderRadius: 16,
     borderWidth: 1,
+    elevation: 1,
+    flexDirection: 'row',
     marginBottom: 12,
+    overflow: 'hidden',
+    shadowColor: '#0f172a',
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+  },
+  // Vertical accent strip — green for open, red for closed. Lets users scan
+  // status without reading the chip.
+  ticketAccentBar: {
+    width: 4,
+  },
+  ticketCardBody: {
+    flex: 1,
     padding: 16,
   },
   ticketHeader: {
     alignItems: 'center',
     flexDirection: 'row',
+    gap: 8,
     justifyContent: 'space-between',
     marginBottom: 10,
   },
@@ -1289,7 +1614,24 @@ const styles = StyleSheet.create({
     color: '#0f172a',
     fontSize: 16,
     fontWeight: '800',
-    marginBottom: 6,
+    lineHeight: 22,
+    marginBottom: 8,
+  },
+  ticketFooterRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 6,
+    justifyContent: 'space-between',
+    marginTop: 2,
+  },
+  ticketFooterLeft: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 6,
+  },
+  ticketDot: {
+    color: '#cbd5e1',
+    fontSize: 12,
   },
   ticketMetaRow: {
     alignItems: 'center',
@@ -1303,9 +1645,9 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   ticketStatusBadge: {
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
   },
   ticketStatusOpen: {
     backgroundColor: '#dcfce7',
@@ -1315,9 +1657,9 @@ const styles = StyleSheet.create({
   },
   ticketStatusText: {
     color: '#0f172a',
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '800',
-    letterSpacing: 0.4,
+    letterSpacing: 0.6,
   },
   modalOverlay: {
     ...StyleSheet.absoluteFill,
@@ -1362,7 +1704,7 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
   modalScroll: {
-    maxHeight: 520,
+    maxHeight: 560,
   },
   modalScrollContent: {
     paddingHorizontal: 20,
@@ -1378,16 +1720,21 @@ const styles = StyleSheet.create({
   fieldWrap: {
     marginTop: 14,
   },
+  // Spacer applied above any label that follows another field — keeps the
+  // visual rhythm consistent without forcing the FIRST label down.
+  fieldLabelSpaced: {
+    marginTop: 14,
+  },
   dropdown: {
     alignItems: 'center',
     backgroundColor: colors.surface,
     borderColor: colors.border,
-    borderRadius: 14,
+    borderRadius: 12,
     borderWidth: 1,
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingHorizontal: 14,
-    paddingVertical: 14,
+    paddingVertical: 12,
   },
   dropdownText: {
     color: '#0f172a',
@@ -1493,10 +1840,13 @@ const styles = StyleSheet.create({
   },
   modalActions: {
     flexDirection: 'row',
-    gap: 12,
-    justifyContent: 'flex-end',
+    gap: 10,
     paddingHorizontal: 20,
     paddingVertical: 14,
+  },
+  modalActionButton: {
+    // Each button takes equal share of the row → full-width pair on mobile.
+    flex: 1,
   },
   cancelButton: {
     backgroundColor: '#f1f5f9',
@@ -1603,21 +1953,27 @@ const styles = StyleSheet.create({
     borderColor: '#e2e8f0',
     borderRadius: 16,
     borderWidth: 1,
+    elevation: 1,
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 16,
     marginBottom: 16,
-    padding: 16,
+    padding: 18,
+    rowGap: 18,
+    shadowColor: '#0f172a',
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
   },
   detailMetaCol: {
-    flexBasis: '45%',
-    flexGrow: 1,
-    gap: 4,
+    flexBasis: '50%',
+    gap: 6,
   },
   detailMetaLabel: {
-    color: '#64748b',
-    fontSize: 12,
+    color: '#94a3b8',
+    fontSize: 11,
     fontWeight: '700',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
   },
   detailMetaValue: {
     color: '#0f172a',
@@ -1629,8 +1985,13 @@ const styles = StyleSheet.create({
     borderColor: '#e2e8f0',
     borderRadius: 16,
     borderWidth: 1,
+    elevation: 1,
     marginBottom: 12,
     padding: 16,
+    shadowColor: '#0f172a',
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
   },
   conversationHeader: {
     alignItems: 'center',
@@ -1691,8 +2052,82 @@ const styles = StyleSheet.create({
     borderColor: '#e2e8f0',
     borderRadius: 16,
     borderWidth: 1,
+    elevation: 1,
     marginTop: 4,
     padding: 16,
+    shadowColor: '#0f172a',
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+  },
+  closedNotice: {
+    alignItems: 'center',
+    backgroundColor: '#f1f5f9',
+    borderColor: '#e2e8f0',
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 4,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  closedNoticeText: {
+    color: '#475569',
+    flex: 1,
+    fontSize: 13,
+  },
+  replyHintRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 4,
+    marginTop: 6,
+  },
+  replyHintText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  conversationHeaderRight: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  commentDeleteButton: {
+    padding: 2,
+  },
+  detailActionsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  detailActionButton: {
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    borderWidth: 1,
+    // flex: 1 splits the row equally between Close ticket / Delete — same
+    // pattern as the create-ticket modal's footer buttons.
+    flex: 1,
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  detailActionDangerButton: {
+    borderColor: '#fecaca',
+  },
+  detailActionText: {
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  detailActionDangerText: {
+    color: '#dc2626',
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
   replyHeading: {
     color: '#0f172a',
@@ -1723,5 +2158,35 @@ const styles = StyleSheet.create({
     color: '#334155',
     fontSize: 13,
     fontWeight: '700',
+  },
+  // Compact reply composer: paperclip icon-button on the left, SEND button
+  // on the right with matching ~40dp height. Keeps both controls visually
+  // balanced and avoids the oversized SUBMIT block we had before.
+  replyAttachmentIcon: {
+    alignItems: 'center',
+    backgroundColor: '#f1f5f9',
+    borderRadius: 20,
+    height: 40,
+    justifyContent: 'center',
+    width: 40,
+  },
+  replySubmitButton: {
+    alignItems: 'center',
+    borderRadius: 20,
+    flexDirection: 'row',
+    gap: 6,
+    height: 40,
+    justifyContent: 'center',
+    minWidth: 100,
+    paddingHorizontal: 18,
+  },
+  replySubmitButtonDisabled: {
+    opacity: 0.5,
+  },
+  replySubmitText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
 });

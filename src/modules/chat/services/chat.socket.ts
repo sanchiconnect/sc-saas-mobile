@@ -83,6 +83,16 @@ class ChatSocketManager {
     return () => socket.off(SOCKET_EVENTS.MESSAGE_DELETED, handler);
   }
 
+  // Reply events are scoped to the same conversation room as the parent
+  // messages — callers filter by `parentMessageUuid` on the payload to know
+  // whether the reply belongs to the thread they're viewing.
+  onReplyReceived(handler: (payload: any) => void): () => void {
+    const socket = this.socket;
+    if (!socket) return () => {};
+    socket.on(SOCKET_EVENTS.REPLY_MESSAGE_RECEIVED, handler);
+    return () => socket.off(SOCKET_EVENTS.REPLY_MESSAGE_RECEIVED, handler);
+  }
+
   // Tear down on logout / app background so we don't leak the connection.
   disconnect(): void {
     if (this.socket) {

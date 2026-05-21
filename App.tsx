@@ -35,7 +35,10 @@ function App() {
   // Feedback FAB only appears when the user is signed in. Hiding it across
   // the entire auth flow avoids competing with primary CTAs (Continue on
   // role selection, Verify OTP, etc.) at the bottom of those screens.
-  const shouldShowFeedback = session !== null;
+  // HomeScreen can also suppress it on specific screens (e.g. chat thread)
+  // where it would overlap the send button.
+  const [feedbackFabSuppressed, setFeedbackFabSuppressed] = useState(false);
+  const shouldShowFeedback = session !== null && !feedbackFabSuppressed;
 
   useEffect(() => {
     loadSession()
@@ -114,6 +117,7 @@ function App() {
                 setJustSignedUp(false);
               }}
               initialSection={justSignedUp ? 'edit-profile' : undefined}
+              onSuppressFeedbackFab={setFeedbackFabSuppressed}
             />
           ) : (
             <AuthNavigator
