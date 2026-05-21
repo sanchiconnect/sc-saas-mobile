@@ -6,6 +6,9 @@ import {Icon} from '../../../../core/components/Icon';
 export type MultiSelectOption = {
   id: number | string;
   name: string;
+  // Optional nested list — used by the investor sectoral-interest flow so that
+  // selecting a primary industry reveals its sub-categories below.
+  industrySubCategoryDomains?: Array<{id: number; name: string}>;
 };
 
 type Props = {

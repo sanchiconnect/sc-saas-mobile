@@ -1,5 +1,5 @@
 import React, {useEffect, useState} from 'react';
-import {StyleSheet, Text, View} from 'react-native';
+import {StyleSheet, Switch, Text, TextInput, View} from 'react-native';
 
 import {AppButton} from '../../../../core/components/AppButton';
 import {AppTextField} from '../../../../core/components/AppTextField';
@@ -30,6 +30,9 @@ type Form = {
   ticketSizeMax: string;
   turnAroundTime: string;
   industries: Array<number | string>;
+  industrySubCategories: Array<number | string>;
+  otherIndustriesActive: boolean;
+  otherIndustriesText: string;
   mechanisms: Array<number | string>;
   stages: Array<number | string>;
   preferences: Array<number | string>;
@@ -42,6 +45,9 @@ const EMPTY: Form = {
   ticketSizeMax: '',
   turnAroundTime: '',
   industries: [],
+  industrySubCategories: [],
+  otherIndustriesActive: false,
+  otherIndustriesText: '',
   mechanisms: [],
   stages: [],
   preferences: [],
@@ -59,6 +65,9 @@ const extractIds = (data: any): Array<number | string> => {
 const seedForm = (data: Record<string, any> | null): Form => {
   if (!data) return EMPTY;
   const investmentDetails = data.investmentDetails || data;
+  const others = Array.isArray(data.sectoralInterestOthers)
+    ? data.sectoralInterestOthers
+    : [];
   return {
     ticketSizeMin:
       investmentDetails.ticketSizeMin != null
@@ -73,6 +82,11 @@ const seedForm = (data: Record<string, any> | null): Form => {
         ? String(investmentDetails.turnAroundTime)
         : '',
     industries: extractIds(data.sectoralInterestIds || data.sectoralInterests),
+    industrySubCategories: extractIds(
+      data.sectoralInterestSubIds || data.sectoralInterestSub,
+    ),
+    otherIndustriesActive: others.length > 0,
+    otherIndustriesText: others.join(','),
     mechanisms: extractIds(
       investmentDetails.investmentMechanismIds ||
         data.investmentMechanismIds,
@@ -166,6 +180,12 @@ export function InvestorInvestmentsTab({
 
     setSaving(true);
     try {
+      const otherList = form.otherIndustriesActive
+        ? form.otherIndustriesText
+            .split(',')
+            .map(s => s.trim())
+            .filter(Boolean)
+        : [];
       await authService.updateInvestorInvestments(token, {
         ticketSizeMin: form.ticketSizeMin ? Number(form.ticketSizeMin) : null,
         ticketSizeMax: form.ticketSizeMax ? Number(form.ticketSizeMax) : null,
@@ -173,6 +193,8 @@ export function InvestorInvestmentsTab({
           ? Number(form.turnAroundTime)
           : null,
         sectoralInterestIds: form.industries.map(Number),
+        sectoralInterestSubIds: form.industrySubCategories.map(Number),
+        sectoralInterestOthers: otherList,
         investmentMechanismIds: form.mechanisms.map(Number),
         investmentStageIds: form.stages.map(Number),
         investmentPreferenceIds: form.preferences.map(Number),
@@ -243,7 +265,84 @@ export function InvestorInvestmentsTab({
           selected={form.industries}
           primaryColor={primaryColor}
           max={maxIndustries}
-          onChange={next => setForm(p => ({...p, industries: next}))}
+          onChange={next => {
+            // Pruning: drop sub-categories that belonged to industries the
+            // user just deselected. Without this, hidden selections linger
+            // in the payload.
+            const stillSelectedSubIds = new Set<number>();
+            industryOptions
+              .filter(opt => next.includes(opt.id))
+              .forEach(opt => {
+                opt.industrySubCategoryDomains?.forEach(sub =>
+                  stillSelectedSubIds.add(sub.id),
+                );
+              });
+            setForm(p => ({
+              ...p,
+              industries: next,
+              industrySubCategories: p.industrySubCategories.filter(id =>
+                stillSelectedSubIds.has(Number(id)),
+              ),
+            }));
+          }}
+        />
+      ) : null}
+
+      {(() => {
+        // Aggregate sub-categories for currently-selected industries. If none
+        // expose sub-categories, hide the section entirely.
+        const visibleSubs: Array<{id: number; name: string}> = [];
+        const seen = new Set<number>();
+        industryOptions
+          .filter(opt => form.industries.includes(opt.id))
+          .forEach(opt => {
+            opt.industrySubCategoryDomains?.forEach(sub => {
+              if (!seen.has(sub.id)) {
+                seen.add(sub.id);
+                visibleSubs.push(sub);
+              }
+            });
+          });
+        if (visibleSubs.length === 0) return null;
+        return (
+          <MultiSelectField
+            label="Sub-categories"
+            hint="Pick the sub-areas inside your selected industries."
+            options={visibleSubs}
+            selected={form.industrySubCategories}
+            primaryColor={primaryColor}
+            onChange={next =>
+              setForm(p => ({...p, industrySubCategories: next}))
+            }
+          />
+        );
+      })()}
+
+      <View style={styles.otherToggleRow}>
+        <Text style={styles.otherLabel}>Add other sectors</Text>
+        <Switch
+          value={form.otherIndustriesActive}
+          onValueChange={val =>
+            setForm(p => ({
+              ...p,
+              otherIndustriesActive: val,
+              otherIndustriesText: val ? p.otherIndustriesText : '',
+            }))
+          }
+          trackColor={{false: '#cbd5e1', true: `${primaryColor}55`}}
+          thumbColor={form.otherIndustriesActive ? primaryColor : '#f1f5f9'}
+        />
+      </View>
+      {form.otherIndustriesActive ? (
+        <TextInput
+          style={styles.otherInput}
+          value={form.otherIndustriesText}
+          onChangeText={text =>
+            setForm(p => ({...p, otherIndustriesText: text}))
+          }
+          placeholder="Separate multiple entries with commas"
+          placeholderTextColor="#94a3b8"
+          autoCapitalize="words"
         />
       ) : null}
 
@@ -353,5 +452,25 @@ const styles = StyleSheet.create({
   },
   messageError: {
     color: '#dc2626',
+  },
+  otherToggleRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  otherLabel: {
+    color: '#0f172a',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  otherInput: {
+    backgroundColor: '#f8fafc',
+    borderColor: '#e2e8f0',
+    borderRadius: 10,
+    borderWidth: 1,
+    color: '#0f172a',
+    fontSize: 15,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
 });

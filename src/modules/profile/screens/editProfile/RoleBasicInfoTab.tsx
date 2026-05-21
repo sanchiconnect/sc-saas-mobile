@@ -1,8 +1,19 @@
-import React, {useEffect} from 'react';
-import {StyleSheet, Text, View} from 'react-native';
+import React, {useContext, useEffect, useState} from 'react';
+import {
+  Alert,
+  Image,
+  Pressable,
+  StyleSheet,
+  Switch,
+  Text,
+  View,
+} from 'react-native';
+import {launchImageLibrary} from 'react-native-image-picker';
+import {pick, types} from '@react-native-documents/picker';
 
 import {AppButton} from '../../../../core/components/AppButton';
 import {AppTextField} from '../../../../core/components/AppTextField';
+import {Icon} from '../../../../core/components/Icon';
 import {useFormValidation} from '../../../../core/form/useFormValidation';
 import {
   combine,
@@ -10,7 +21,10 @@ import {
   url,
   Validator,
 } from '../../../../core/form/validators';
+import {TenantContext} from '../../../../core/tenant/TenantProvider';
 
+import {authService} from '../../../auth/services/auth.service';
+import {Picker} from './Picker';
 import type {InvestorSubtype} from './tabConfig';
 
 // Field key in the API response/payload for this role's "basic info" tab.
@@ -29,7 +43,12 @@ type FieldKey =
   | 'website'
   | 'websiteUrl'
   | 'linkedinUrl'
-  | 'twitterUrl';
+  | 'twitterUrl'
+  | 'establishmentYear'
+  | 'organizationTypeId'
+  | 'registeredCountryId'
+  | 'registeredStateId'
+  | 'registeredCityId';
 
 type FieldConfig = {
   key: FieldKey;
@@ -39,7 +58,16 @@ type FieldConfig = {
   keyboardType?: 'default' | 'email-address' | 'url' | 'numeric';
   required?: boolean;
   validator?: Validator;
+  // 'dropdown' renders a Pressable that opens a Picker; options keyed by
+  // `dropdownSource` in the parent-supplied `dropdownData` prop.
+  kind?: 'text' | 'dropdown';
+  dropdownSource?: string;
 };
+
+export type DropdownDataMap = Record<
+  string,
+  Array<{id: number; name: string}>
+>;
 
 type RoleKey =
   | 'investor:organization'
@@ -53,8 +81,40 @@ type RoleKey =
 const ROLE_FIELDS: Record<RoleKey, FieldConfig[]> = {
   'investor:organization': [
     {key: 'organizationName', label: 'Organization Name', required: true},
+    {
+      key: 'organizationTypeId',
+      label: 'Organization Type',
+      required: true,
+      kind: 'dropdown',
+      dropdownSource: 'organization_types',
+    },
+    {
+      key: 'establishmentYear',
+      label: 'Establishment Year',
+      required: true,
+      keyboardType: 'numeric',
+    },
     {key: 'aboutUs', label: 'About', multiline: true, required: true},
     {key: 'portfolioSize', label: 'Portfolio Size', keyboardType: 'numeric'},
+    {
+      key: 'registeredCountryId',
+      label: 'Country',
+      kind: 'dropdown',
+      dropdownSource: 'countries',
+      required: true,
+    },
+    {
+      key: 'registeredStateId',
+      label: 'State',
+      kind: 'dropdown',
+      dropdownSource: 'states',
+    },
+    {
+      key: 'registeredCityId',
+      label: 'City',
+      kind: 'dropdown',
+      dropdownSource: 'cities',
+    },
     {key: 'displayWebsite', label: 'Website', keyboardType: 'url'},
     {key: 'linkedinUrl', label: 'LinkedIn URL', keyboardType: 'url'},
     {key: 'twitterUrl', label: 'Twitter / X URL', keyboardType: 'url'},
@@ -70,7 +130,27 @@ const ROLE_FIELDS: Record<RoleKey, FieldConfig[]> = {
       required: true,
     },
     {key: 'portfolioSize', label: 'Portfolio Size', keyboardType: 'numeric'},
+    {
+      key: 'registeredCountryId',
+      label: 'Country',
+      kind: 'dropdown',
+      dropdownSource: 'countries',
+    },
+    {
+      key: 'registeredStateId',
+      label: 'State',
+      kind: 'dropdown',
+      dropdownSource: 'states',
+    },
+    {
+      key: 'registeredCityId',
+      label: 'City',
+      kind: 'dropdown',
+      dropdownSource: 'cities',
+    },
+    {key: 'displayWebsite', label: 'Website', keyboardType: 'url'},
     {key: 'linkedinUrl', label: 'LinkedIn URL', keyboardType: 'url', required: true},
+    {key: 'twitterUrl', label: 'Twitter / X URL', keyboardType: 'url'},
   ],
   corporate: [
     {key: 'companyName', label: 'Company Name', required: true},
@@ -144,6 +224,13 @@ type Props = {
   primaryColor: string;
   isSaving?: boolean;
   onSave: (payload: Record<string, any>) => Promise<void> | void;
+  // Dropdown option lists keyed by `dropdownSource`. Parent fetches these
+  // (e.g. organization_types from /api/v1/public/global/custom/...).
+  dropdownData?: DropdownDataMap;
+  // Optional — only investors currently support logo upload via the
+  // /api/v1/investors/upload/logo endpoint. Mentor/corporate omit this prop.
+  token?: string;
+  onLogoUploaded?: () => void;
 };
 
 export function RoleBasicInfoTab({
@@ -153,6 +240,9 @@ export function RoleBasicInfoTab({
   primaryColor,
   isSaving = false,
   onSave,
+  dropdownData = {},
+  token,
+  onLogoUploaded,
 }: Props) {
   const roleKey = resolveRoleKey(accountType, investorSubtype);
   const fields = roleKey ? ROLE_FIELDS[roleKey] : [];
@@ -161,6 +251,154 @@ export function RoleBasicInfoTab({
     initial: seedValues(fields, initialData),
     validators: buildValidators(fields),
   });
+
+  // Tracks which dropdown picker is open. null = none.
+  const [activeDropdown, setActiveDropdown] = useState<FieldConfig | null>(
+    null,
+  );
+
+  // Country/State/City — fetched dynamically from the tenant API. State
+  // depends on country, city depends on state — same pattern as the startup
+  // BasicInfoForm in EditProfileScreen.
+  const {baseUrl, globalSetting} = useContext(TenantContext);
+  const logoBaseUrl =
+    globalSetting?.imgKitUrl || globalSetting?.assetsImgKitUrl || '';
+
+  // Logo upload — investor only. Local URI shows the just-picked image as a
+  // preview while the upload is in flight; on success the parent re-fetches
+  // the profile and `initialData.companyLogo` (or .avatar) becomes the
+  // canonical URL.
+  const [localLogoUri, setLocalLogoUri] = useState<string | null>(null);
+  const [logoUploading, setLogoUploading] = useState(false);
+
+  // Connection document — org-investor only. Toggle controls whether the
+  // investor requires startups to upload a one-pager when reaching out;
+  // when on, the investor uploads a sample/template doc as reference.
+  const initialAskForConnDoc = Boolean(initialData?.askForConnectionDocument);
+  const [askForConnDoc, setAskForConnDoc] = useState(initialAskForConnDoc);
+  const [connDocName, setConnDocName] = useState<string>(
+    initialData?.connectionRequestDocument?.fileName ||
+      initialData?.connectionRequestDocument ||
+      '',
+  );
+  const [connDocUploading, setConnDocUploading] = useState(false);
+
+  useEffect(() => {
+    setAskForConnDoc(Boolean(initialData?.askForConnectionDocument));
+    setConnDocName(
+      initialData?.connectionRequestDocument?.fileName ||
+        initialData?.connectionRequestDocument ||
+        '',
+    );
+  }, [initialData]);
+  const investorLogo =
+    initialData?.companyLogo || initialData?.avatar || initialData?.logo || '';
+  const resolvedLogo = localLogoUri
+    ? localLogoUri
+    : investorLogo
+      ? investorLogo.startsWith('http')
+        ? investorLogo
+        : `${logoBaseUrl}${investorLogo}`
+      : null;
+  const isInvestor = roleKey?.startsWith('investor');
+  const [countryOptions, setCountryOptions] = useState<
+    Array<{id: number; name: string}>
+  >([]);
+  const [stateOptions, setStateOptions] = useState<
+    Array<{id: number; name: string}>
+  >([]);
+  const [cityOptions, setCityOptions] = useState<
+    Array<{id: number; name: string}>
+  >([]);
+
+  useEffect(() => {
+    if (!baseUrl) return;
+    let cancelled = false;
+    fetch(`${baseUrl}api/v1/public/global/countries`)
+      .then(r => r.json())
+      .then(payload => {
+        if (cancelled) return;
+        const list = Array.isArray(payload?.data)
+          ? payload.data
+          : Array.isArray(payload?.results)
+            ? payload.results
+            : [];
+        setCountryOptions(
+          list
+            .map((item: any) => ({
+              id: Number(item?.id),
+              name: String(item?.name || ''),
+            }))
+            .filter((c: any) => Number.isFinite(c.id) && c.name),
+        );
+      })
+      .catch(() => setCountryOptions([]));
+    return () => {
+      cancelled = true;
+    };
+  }, [baseUrl]);
+
+  const countryId = Number(form.values.registeredCountryId);
+  useEffect(() => {
+    if (!baseUrl || !Number.isFinite(countryId) || countryId === 0) {
+      setStateOptions([]);
+      return;
+    }
+    let cancelled = false;
+    fetch(`${baseUrl}api/v1/public/global/states/${countryId}`)
+      .then(r => r.json())
+      .then(payload => {
+        if (cancelled) return;
+        const list = Array.isArray(payload?.data)
+          ? payload.data
+          : Array.isArray(payload?.results)
+            ? payload.results
+            : [];
+        setStateOptions(
+          list
+            .map((item: any) => ({
+              id: Number(item?.id),
+              name: String(item?.name || ''),
+            }))
+            .filter((c: any) => Number.isFinite(c.id) && c.name),
+        );
+      })
+      .catch(() => setStateOptions([]));
+    return () => {
+      cancelled = true;
+    };
+  }, [baseUrl, countryId]);
+
+  const stateId = Number(form.values.registeredStateId);
+  useEffect(() => {
+    if (!baseUrl || !Number.isFinite(stateId) || stateId === 0) {
+      setCityOptions([]);
+      return;
+    }
+    let cancelled = false;
+    fetch(`${baseUrl}api/v1/public/global/cities/${stateId}`)
+      .then(r => r.json())
+      .then(payload => {
+        if (cancelled) return;
+        const list = Array.isArray(payload?.data)
+          ? payload.data
+          : Array.isArray(payload?.results)
+            ? payload.results
+            : [];
+        setCityOptions(
+          list
+            .map((item: any) => ({
+              id: Number(item?.id),
+              name: String(item?.name || ''),
+            }))
+            .filter((c: any) => Number.isFinite(c.id) && c.name),
+        );
+      })
+      .catch(() => setCityOptions([]));
+    return () => {
+      cancelled = true;
+    };
+  }, [baseUrl, stateId]);
 
   useEffect(() => {
     form.reset(seedValues(fields, initialData));
@@ -171,6 +409,137 @@ export function RoleBasicInfoTab({
     return null;
   }
 
+  const handleLogoPress = async () => {
+    if (!isInvestor || !token) return;
+    try {
+      if (typeof launchImageLibrary !== 'function') {
+        Alert.alert(
+          'Logo upload unavailable',
+          'Image picker is not ready yet. Please rebuild the app and try again.',
+        );
+        return;
+      }
+      const result = await launchImageLibrary({
+        mediaType: 'photo',
+        selectionLimit: 1,
+        includeBase64: false,
+      });
+      if (result.didCancel) return;
+      if (result.errorCode) {
+        Alert.alert(
+          'Logo upload failed',
+          result.errorMessage || 'Could not open the image picker.',
+        );
+        return;
+      }
+      const asset = result.assets?.[0];
+      if (!asset?.uri) {
+        Alert.alert('Logo upload failed', 'No image was selected.');
+        return;
+      }
+      const fileSize = asset.fileSize ?? 0;
+      if (fileSize > 512 * 1024) {
+        Alert.alert(
+          'Image too large',
+          'Please choose an image smaller than 512kb.',
+        );
+        return;
+      }
+      const mimeType = (asset.type || '').toLowerCase();
+      if (
+        mimeType &&
+        !['image/png', 'image/jpg', 'image/jpeg'].includes(mimeType)
+      ) {
+        Alert.alert(
+          'Unsupported format',
+          'Please choose a png, jpg, or jpeg image.',
+        );
+        return;
+      }
+
+      setLocalLogoUri(asset.uri);
+      setLogoUploading(true);
+      try {
+        await authService.uploadInvestorLogo(token, {
+          uri: asset.uri,
+          name: asset.fileName || `logo-${Date.now()}.jpg`,
+          type: mimeType || 'image/jpeg',
+        });
+        onLogoUploaded?.();
+      } catch (uploadError) {
+        setLocalLogoUri(null);
+        Alert.alert(
+          'Logo upload failed',
+          uploadError instanceof Error
+            ? uploadError.message
+            : 'Could not upload your logo.',
+        );
+      } finally {
+        setLogoUploading(false);
+      }
+    } catch (error) {
+      Alert.alert(
+        'Logo upload failed',
+        error instanceof Error ? error.message : 'Could not select the image.',
+      );
+    }
+  };
+
+  const handleConnDocPick = async () => {
+    if (!token) return;
+    try {
+      const [picked] = await pick({type: [types.pdf, types.allFiles]});
+      if (!picked?.uri) return;
+      const name = picked.name || `connection-doc-${Date.now()}.pdf`;
+      const mimeType = picked.type || 'application/pdf';
+      setConnDocUploading(true);
+      try {
+        await authService.uploadInvestorConnectionDocument(token, {
+          uri: picked.uri,
+          name,
+          type: mimeType,
+        });
+        setConnDocName(name);
+        onLogoUploaded?.();
+      } catch (uploadError) {
+        Alert.alert(
+          'Upload failed',
+          uploadError instanceof Error
+            ? uploadError.message
+            : 'Could not upload the document.',
+        );
+      } finally {
+        setConnDocUploading(false);
+      }
+    } catch (e: any) {
+      if (e?.code !== 'DOCUMENT_PICKER_CANCELED') {
+        Alert.alert(
+          'Upload failed',
+          e instanceof Error ? e.message : 'Could not pick a file.',
+        );
+      }
+    }
+  };
+
+  // Pulls dropdown options either from the parent-supplied map (e.g.
+  // organization_types) or from the locally-fetched location lists.
+  const optionsForDropdown = (
+    field: FieldConfig,
+  ): Array<{id: number; name: string}> => {
+    if (!field.dropdownSource) return [];
+    if (field.dropdownSource === 'countries') return countryOptions;
+    if (field.dropdownSource === 'states') return stateOptions;
+    if (field.dropdownSource === 'cities') return cityOptions;
+    return dropdownData[field.dropdownSource] || [];
+  };
+
+  const labelForDropdown = (field: FieldConfig): string => {
+    const id = Number(form.values[field.key]);
+    if (!Number.isFinite(id) || id === 0) return '';
+    const option = optionsForDropdown(field).find(opt => opt.id === id);
+    return option?.name || '';
+  };
+
   return (
     <View style={styles.card}>
       <Text style={styles.title}>Basic Information</Text>
@@ -179,35 +548,187 @@ export function RoleBasicInfoTab({
         your profile.
       </Text>
 
-      {fields.map(field => (
-        <AppTextField
-          key={field.key}
-          label={field.label}
-          required={field.required}
-          error={form.errors[field.key]}
-          placeholder={field.placeholder}
-          keyboardType={field.keyboardType}
-          multiline={field.multiline}
-          autoCapitalize={
-            field.keyboardType === 'url' || field.keyboardType === 'email-address'
-              ? 'none'
-              : undefined
-          }
-          value={form.values[field.key] || ''}
-          onChangeText={text => form.setValue(field.key, text)}
-          onBlur={() => form.setTouched(field.key)}
-        />
-      ))}
+      {isInvestor && token ? (
+        <View style={styles.logoSection}>
+          <Pressable
+            onPress={handleLogoPress}
+            style={[styles.logoBox, {borderColor: `${primaryColor}40`}]}>
+            {resolvedLogo ? (
+              <Image source={{uri: resolvedLogo}} style={styles.logoImage} />
+            ) : (
+              <Icon name="image-plus" size={28} color="#94a3b8" />
+            )}
+          </Pressable>
+          <View style={styles.logoCopy}>
+            <Text style={styles.logoLabel}>
+              {investorSubtype === 'individual'
+                ? 'Profile photo'
+                : 'Organization logo'}
+            </Text>
+            <Text style={styles.logoHint}>
+              {logoUploading
+                ? 'Uploading…'
+                : 'PNG, JPG, or JPEG up to 512kb.'}
+            </Text>
+            <Pressable
+              onPress={handleLogoPress}
+              disabled={logoUploading}
+              style={styles.logoChangeBtn}>
+              <Text style={[styles.logoChangeText, {color: primaryColor}]}>
+                {resolvedLogo ? 'Change' : 'Upload'}
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      ) : null}
+
+      {fields.map(field => {
+        if (field.kind === 'dropdown') {
+          const display = labelForDropdown(field);
+          const errorText = form.errors[field.key];
+          return (
+            <View key={field.key} style={styles.dropdownField}>
+              <Text style={styles.dropdownLabel}>
+                {field.label}
+                {field.required ? (
+                  <Text style={styles.requiredMark}> *</Text>
+                ) : null}
+              </Text>
+              <Pressable
+                style={[
+                  styles.dropdownInput,
+                  errorText ? styles.dropdownInputError : null,
+                ]}
+                onPress={() => {
+                  form.setTouched(field.key);
+                  setActiveDropdown(field);
+                }}>
+                <Text
+                  style={[
+                    styles.dropdownText,
+                    !display && styles.dropdownPlaceholder,
+                  ]}>
+                  {display || `Choose ${field.label.toLowerCase()}`}
+                </Text>
+                <Icon name="chevron-down" size={18} color="#64748b" />
+              </Pressable>
+              {errorText ? (
+                <Text style={styles.dropdownError}>{errorText}</Text>
+              ) : null}
+            </View>
+          );
+        }
+
+        return (
+          <AppTextField
+            key={field.key}
+            label={field.label}
+            required={field.required}
+            error={form.errors[field.key]}
+            placeholder={field.placeholder}
+            keyboardType={field.keyboardType}
+            multiline={field.multiline}
+            autoCapitalize={
+              field.keyboardType === 'url' ||
+              field.keyboardType === 'email-address'
+                ? 'none'
+                : undefined
+            }
+            value={form.values[field.key] || ''}
+            onChangeText={text => {
+              const next =
+                field.key === 'establishmentYear'
+                  ? text.replace(/[^0-9]/g, '').slice(0, 4)
+                  : text;
+              form.setValue(field.key, next);
+            }}
+            onBlur={() => form.setTouched(field.key)}
+          />
+        );
+      })}
+
+      {isInvestor && investorSubtype === 'organization' && token ? (
+        <View style={styles.connDocSection}>
+          <View style={styles.connDocHeader}>
+            <View style={styles.connDocHeaderText}>
+              <Text style={styles.connDocLabel}>
+                Ask for connection document?
+              </Text>
+              <Text style={styles.connDocHint}>
+                Require startups to upload a one-pager before they can reach
+                out to you.
+              </Text>
+            </View>
+            <Switch
+              value={askForConnDoc}
+              onValueChange={setAskForConnDoc}
+              trackColor={{false: '#cbd5e1', true: `${primaryColor}55`}}
+              thumbColor={askForConnDoc ? primaryColor : '#f1f5f9'}
+            />
+          </View>
+          {askForConnDoc ? (
+            <Pressable
+              onPress={handleConnDocPick}
+              disabled={connDocUploading}
+              style={[styles.connDocPicker, {borderColor: `${primaryColor}40`}]}>
+              <Icon name="file-document-outline" size={22} color={primaryColor} />
+              <Text style={styles.connDocPickerText} numberOfLines={1}>
+                {connDocUploading
+                  ? 'Uploading…'
+                  : connDocName
+                    ? connDocName
+                    : 'Tap to upload a PDF template'}
+              </Text>
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
 
       <AppButton
         label={isSaving ? 'Saving…' : 'Save'}
         disabled={isSaving}
         loading={isSaving}
         onPress={() =>
-          form.handleSubmit(values => onSave(buildPayload(values)))
+          form.handleSubmit(values =>
+            onSave({...buildPayload(values), askForConnectionDocument: askForConnDoc}),
+          )
         }
         style={{backgroundColor: primaryColor}}
       />
+
+      {activeDropdown ? (
+        <Picker
+          visible
+          title={`Select ${activeDropdown.label.toLowerCase()}`}
+          options={optionsForDropdown(activeDropdown).map(o => o.name)}
+          selected={labelForDropdown(activeDropdown)}
+          primaryColor={primaryColor}
+          emptyMessage={
+            activeDropdown.key === 'registeredStateId'
+              ? 'Select a country first'
+              : activeDropdown.key === 'registeredCityId'
+                ? 'Select a state first'
+                : undefined
+          }
+          onClose={() => setActiveDropdown(null)}
+          onSelect={name => {
+            const option = optionsForDropdown(activeDropdown).find(
+              o => o.name === name,
+            );
+            if (option) {
+              form.setValue(activeDropdown.key, String(option.id));
+              // Clear dependent location fields when the parent changes.
+              if (activeDropdown.key === 'registeredCountryId') {
+                form.setValue('registeredStateId', '');
+                form.setValue('registeredCityId', '');
+              } else if (activeDropdown.key === 'registeredStateId') {
+                form.setValue('registeredCityId', '');
+              }
+            }
+            setActiveDropdown(null);
+          }}
+        />
+      ) : null}
     </View>
   );
 }
@@ -218,11 +739,56 @@ const seedValues = (
 ): Record<string, string> => {
   const seed: Record<string, string> = {};
   fields.forEach(field => {
+    // For dropdown ID fields, the API returns a nested object — e.g.
+    // `organizationType: { id, name }`. Look there first, then fall back to
+    // the flat `<key>` (already an id) or `<key without 'Id' suffix>R`.
+    if (field.key === 'organizationTypeId') {
+      const nested =
+        data?.organizationType?.id ??
+        data?.organizationTypeId ??
+        data?.organizationTypeR?.id;
+      seed[field.key] = nested == null ? '' : String(nested);
+      return;
+    }
+    if (field.key === 'registeredCountryId') {
+      const nested =
+        data?.registeredCountryR?.id ??
+        data?.registeredCountry?.id ??
+        data?.registeredCountryId;
+      seed[field.key] = nested == null ? '' : String(nested);
+      return;
+    }
+    if (field.key === 'registeredStateId') {
+      const nested =
+        data?.registeredStateR?.id ??
+        data?.registeredState?.id ??
+        data?.registeredStateId;
+      seed[field.key] = nested == null ? '' : String(nested);
+      return;
+    }
+    if (field.key === 'registeredCityId') {
+      const nested =
+        data?.registeredCityR?.id ??
+        data?.registeredCity?.id ??
+        data?.registeredCityId;
+      seed[field.key] = nested == null ? '' : String(nested);
+      return;
+    }
     const raw = data?.[field.key];
     seed[field.key] = raw == null ? '' : String(raw);
   });
   return seed;
 };
+
+// Field keys that should be sent as numbers in the API payload.
+const NUMERIC_PAYLOAD_KEYS = new Set([
+  'portfolioSize',
+  'establishmentYear',
+  'organizationTypeId',
+  'registeredCountryId',
+  'registeredStateId',
+  'registeredCityId',
+]);
 
 const buildPayload = (
   values: Record<string, string>,
@@ -233,7 +799,7 @@ const buildPayload = (
   Object.entries(values).forEach(([key, value]) => {
     const trimmed = value.trim();
     if (trimmed.length > 0) {
-      payload[key] = key === 'portfolioSize' ? Number(trimmed) : trimmed;
+      payload[key] = NUMERIC_PAYLOAD_KEYS.has(key) ? Number(trimmed) : trimmed;
     }
   });
   return payload;
@@ -261,5 +827,124 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#64748b',
     lineHeight: 18,
+  },
+  dropdownField: {
+    gap: 6,
+  },
+  dropdownLabel: {
+    color: '#0f172a',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  requiredMark: {
+    color: '#ef4444',
+  },
+  dropdownInput: {
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderColor: '#e2e8f0',
+    borderRadius: 10,
+    borderWidth: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    minHeight: 48,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  dropdownInputError: {
+    borderColor: '#ef4444',
+  },
+  dropdownText: {
+    color: '#0f172a',
+    flex: 1,
+    fontSize: 15,
+  },
+  dropdownPlaceholder: {
+    color: '#94a3b8',
+  },
+  dropdownError: {
+    color: '#ef4444',
+    fontSize: 12,
+  },
+  logoSection: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 16,
+  },
+  logoBox: {
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    borderRadius: 16,
+    borderStyle: 'dashed',
+    borderWidth: 2,
+    height: 84,
+    justifyContent: 'center',
+    overflow: 'hidden',
+    width: 84,
+  },
+  logoImage: {
+    height: '100%',
+    width: '100%',
+  },
+  logoCopy: {
+    flex: 1,
+    gap: 4,
+  },
+  logoLabel: {
+    color: '#0f172a',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  logoHint: {
+    color: '#64748b',
+    fontSize: 12,
+  },
+  logoChangeBtn: {
+    marginTop: 4,
+  },
+  logoChangeText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  connDocSection: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    gap: 12,
+    padding: 14,
+  },
+  connDocHeader: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    gap: 12,
+  },
+  connDocHeaderText: {
+    flex: 1,
+    gap: 2,
+  },
+  connDocLabel: {
+    color: '#0f172a',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  connDocHint: {
+    color: '#64748b',
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  connDocPicker: {
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderRadius: 10,
+    borderStyle: 'dashed',
+    borderWidth: 2,
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 14,
+  },
+  connDocPickerText: {
+    color: '#0f172a',
+    flex: 1,
+    fontSize: 14,
   },
 });

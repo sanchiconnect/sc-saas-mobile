@@ -25,6 +25,8 @@ type TenantContextType = {
     features?: Record<string, any>;
     startupMaxIndustries?: string | number;
     startupMaxTechnologies?: string | number;
+    investorMaxIndustries?: string | number;
+    investorMaxInvestabilityMetrics?: string | number;
   } | null;
 };
 
@@ -62,6 +64,9 @@ export const TenantProvider = ({children}: Props) => {
         features: settingsData?.features,
         startupMaxIndustries: settingsData?.startupMaxIndustries,
         startupMaxTechnologies: settingsData?.startupMaxTechnologies,
+        investorMaxIndustries: settingsData?.investorMaxIndustries,
+        investorMaxInvestabilityMetrics:
+          settingsData?.investorMaxInvestabilityMetrics,
       });
       setTheme({
         primary: branding?.colors?.primary,

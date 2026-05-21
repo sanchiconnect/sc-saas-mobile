@@ -255,23 +255,6 @@ const toIdName = (raw: any): Array<{id: number; name: string}> => {
     );
 };
 
-const PLACEHOLDER_COPY: Record<string, string> = {
-  investment_details:
-    'Investment ticket sizes, stages, and sectoral preferences are still desktop-only. Open the web app to edit these.',
-  representative:
-    'Representative details are still desktop-only. Open the web app to add or update the contact person.',
-  investment_thesis:
-    'Your detailed investment thesis is still edited on the web app for now.',
-  domain_expertise:
-    'Mentor expertise (industries, technologies, domain areas) is still desktop-only.',
-  engagement:
-    'Corporate engagement details are still desktop-only. Open the web app to fill these in.',
-};
-
-const placeholderCopyFor = (tabKey: string): string =>
-  PLACEHOLDER_COPY[tabKey] ||
-  'This section is part of the upcoming mobile release. Use the web app for now.';
-
 const buildEditTabs = (
   basicInfo: BasicInfoFormType,
   startupInfo: Record<string, any> | null,
@@ -357,6 +340,11 @@ export function EditProfileScreen({
     Array<{id: number; name: string}>
   >([]);
   const [domainAreaOptions, setDomainAreaOptions] = useState<
+    Array<{id: number; name: string}>
+  >([]);
+  // Investor organization types — fetched once per session when an
+  // investor is loaded. Matches /api/v1/public/global/custom/organization_types.
+  const [organizationTypeOptions, setOrganizationTypeOptions] = useState<
     Array<{id: number; name: string}>
   >([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -553,7 +541,7 @@ export function EditProfileScreen({
 
     const keys =
       accountType === 'investor'
-        ? 'investment_stages,investment_preferences,investability_metrics,business_models'
+        ? 'investment_stages,investment_preferences,investability_metrics,business_models,organization_types'
         : 'domain_areas';
 
     fetch(`${baseUrl}api/v1/public/global/custom/${keys}`)
@@ -566,6 +554,7 @@ export function EditProfileScreen({
           setInvestmentPreferenceOptions(toIdName(d.investment_preferences));
           setAbilityMetricOptions(toIdName(d.investability_metrics));
           setBusinessModelOptions(toIdName(d.business_models));
+          setOrganizationTypeOptions(toIdName(d.organization_types));
         } else {
           setDomainAreaOptions(toIdName(d.domain_areas));
         }
@@ -1378,6 +1367,11 @@ export function EditProfileScreen({
               initialData={startupInfo}
               primaryColor={primaryColor}
               isSaving={isSaving}
+              token={token}
+              onLogoUploaded={() => loadProfile()}
+              dropdownData={{
+                organization_types: organizationTypeOptions,
+              }}
               onSave={async payload => {
                 try {
                   setIsSaving(true);
@@ -1621,6 +1615,15 @@ export function EditProfileScreen({
             preferenceOptions={investmentPreferenceOptions}
             abilityMetricOptions={abilityMetricOptions}
             businessModelOptions={businessModelOptions}
+            maxIndustries={
+              Math.max(1, Number(globalSetting?.investorMaxIndustries) || 5)
+            }
+            maxAbilityMetrics={
+              Math.max(
+                1,
+                Number(globalSetting?.investorMaxInvestabilityMetrics) || 7,
+              )
+            }
           />
         ) : activeTab === 'representative' ? (
           <InvestorRepresentativeTab
@@ -1672,7 +1675,8 @@ export function EditProfileScreen({
             <Icon name="hammer-wrench" size={32} color="#94a3b8" />
             <Text style={styles.placeholderTitle}>Available on web</Text>
             <Text style={styles.placeholderBody}>
-              {placeholderCopyFor(activeTab)}
+              This section is part of the upcoming mobile release. Use the web
+              app for now.
             </Text>
           </View>
         )}
