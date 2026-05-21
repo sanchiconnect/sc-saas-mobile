@@ -12,7 +12,8 @@ export type AppSection =
   | 'account-settings'
   | 'edit-profile'
   | 'profile'
-  | 'chat';
+  | 'chat'
+  | 'connections';
 
 export type AppMenuSelection = {
   section: AppSection;

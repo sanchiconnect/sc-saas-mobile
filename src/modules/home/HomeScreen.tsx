@@ -34,6 +34,7 @@ import {
 import {ConversationDetailScreen} from '../chat/screens/ConversationDetailScreen';
 import {ConversationListScreen} from '../chat/screens/ConversationListScreen';
 import type {Conversation} from '../chat/types';
+import {ConnectionsScreen} from '../connections/screens/ConnectionsScreen';
 import {EditProfileScreen} from '../profile/screens/EditProfileScreen';
 import {TicketsScreen} from '../tickets/screens/TicketsScreen';
 import {dashboardService} from './services/dashboard.service';
@@ -390,6 +391,35 @@ export function HomeScreen({
           currentUserUuid={session.user.id}
           onOpenConversation={setActiveConversation}
         />
+      </View>
+    );
+  }
+
+  if (selectedMenu.section === 'connections') {
+    return (
+      <View style={styles.page}>
+        <SideMenu
+          globalSetting={globalSetting}
+          isVisible={isMenuOpen}
+          onClose={() => setIsMenuOpen(false)}
+          onLogout={onLogout}
+          onSelectMenu={setSelectedMenu}
+          primaryColor={primaryColor}
+          selectedMenu={selectedMenu}
+          session={session}
+          accountType={summary?.accountType}
+        />
+        <View style={styles.topBar}>
+          <Pressable
+            style={styles.iconButton}
+            onPress={() => setIsMenuOpen(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Open menu">
+            <Icon name="menu" size={24} color="#475569" />
+          </Pressable>
+          <Text style={styles.topBarTitle}>Connections</Text>
+        </View>
+        <ConnectionsScreen token={session.token} />
       </View>
     );
   }

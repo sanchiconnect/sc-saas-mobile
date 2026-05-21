@@ -10,8 +10,9 @@ export type ConversationParticipant = {
 export type Conversation = {
   uuid: string;
   name?: string;
-  // Latest message preview for the list row.
-  lastMessage?: string;
+  // Latest message preview for the list row. Backend returns either a plain
+  // string (legacy / some tenants) OR the full Message object — handle both.
+  lastMessage?: string | Message;
   lastMessageType?: string;
   lastMessageAt?: string;
   // Server-side unread count for the current user.

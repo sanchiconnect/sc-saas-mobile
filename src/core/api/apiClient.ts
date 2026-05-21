@@ -24,12 +24,29 @@ export const safeJsonParse = (value: string): any => {
   }
 };
 
-export const getErrorMessage = (data: any): string | undefined =>
-  data?.message ||
-  data?.error?.message ||
-  data?.errors?.[0]?.message ||
-  data?.data?.message ||
-  data?.response?.message;
+export const getErrorMessage = (data: any): string | undefined => {
+  // NestJS-style validation errors come back as either a string or a string[]
+  // depending on the validator. Join arrays so the toast doesn't read like
+  // "[object Object]" or a single comma-mashed run-on.
+  const flatten = (value: any): string | undefined => {
+    if (!value) return undefined;
+    if (typeof value === 'string') return value;
+    if (Array.isArray(value)) {
+      const parts = value
+        .map(v => (typeof v === 'string' ? v : v?.message || ''))
+        .filter(Boolean);
+      return parts.length ? parts.join('\n') : undefined;
+    }
+    return undefined;
+  };
+  return (
+    flatten(data?.message) ||
+    flatten(data?.error?.message) ||
+    flatten(data?.errors) ||
+    flatten(data?.data?.message) ||
+    flatten(data?.response?.message)
+  );
+};
 
 export const normalizeTokenValue = (value: unknown): string | undefined => {
   if (typeof value !== 'string') {
@@ -90,6 +107,14 @@ export const requestJson = async <T>(
     if (response.status === 401 && sessionInvalidHandler) {
       sessionInvalidHandler();
     }
+    // Surface failed payloads to Metro for in-the-loop debugging. Kept simple
+    // (no token, just method/path/status/body) to avoid leaking secrets.
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[API ${response.status}] ${options.method || 'GET'} ${path} | request: ${
+        options.body ? String(options.body).slice(0, 500) : 'n/a'
+      } | response: ${raw.slice(0, 500)}`,
+    );
     throw new Error(
       getErrorMessage(data) || `Request failed with status ${response.status}.`,
     );

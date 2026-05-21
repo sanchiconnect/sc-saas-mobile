@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   FlatList,
   Image,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -25,6 +26,7 @@ import {TenantContext} from '../../../core/tenant/TenantProvider';
 import {chatService} from '../services/chat.service';
 import {chatSocket} from '../services/chat.socket';
 import type {Conversation, Message} from '../types';
+import {stripHtml} from '../utils';
 
 type Props = {
   token: string;
@@ -98,6 +100,24 @@ export function ConversationDetailScreen({
 
   // Track messages we just sent locally so the socket echo doesn't dupe them.
   const sentMessageIdsRef = useRef<Set<string>>(new Set());
+
+  // Android only: Vivo + many OEM keyboards layer an autocomplete strip on
+  // top of the resized window, hiding the bottom 40–60dp of content. Bump the
+  // composer up while the keyboard is open so the input stays visible.
+  const [androidKeyboardLift, setAndroidKeyboardLift] = useState(0);
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    const showSub = Keyboard.addListener('keyboardDidShow', () => {
+      setAndroidKeyboardLift(56);
+    });
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => {
+      setAndroidKeyboardLift(0);
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   const headerName = resolveHeaderName(conversation, currentUserUuid);
   const headerAvatar = resolveHeaderAvatar(conversation, currentUserUuid);
@@ -243,7 +263,9 @@ export function ConversationDetailScreen({
   const renderMessage = ({item}: {item: Message}) => {
     const own = isOwnMessage(item, currentUserUuid);
     const time = formatTime(item.createdAt);
-    const body = item.isDeleted ? 'Message deleted' : item.message || '';
+    const body = item.isDeleted
+      ? 'Message deleted'
+      : stripHtml(item.message);
     return (
       <View
         style={[
@@ -292,7 +314,12 @@ export function ConversationDetailScreen({
   return (
     <KeyboardAvoidingView
       style={styles.page}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      // iOS needs explicit padding behavior so the content slides up.
+      // Android relies on the manifest's `adjustResize` — KAV with any
+      // behavior set on Android double-adjusts and hides the input behind
+      // the keyboard's autocomplete bar.
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}>
       <View style={styles.header}>
         <Pressable
           onPress={onBack}
@@ -334,7 +361,9 @@ export function ConversationDetailScreen({
           data={messages}
           keyExtractor={m => m.uuid}
           renderItem={renderMessage}
+          style={styles.messagesList}
           contentContainerStyle={styles.messagesContent}
+          keyboardShouldPersistTaps="handled"
           onEndReachedThreshold={0.2}
           ListHeaderComponent={
             isLoadingMore ? (
@@ -373,7 +402,7 @@ export function ConversationDetailScreen({
         </View>
       ) : null}
 
-      <View style={styles.composer}>
+      <View style={[styles.composer, {paddingBottom: 10 + androidKeyboardLift}]}>
         <TextInput
           style={styles.composerInput}
           value={draft}
@@ -447,6 +476,12 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     fontWeight: '700',
+  },
+  messagesList: {
+    // flex: 1 lets the FlatList shrink when Android's adjustResize fires —
+    // without this it grows to content height and pushes the composer below
+    // the keyboard.
+    flex: 1,
   },
   messagesContent: {
     flexGrow: 1,

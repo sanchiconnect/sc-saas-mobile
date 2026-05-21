@@ -15,7 +15,8 @@ import {Icon} from '../../../core/components/Icon';
 import {colors} from '../../../core/theme/colors';
 import {TenantContext} from '../../../core/tenant/TenantProvider';
 import {chatService} from '../services/chat.service';
-import type {Conversation} from '../types';
+import type {Conversation, Message} from '../types';
+import {stripHtml} from '../utils';
 
 type Props = {
   token: string;
@@ -49,6 +50,28 @@ const resolveAvatar = (
     conversation.otherUser ||
     conversation.participants?.find(p => p.uuid !== currentUserUuid);
   return other?.avatar || null;
+};
+
+// Backend returns `lastMessage` as either a plain string (legacy shape) or
+// the full Message entity (current shape: `{uuid, message, messageType, ...}`).
+// Pull the user-facing preview out without ever rendering an object.
+const lastMessagePreview = (
+  raw: Conversation['lastMessage'],
+): {text: string; createdAt?: string} => {
+  if (!raw) return {text: ''};
+  if (typeof raw === 'string') return {text: stripHtml(raw)};
+  const m = raw as Message;
+  if (m.isDeleted) return {text: 'Message deleted', createdAt: m.createdAt};
+  if (m.messageType && m.messageType !== 'text') {
+    const label =
+      m.messageType === 'image'
+        ? '📷 Photo'
+        : m.messageType === 'file'
+          ? '📎 Attachment'
+          : 'New message';
+    return {text: stripHtml(m.message) || label, createdAt: m.createdAt};
+  }
+  return {text: stripHtml(m.message), createdAt: m.createdAt};
 };
 
 const formatRelative = (raw?: string): string => {
@@ -149,7 +172,7 @@ export function ConversationListScreen({
         const haystack = (
           resolveDisplayName(c, currentUserUuid) +
           ' ' +
-          (c.lastMessage || '')
+          lastMessagePreview(c.lastMessage).text
         ).toLowerCase();
         return haystack.includes(query.trim().toLowerCase());
       })
@@ -170,7 +193,11 @@ export function ConversationListScreen({
       .slice(0, 2)
       .join('')
       .toUpperCase();
-    const preview = item.lastMessage || 'No messages yet';
+    const {text: previewText, createdAt: previewCreatedAt} = lastMessagePreview(
+      item.lastMessage,
+    );
+    const preview = previewText || 'No messages yet';
+    const timeRaw = item.lastMessageAt || previewCreatedAt;
     const unread = item.unreadCount || 0;
     return (
       <Pressable
@@ -198,7 +225,7 @@ export function ConversationListScreen({
             <Text style={styles.rowName} numberOfLines={1}>
               {name}
             </Text>
-            <Text style={styles.rowTime}>{formatRelative(item.lastMessageAt)}</Text>
+            <Text style={styles.rowTime}>{formatRelative(timeRaw)}</Text>
           </View>
           <View style={styles.rowBottomLine}>
             <Text

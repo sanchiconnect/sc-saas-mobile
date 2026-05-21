@@ -1155,6 +1155,7 @@ export function EditProfileScreen({
           options={countryOptions.map(country => country.name)}
           selected={basicInfo.country}
           primaryColor={primaryColor}
+          searchable
           onClose={closePicker}
           onSelect={selection => {
             const selectedCountry =
@@ -1185,6 +1186,7 @@ export function EditProfileScreen({
           options={options}
           selected={basicInfo.state}
           primaryColor={primaryColor}
+          searchable
           onClose={closePicker}
           emptyMessage="Select a country first"
           onSelect={selection => {
@@ -1213,6 +1215,7 @@ export function EditProfileScreen({
           options={options}
           selected={basicInfo.city}
           primaryColor={primaryColor}
+          searchable
           onClose={closePicker}
           emptyMessage="Select a state first"
           onSelect={selection => {

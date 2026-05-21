@@ -293,7 +293,12 @@ export function SideMenu({
               <Text style={styles.quickLabel}>Messages</Text>
             </Pressable>
             <View style={styles.quickDivider} />
-            <Pressable style={styles.quickCard}>
+            <Pressable
+              style={styles.quickCard}
+              onPress={() => {
+                onSelectMenu({section: 'connections'});
+                onClose();
+              }}>
               <Icon name="account-group-outline" size={18} color="#475569" />
               <Text style={styles.quickLabel}>Connections</Text>
             </Pressable>

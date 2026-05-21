@@ -54,7 +54,18 @@
       "Bash(adb -s emulator-5554 shell input keyevent KEYCODE_MENU)",
       "Bash(adb -s emulator-5554 shell am broadcast -a \"com.facebook.react.modules.systeminfo.RELOAD\")",
       "Bash(adb -s emulator-5554 shell \"su 0 killall -SIGHUP zygote\")",
-      "Bash(adb -s emulator-5554 shell am start -n com.sanchiconnect.isba/com.mobileapp.MainActivity)"
+      "Bash(adb -s emulator-5554 shell am start -n com.sanchiconnect.isba/com.mobileapp.MainActivity)",
+      "Bash(adb -s 10BE1Y2EER001BC logcat -d -t 200)",
+      "Bash(adb -s 10BE1Y2EER001BC logcat -d -t 500)",
+      "Bash(adb -s 10BE1Y2EER001BC logcat -d *:E -t 200)",
+      "Bash(adb -s 10BE1Y2EER001BC logcat -d '*:E' -t 200)",
+      "Bash(adb -s 10BE1Y2EER001BC logcat -d -t 800)",
+      "Bash(curl -s \"https://api.thub.sanchidev.in/api/v1/chat/conversation?page=1&limit=1\" -H \"Authorization: Bearer invalid\")",
+      "Bash(adb -s 10BE1Y2EER001BC reverse --list)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:8081/status)",
+      "Bash(ENVFILE=.env.isba.development npx react-native start --reset-cache)",
+      "Bash(curl -sf http://localhost:8081/status)",
+      "Bash(curl -s http://localhost:8081/status)"
     ],
     "additionalDirectories": [
       "/Users/mac"

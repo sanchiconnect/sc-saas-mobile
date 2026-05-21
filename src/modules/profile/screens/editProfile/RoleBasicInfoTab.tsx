@@ -1167,6 +1167,10 @@ export function RoleBasicInfoTab({
           options={optionsForDropdown(activeDropdown).map(o => o.name)}
           selected={labelForDropdown(activeDropdown)}
           primaryColor={primaryColor}
+          // Search is helpful whenever the list has >10 entries. Countries,
+          // states, cities, organization types and service-provider catalogues
+          // all qualify — flag it universally for dropdown fields.
+          searchable={optionsForDropdown(activeDropdown).length > 10}
           emptyMessage={
             activeDropdown.key === 'registeredStateId'
               ? 'Select a country first'
