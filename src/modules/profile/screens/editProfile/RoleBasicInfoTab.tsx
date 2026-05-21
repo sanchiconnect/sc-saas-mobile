@@ -209,12 +209,35 @@ const ROLE_FIELDS: Record<RoleKey, FieldConfig[]> = {
   ],
   mentor: [
     {key: 'name', label: 'Full Name', required: true},
-    {key: 'shortDescription', label: 'Headline / Tagline', required: true},
-    {key: 'briefDescription', label: 'About', multiline: true, required: true},
+    {key: 'shortDescription', label: 'Headline', required: true},
+    {key: 'briefDescription', label: 'About you', multiline: true, required: true},
     {key: 'designation', label: 'Designation'},
     {key: 'currentOrganization', label: 'Current Organization'},
+    {
+      key: 'registeredCountryId',
+      label: 'Country',
+      kind: 'dropdown',
+      dropdownSource: 'countries',
+      required: true,
+    },
+    {
+      key: 'registeredStateId',
+      label: 'State',
+      kind: 'dropdown',
+      dropdownSource: 'states',
+    },
+    {
+      key: 'registeredCityId',
+      label: 'City',
+      kind: 'dropdown',
+      dropdownSource: 'cities',
+    },
     {key: 'websiteUrl', label: 'Website', keyboardType: 'url'},
     {key: 'linkedinUrl', label: 'LinkedIn URL', keyboardType: 'url', required: true},
+    {key: 'twitterUrl', label: 'X URL', keyboardType: 'url'},
+    {key: 'facebookUrl', label: 'Facebook URL', keyboardType: 'url'},
+    {key: 'instagramUrl', label: 'Instagram URL', keyboardType: 'url'},
+    {key: 'youtubeUrl', label: 'YouTube URL', keyboardType: 'url'},
   ],
 };
 
@@ -397,9 +420,11 @@ export function RoleBasicInfoTab({
       : null;
   const isInvestor = roleKey?.startsWith('investor');
   const isCorporate = roleKey === 'corporate';
-  // Both investor (org + individual) and corporate roles support a logo
-  // upload — same UI, different endpoint chosen at upload time.
-  const supportsLogoUpload = isInvestor || isCorporate;
+  const isMentor = roleKey === 'mentor';
+  // Investor (org + individual), corporate, and mentor roles all support a
+  // logo / profile-photo upload — same UI, different endpoint chosen at
+  // upload time.
+  const supportsLogoUpload = isInvestor || isCorporate || isMentor;
   const [countryOptions, setCountryOptions] = useState<
     Array<{id: number; name: string}>
   >([]);
@@ -566,6 +591,8 @@ export function RoleBasicInfoTab({
         };
         if (isCorporate) {
           await authService.uploadCorporateLogo(token, file);
+        } else if (isMentor) {
+          await authService.uploadMentorLogo(token, file);
         } else {
           await authService.uploadInvestorLogo(token, file);
         }
@@ -671,9 +698,11 @@ export function RoleBasicInfoTab({
             <Text style={styles.logoLabel}>
               {isCorporate
                 ? 'Company logo'
-                : investorSubtype === 'individual'
+                : isMentor
                   ? 'Profile photo'
-                  : 'Organization logo'}
+                  : investorSubtype === 'individual'
+                    ? 'Profile photo'
+                    : 'Organization logo'}
             </Text>
             <Text style={styles.logoHint}>
               {logoUploading

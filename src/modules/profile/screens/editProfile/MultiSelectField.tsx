@@ -9,6 +9,9 @@ export type MultiSelectOption = {
   // Optional nested list — used by the investor sectoral-interest flow so that
   // selecting a primary industry reveals its sub-categories below.
   industrySubCategoryDomains?: Array<{id: number; name: string}>;
+  // Mentor new-layout: parent mentorship areas may carry nested children
+  // (the actual specialisations). Gated by features.mentorship_areas_new_layout.
+  domainAreas?: Array<{id: number; name: string}>;
 };
 
 type Props = {
