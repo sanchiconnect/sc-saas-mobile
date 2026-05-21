@@ -31,6 +31,9 @@ import {
   startupBoosterKitItems,
   ticketItems,
 } from './config/menus';
+import {ConversationDetailScreen} from '../chat/screens/ConversationDetailScreen';
+import {ConversationListScreen} from '../chat/screens/ConversationListScreen';
+import type {Conversation} from '../chat/types';
 import {EditProfileScreen} from '../profile/screens/EditProfileScreen';
 import {TicketsScreen} from '../tickets/screens/TicketsScreen';
 import {dashboardService} from './services/dashboard.service';
@@ -61,6 +64,10 @@ export function HomeScreen({
   });
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  // Active chat conversation — null shows the list, populated drives the
+  // detail screen. Cleared when the user leaves the chat section.
+  const [activeConversation, setActiveConversation] =
+    useState<Conversation | null>(null);
 
   const {globalSetting, theme} = useContext(TenantContext);
 
@@ -337,6 +344,56 @@ export function HomeScreen({
     );
   }
 
+  if (selectedMenu.section === 'chat') {
+    // Detail mode = a conversation is open. The list and detail screens share
+    // a single section; back from detail returns to the list.
+    if (activeConversation) {
+      return (
+        <View style={styles.page}>
+          <ConversationDetailScreen
+            token={session.token}
+            conversation={activeConversation}
+            currentUserUuid={session.user.id}
+            onBack={() => setActiveConversation(null)}
+          />
+        </View>
+      );
+    }
+    return (
+      <View style={styles.page}>
+        <SideMenu
+          globalSetting={globalSetting}
+          isVisible={isMenuOpen}
+          onClose={() => setIsMenuOpen(false)}
+          onLogout={onLogout}
+          onSelectMenu={section => {
+            setActiveConversation(null);
+            setSelectedMenu(section);
+          }}
+          primaryColor={primaryColor}
+          selectedMenu={selectedMenu}
+          session={session}
+          accountType={summary?.accountType}
+        />
+        <View style={styles.topBar}>
+          <Pressable
+            style={styles.iconButton}
+            onPress={() => setIsMenuOpen(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Open menu">
+            <Icon name="menu" size={24} color="#475569" />
+          </Pressable>
+          <Text style={styles.topBarTitle}>Messages</Text>
+        </View>
+        <ConversationListScreen
+          token={session.token}
+          currentUserUuid={session.user.id}
+          onOpenConversation={setActiveConversation}
+        />
+      </View>
+    );
+  }
+
   return (
     <View style={styles.page}>
       <SideMenu
@@ -508,6 +565,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     gap: 4,
+  },
+  topBarTitle: {
+    color: '#0f172a',
+    flex: 1,
+    fontSize: 18,
+    fontWeight: '700',
+    marginLeft: 4,
   },
   logo: {
     height: 32,

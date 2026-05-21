@@ -11,7 +11,8 @@ export type AppSection =
   | 'tickets'
   | 'account-settings'
   | 'edit-profile'
-  | 'profile';
+  | 'profile'
+  | 'chat';
 
 export type AppMenuSelection = {
   section: AppSection;

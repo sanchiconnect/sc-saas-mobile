@@ -283,7 +283,12 @@ export function SideMenu({
           </Pressable>
 
           <View style={styles.quickRow}>
-            <Pressable style={styles.quickCard}>
+            <Pressable
+              style={styles.quickCard}
+              onPress={() => {
+                onSelectMenu({section: 'chat'});
+                onClose();
+              }}>
               <Icon name="message-text-outline" size={18} color="#475569" />
               <Text style={styles.quickLabel}>Messages</Text>
             </Pressable>
