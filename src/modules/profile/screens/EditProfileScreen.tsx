@@ -1,11 +1,13 @@
-import React, {useContext, useEffect, useState} from 'react';
+import React, {useContext, useEffect, useRef, useState} from 'react';
 import {
   ActivityIndicator,
   Alert,
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import {launchImageLibrary} from 'react-native-image-picker';
@@ -329,8 +331,17 @@ export function EditProfileScreen({
     globalSetting?.imgKitUrl || globalSetting?.assetsImgKitUrl;
 
   const [activeTab, setActiveTab] = useState<string>('basic');
+  const tabsScrollRef = useRef<ScrollView | null>(null);
+  // Captured x-offset of each pill, populated by each Pressable's onLayout.
+  // Used to scroll the tapped tab into view precisely (no width heuristics).
+  const tabPositionsRef = useRef<Record<string, number>>({});
   const [investorSubtype, setInvestorSubtype] =
     useState<InvestorSubtype>('organization');
+  // Server-authoritative profile completion. Same endpoint Dashboard reads
+  // from, so both screens display the identical number. null = not yet fetched.
+  const [backendCompletion, setBackendCompletion] = useState<number | null>(
+    null,
+  );
   const [customForms, setCustomForms] = useState<DynamicForm[]>([]);
   // Extra picker options used by the per-role secondary tabs. Fetched once
   // per session when the user lands on a non-startup role.
@@ -372,6 +383,13 @@ export function EditProfileScreen({
   const [selectedIndustryIds, setSelectedIndustryIds] = useState<number[]>([]);
   const [selectedTechnologyIds, setSelectedTechnologyIds] = useState<number[]>([]);
   const [selectedPrimaryIndustryId, setSelectedPrimaryIndustryId] = useState<number | null>(null);
+  // "Other industries / technologies" — free-text fallback for domains the
+  // user can't find in the standard list. Mirrors the frontend's optional
+  // toggle + comma-separated text input.
+  const [otherIndustriesActive, setOtherIndustriesActive] = useState(false);
+  const [otherIndustriesText, setOtherIndustriesText] = useState('');
+  const [otherTechActive, setOtherTechActive] = useState(false);
+  const [otherTechText, setOtherTechText] = useState('');
   const [startupInfo, setStartupInfo] = useState<Record<string, any> | null>(null);
   const [startupForms, setStartupForms] = useState<StartupFormDefinition[]>([]);
   const [accountType, setAccountType] = useState<string | null>(null);
@@ -410,6 +428,16 @@ export function EditProfileScreen({
       setSelectedPrimaryIndustryId(
         Number(root?.startupIndustryPrimary?.id) || null,
       );
+      const otherInds = Array.isArray(root?.startupOtherIndustries)
+        ? root.startupOtherIndustries
+        : [];
+      setOtherIndustriesActive(otherInds.length > 0);
+      setOtherIndustriesText(otherInds.join(','));
+      const otherTech = Array.isArray(root?.startupOtherTechnologies)
+        ? root.startupOtherTechnologies
+        : [];
+      setOtherTechActive(otherTech.length > 0);
+      setOtherTechText(otherTech.join(','));
     } catch (error) {
       setLoadError(
         error instanceof Error
@@ -458,6 +486,31 @@ export function EditProfileScreen({
   }, []);
 
   // Fetch tenant-defined custom profile forms for this account type.
+  // Fetch backend-authoritative profile completion (matches Dashboard).
+  useEffect(() => {
+    if (!accountType) return;
+    let cancelled = false;
+    authService
+      .getProfileCompletion(token, accountType, investorSubtype)
+      .then(res => {
+        if (cancelled) return;
+        const raw = (res?.data?.percentage ?? res?.percentage) as
+          | number
+          | string
+          | undefined;
+        const num = Number(raw);
+        if (Number.isFinite(num)) {
+          setBackendCompletion(num);
+        }
+      })
+      .catch(() => {
+        // Leave backendCompletion null → local fallback applies.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token, accountType, investorSubtype]);
+
   useEffect(() => {
     if (!accountType) {
       return;
@@ -699,6 +752,16 @@ export function EditProfileScreen({
         setSelectedPrimaryIndustryId(
           Number(root?.startupIndustryPrimary?.id) || null,
         );
+        const otherInds = Array.isArray(root?.startupOtherIndustries)
+          ? root.startupOtherIndustries
+          : [];
+        setOtherIndustriesActive(otherInds.length > 0);
+        setOtherIndustriesText(otherInds.join(','));
+        const otherTech = Array.isArray(root?.startupOtherTechnologies)
+          ? root.startupOtherTechnologies
+          : [];
+        setOtherTechActive(otherTech.length > 0);
+        setOtherTechText(otherTech.join(','));
       })
       .catch(error => {
         if (cancelled) return;
@@ -812,7 +875,13 @@ export function EditProfileScreen({
     }
   }, [activeTab, tabs]);
 
-  const profileCompletion = calculateProfileCompletion(basicInfo);
+  // Profile completion comes from the backend's profile_completeness endpoint
+  // so this screen matches the Dashboard's number exactly. The local
+  // calculateProfileCompletion fallback applies only before the backend value
+  // arrives (avoids showing 0% during the brief fetch window).
+  const localCompletion = calculateProfileCompletion(basicInfo);
+  const profileCompletion =
+    backendCompletion != null ? backendCompletion : localCompletion;
 
   const updateBasic = <K extends keyof BasicInfoFormType>(
     key: K,
@@ -837,13 +906,25 @@ export function EditProfileScreen({
     setSaveMessage(null);
     try {
       if (activeTab === 'industry') {
+        const otherIndustryList = otherIndustriesActive
+          ? otherIndustriesText
+              .split(',')
+              .map(s => s.trim())
+              .filter(Boolean)
+          : [];
+        const otherTechnologyList = otherTechActive
+          ? otherTechText
+              .split(',')
+              .map(s => s.trim())
+              .filter(Boolean)
+          : [];
         await authService.updateIndustryTechnologyBusiness(token, {
           industryDomainIds: selectedIndustryIds,
           technologyDomainIds: selectedTechnologyIds,
           industryDomainPrimaryId: selectedPrimaryIndustryId,
           industrySubCategoryDomainIds: [],
-          otherIndustryDomains: [],
-          otherTechnologyDomains: [],
+          otherIndustryDomains: otherIndustryList,
+          otherTechnologyDomains: otherTechnologyList,
         });
         setStartupInfo(current =>
           current
@@ -898,11 +979,23 @@ export function EditProfileScreen({
     if (next) setActiveTab(next.key);
   };
 
+  // Tenant-configurable selection caps. Frontend reads the same two settings
+  // from globalSettings and applies them per tenant; default = 3.
+  const maxIndustries = Math.max(
+    1,
+    Number(globalSetting?.startupMaxIndustries) || 3,
+  );
+  const maxTechnologies = Math.max(
+    1,
+    Number(globalSetting?.startupMaxTechnologies) || 3,
+  );
+
   const toggleLimitedSelection = (
     current: number[],
     id: number,
     setter: (value: number[]) => void,
     label: string,
+    max: number,
   ) => {
     const exists = current.includes(id);
     if (exists) {
@@ -910,8 +1003,8 @@ export function EditProfileScreen({
       return;
     }
 
-    if (current.length >= 3) {
-      Alert.alert('Limit reached', `You can select maximum 3 ${label}.`);
+    if (current.length >= max) {
+      Alert.alert('Limit reached', `You can select maximum ${max} ${label}.`);
       return;
     }
 
@@ -1166,74 +1259,91 @@ export function EditProfileScreen({
 
   return (
     <View style={styles.page}>
-      <View style={styles.header}>
-        <Pressable
-          style={styles.backButton}
-          onPress={onBack}
-          hitSlop={8}
-          accessibilityRole="button"
-          accessibilityLabel="Back">
-          <Icon name="arrow-left" size={22} color="#0f172a" />
-        </Pressable>
-        <Text style={styles.title}>Edit Startup Details</Text>
-      </View>
+      <View style={styles.headerBlock}>
+        <View style={styles.header}>
+          <Pressable
+            style={styles.backButton}
+            onPress={onBack}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Back">
+            <Icon name="arrow-left" size={22} color="#0f172a" />
+          </Pressable>
+          <Text style={styles.title}>Edit Startup Details</Text>
+        </View>
 
-      <View style={styles.completionRow}>
-        <Text style={styles.completionLabel}>Profile completion</Text>
-        <Text style={[styles.completionValue, {color: primaryColor}]}>
-          {profileCompletion}%
-        </Text>
-      </View>
-      <View style={styles.completionTrack}>
-        <View
-          style={[
-            styles.completionFill,
-            {
-              backgroundColor: primaryColor,
-              width: `${Math.min(100, Math.max(0, profileCompletion))}%`,
-            },
-          ]}
-        />
-      </View>
+        <View style={styles.completionRow}>
+          <Text style={styles.completionLabel}>Profile completion</Text>
+          <Text style={[styles.completionValue, {color: primaryColor}]}>
+            {profileCompletion}%
+          </Text>
+        </View>
+        <View style={styles.completionTrack}>
+          <View
+            style={[
+              styles.completionFill,
+              {
+                backgroundColor: primaryColor,
+                width: `${Math.min(100, Math.max(0, profileCompletion))}%`,
+              },
+            ]}
+          />
+        </View>
 
-      <View style={styles.tabsSection}>
-        <View style={styles.tabsShell}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-            contentContainerStyle={styles.tabsRow}>
-            {tabs.map(tab => {
-              const isActive = tab.key === activeTab;
-              const isComplete = tab.status === 'complete';
-              return (
-                <Pressable
-                  key={tab.key}
-                  onPress={() => setActiveTab(tab.key)}
+        <View style={styles.tabsSection}>
+        <ScrollView
+          ref={tabsScrollRef}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          // style constrains the ScrollView to the parent's width — without
+          // this, horizontal ScrollViews in RN grow to fit their content and
+          // never trigger the scroll mechanism.
+          style={styles.tabsStrip}
+          contentContainerStyle={styles.tabsRow}>
+          {tabs.map(tab => {
+            const isActive = tab.key === activeTab;
+            const isComplete = tab.status === 'complete';
+            return (
+              <Pressable
+                key={tab.key}
+                onLayout={e => {
+                  tabPositionsRef.current[tab.key] = e.nativeEvent.layout.x;
+                }}
+                onPress={() => {
+                  setActiveTab(tab.key);
+                  const x = tabPositionsRef.current[tab.key] ?? 0;
+                  tabsScrollRef.current?.scrollTo({
+                    x: Math.max(0, x - 16),
+                    animated: true,
+                  });
+                }}
+                style={[
+                  styles.tab,
+                  isActive && {borderBottomColor: primaryColor},
+                ]}>
+                <View
                   style={[
-                    styles.tab,
-                    isActive && {
-                      backgroundColor: `${primaryColor}12`,
-                      borderColor: `${primaryColor}2e`,
+                    styles.tabStatusDot,
+                    {
+                      backgroundColor: isComplete
+                        ? colors.success
+                        : colors.danger,
                     },
+                  ]}
+                />
+                <Text
+                  style={[
+                    styles.tabText,
+                    isActive && styles.tabTextActive,
+                    isActive && {color: primaryColor},
                   ]}>
-                  <Text
-                    style={[
-                      styles.tabText,
-                      isActive && styles.tabTextActive,
-                      isActive && {color: primaryColor},
-                    ]}>
-                    {tab.label}
-                  </Text>
-                  <Icon
-                    name={isComplete ? 'check-circle' : 'alert-circle-outline'}
-                    size={16}
-                    color={isComplete ? colors.success : colors.danger}
-                  />
-                </Pressable>
-              );
-            })}
-          </ScrollView>
+                  {tab.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
         </View>
       </View>
 
@@ -1332,7 +1442,9 @@ export function EditProfileScreen({
 
             <View style={styles.domainSection}>
               <Text style={styles.domainHeading}>Choose Industry Domains</Text>
-              <Text style={styles.domainHint}>Select maximum 3 options</Text>
+              <Text style={styles.domainHint}>
+                Select maximum {maxIndustries} options
+              </Text>
               <View style={styles.domainGrid}>
                 {industryOptions.map(option => {
                   const isSelected = selectedIndustryIds.includes(option.id);
@@ -1346,6 +1458,7 @@ export function EditProfileScreen({
                           option.id,
                           setSelectedIndustryIds,
                           'industries',
+                          maxIndustries,
                         )
                       }>
                       <View
@@ -1369,7 +1482,9 @@ export function EditProfileScreen({
 
             <View style={styles.domainSection}>
               <Text style={styles.domainHeading}>Choose Technology Domains</Text>
-              <Text style={styles.domainHint}>Select maximum 3 options</Text>
+              <Text style={styles.domainHint}>
+                Select maximum {maxTechnologies} options
+              </Text>
               <View style={styles.domainGrid}>
                 {technologyOptions.map(option => {
                   const isSelected = selectedTechnologyIds.includes(option.id);
@@ -1383,6 +1498,7 @@ export function EditProfileScreen({
                           option.id,
                           setSelectedTechnologyIds,
                           'technologies',
+                          maxTechnologies,
                         )
                       }>
                       <View
@@ -1402,6 +1518,68 @@ export function EditProfileScreen({
                   );
                 })}
               </View>
+            </View>
+
+            <View style={styles.domainSection}>
+              <View style={styles.otherToggleRow}>
+                <Text style={styles.domainHeading}>Add other industries</Text>
+                <Switch
+                  value={otherIndustriesActive}
+                  onValueChange={value => {
+                    setOtherIndustriesActive(value);
+                    if (!value) setOtherIndustriesText('');
+                  }}
+                  trackColor={{false: '#cbd5e1', true: `${primaryColor}55`}}
+                  thumbColor={
+                    otherIndustriesActive ? primaryColor : '#f1f5f9'
+                  }
+                />
+              </View>
+              {otherIndustriesActive ? (
+                <>
+                  <Text style={styles.domainHint}>
+                    Separate multiple entries with commas.
+                  </Text>
+                  <TextInput
+                    style={styles.otherInput}
+                    value={otherIndustriesText}
+                    onChangeText={setOtherIndustriesText}
+                    placeholder="e.g. AgriTech, ClimateTech"
+                    placeholderTextColor="#94a3b8"
+                    autoCapitalize="words"
+                  />
+                </>
+              ) : null}
+            </View>
+
+            <View style={styles.domainSection}>
+              <View style={styles.otherToggleRow}>
+                <Text style={styles.domainHeading}>Add other technologies</Text>
+                <Switch
+                  value={otherTechActive}
+                  onValueChange={value => {
+                    setOtherTechActive(value);
+                    if (!value) setOtherTechText('');
+                  }}
+                  trackColor={{false: '#cbd5e1', true: `${primaryColor}55`}}
+                  thumbColor={otherTechActive ? primaryColor : '#f1f5f9'}
+                />
+              </View>
+              {otherTechActive ? (
+                <>
+                  <Text style={styles.domainHint}>
+                    Separate multiple entries with commas.
+                  </Text>
+                  <TextInput
+                    style={styles.otherInput}
+                    value={otherTechText}
+                    onChangeText={setOtherTechText}
+                    placeholder="e.g. Edge ML, Quantum"
+                    placeholderTextColor="#94a3b8"
+                    autoCapitalize="words"
+                  />
+                </>
+              ) : null}
             </View>
           </View>
         ) : activeTab === 'financials' ? (
@@ -1586,11 +1764,13 @@ const styles = StyleSheet.create({
     marginTop: 18,
     width: '100%',
   },
-  header: {
-    alignItems: 'center',
+  headerBlock: {
     backgroundColor: '#ffffff',
     borderBottomColor: '#e2e8f0',
     borderBottomWidth: 1,
+  },
+  header: {
+    alignItems: 'center',
     flexDirection: 'row',
     gap: 12,
     paddingHorizontal: 12,
@@ -1610,11 +1790,10 @@ const styles = StyleSheet.create({
   },
   completionRow: {
     alignItems: 'center',
-    backgroundColor: '#ffffff',
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingTop: 12,
+    paddingTop: 4,
   },
   completionLabel: {
     color: '#0f172a',
@@ -1630,7 +1809,8 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     height: 6,
     marginHorizontal: 16,
-    marginTop: 8,
+    marginTop: 10,
+    marginBottom: 6,
     overflow: 'hidden',
   },
   completionFill: {
@@ -1638,48 +1818,33 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   tabsSection: {
-    paddingHorizontal: 12,
-    paddingTop: 12,
-  },
-  tabsShell: {
     backgroundColor: '#ffffff',
-    borderColor: '#e2e8f0',
-    borderRadius: 16,
-    borderWidth: 1,
-    overflow: 'hidden',
   },
   tabsRow: {
-    // Horizontal scrollable row (was: flexWrap: 'wrap' — wrapped to 3+ lines
-    // with custom-form tabs added). gap separates pills; the parent ScrollView
-    // shows them inline with overflow scroll.
     flexDirection: 'row',
-    gap: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
+    paddingHorizontal: 4,
   },
   tabsStrip: {
     flexGrow: 0,
-    minHeight: 72,
-    width: '100%',
   },
   tab: {
     alignItems: 'center',
-    alignSelf: 'flex-start',
-    backgroundColor: '#ffffff',
-    borderColor: 'transparent',
-    borderRadius: 12,
-    borderWidth: 1,
+    borderBottomColor: 'transparent',
+    borderBottomWidth: 2,
     flexDirection: 'row',
-    flexShrink: 1,
-    gap: 6,
-    minHeight: 44,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    flexShrink: 0,
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  tabStatusDot: {
+    borderRadius: 4,
+    height: 8,
+    width: 8,
   },
   tabText: {
     color: '#64748b',
-    fontSize: 13,
-    flexShrink: 1,
+    fontSize: 14,
     fontWeight: '600',
   },
   tabTextActive: {
@@ -1739,6 +1904,22 @@ const styles = StyleSheet.create({
     color: '#0f172a',
     flex: 1,
     fontSize: 15,
+  },
+  otherToggleRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  otherInput: {
+    backgroundColor: '#f8fafc',
+    borderColor: '#e2e8f0',
+    borderRadius: 10,
+    borderWidth: 1,
+    color: '#0f172a',
+    fontSize: 15,
+    marginTop: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
   placeholder: {
     alignItems: 'center',

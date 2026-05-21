@@ -5,7 +5,16 @@ export type Validator<T = string> = (value: T) => string | undefined;
 
 // RFC-5322-ish — pragmatic, not exhaustive. Mirrors the frontend's check.
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const URL_RE = /^https?:\/\/[^\s]+$/i;
+// Pragmatic URL — accepts http(s) prefix OR a bare domain like frontend's
+// `URL_REGEX` in shared/constants/regex.ts (allows e.g. "sanchiconnect.com").
+const URL_RE = /^(https?:\/\/)?[\da-z.-]+\.[a-z.]{2,6}([/?#][^\s]*)?$/i;
+
+// Platform-specific URL regexes — mirror frontend's shared/constants/regex.ts.
+const LINKEDIN_RE = /^((https?:)?\/\/)?[a-z.]*linkedin\.com\/.+$/i;
+const TWITTER_RE = /^https?:\/\/(www\.)?(twitter|x)\.com\/[a-zA-Z0-9_]+/i;
+const FACEBOOK_RE = /^(https?:\/\/)?(www\.)?facebook\.com\/(profile\.php\?id=\d+|[a-zA-Z0-9./]+)$/i;
+const YOUTUBE_RE = /^(https?:\/\/)?(www\.)?youtube\.com\/(channel\/[a-zA-Z0-9_-]+|user\/[a-zA-Z0-9_-]+|c\/[a-zA-Z0-9_-]+|@?[a-zA-Z0-9_-]+)\/?$/i;
+const INSTAGRAM_RE = /^(https?:\/\/)?(www\.)?instagram\.com\/[a-zA-Z0-9._]+\/?$/i;
 
 export const required =
   (label: string = 'This field'): Validator =>
@@ -25,10 +34,22 @@ export const email: Validator = value => {
 export const url: Validator = value => {
   const trimmed = String(value ?? '').trim();
   if (trimmed.length === 0) return undefined;
-  return URL_RE.test(trimmed)
-    ? undefined
-    : 'Please enter a valid URL (starting with http:// or https://).';
+  return URL_RE.test(trimmed) ? undefined : 'Please enter a valid URL.';
 };
+
+const platformUrl =
+  (re: RegExp, name: string): Validator =>
+  value => {
+    const trimmed = String(value ?? '').trim();
+    if (trimmed.length === 0) return undefined;
+    return re.test(trimmed) ? undefined : `Please enter a valid ${name} URL.`;
+  };
+
+export const linkedinUrl = platformUrl(LINKEDIN_RE, 'LinkedIn');
+export const twitterUrl = platformUrl(TWITTER_RE, 'X/Twitter');
+export const facebookUrl = platformUrl(FACEBOOK_RE, 'Facebook');
+export const youtubeUrl = platformUrl(YOUTUBE_RE, 'YouTube');
+export const instagramUrl = platformUrl(INSTAGRAM_RE, 'Instagram');
 
 // Indian-style 10-digit mobile by default; tweak `min`/`max` for global.
 export const mobileNumber = (min = 7, max = 15): Validator => value => {

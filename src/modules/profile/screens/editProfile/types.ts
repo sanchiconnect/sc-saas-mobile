@@ -46,6 +46,15 @@ export type BasicInfoForm = {
   incorporationYear: string;
   logoUrl: string | null;
   servicesLookingFor: string[];
+  // Regulatory registration numbers. Feature-gated per tenant — see
+  // globalSetting.features.company_identification_{cin,gst,dpiit}. The two
+  // *Visible toggles control opt-in (GST/DPIIT only); CIN appears whenever the
+  // company is marked as incorporated.
+  cinNumber: string;
+  gstNumber: string;
+  gstinVisible: boolean;
+  dpiitNumber: string;
+  dpiitVisible: boolean;
 
   // Headquartered in
   countryId: number | null;
@@ -120,6 +129,11 @@ export const EMPTY_BASIC_INFO: BasicInfoForm = {
   incorporationYear: '',
   logoUrl: null,
   servicesLookingFor: [],
+  cinNumber: '',
+  gstNumber: '',
+  gstinVisible: false,
+  dpiitNumber: '',
+  dpiitVisible: false,
 
   countryId: null,
   country: '',

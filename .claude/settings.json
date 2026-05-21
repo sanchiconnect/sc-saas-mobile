@@ -42,7 +42,19 @@
       "Bash(nc -zv -w 3 192.168.1.15 37837)",
       "Bash(pkill -f \"gradlew assembleIsbaRelease\")",
       "Bash(pkill -f \"GradleDaemon\")",
-      "Bash(sips -Z 1200 /tmp/emu-screen.png --out /tmp/emu-screen-small.png)"
+      "Bash(sips -Z 1200 /tmp/emu-screen.png --out /tmp/emu-screen-small.png)",
+      "Bash(adb devices *)",
+      "Bash(ENVFILE=.env.isba.development npx react-native run-android --mode=isbaDebug --appId=com.sanchiconnect.isba --deviceId=10BE1Y2EER001BC)",
+      "Bash(adb -s 10BE1Y2EER001BC reverse tcp:8081 tcp:8081)",
+      "Bash(adb -s 10BE1Y2EER001BC shell input keyevent 82)",
+      "Bash(adb -s emulator-5554 shell input keyevent 82)",
+      "Bash(curl -s -X POST \"http://localhost:8081/reload\" -o /dev/null -w \"%{http_code}\\\\n\")",
+      "Bash(adb -s emulator-5554 shell input keyevent KEYCODE_R)",
+      "Bash(adb -s emulator-5554 shell \"am broadcast -a com.sanchiconnect.isba.RELOAD_APP_ACTION 2>&1\")",
+      "Bash(adb -s emulator-5554 shell input keyevent KEYCODE_MENU)",
+      "Bash(adb -s emulator-5554 shell am broadcast -a \"com.facebook.react.modules.systeminfo.RELOAD\")",
+      "Bash(adb -s emulator-5554 shell \"su 0 killall -SIGHUP zygote\")",
+      "Bash(adb -s emulator-5554 shell am start -n com.sanchiconnect.isba/com.mobileapp.MainActivity)"
     ],
     "additionalDirectories": [
       "/Users/mac"

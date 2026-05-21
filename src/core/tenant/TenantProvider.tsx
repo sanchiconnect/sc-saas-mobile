@@ -23,6 +23,8 @@ type TenantContextType = {
     s3Url?: string;
     users?: Record<string, any>;
     features?: Record<string, any>;
+    startupMaxIndustries?: string | number;
+    startupMaxTechnologies?: string | number;
   } | null;
 };
 
@@ -58,6 +60,8 @@ export const TenantProvider = ({children}: Props) => {
         s3Url: settingsData?.s3Url,
         users: settingsData?.users,
         features: settingsData?.features,
+        startupMaxIndustries: settingsData?.startupMaxIndustries,
+        startupMaxTechnologies: settingsData?.startupMaxTechnologies,
       });
       setTheme({
         primary: branding?.colors?.primary,

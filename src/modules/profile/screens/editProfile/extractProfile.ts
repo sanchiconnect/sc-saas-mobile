@@ -241,6 +241,17 @@ export const extractProfile = (
     servicesLookingFor: Array.isArray(root?.servicesLookingFor)
       ? root.servicesLookingFor.map(asString).filter(Boolean)
       : [],
+    cinNumber: asString(pickFirst(root?.cinNumber, company?.cinNumber)),
+    gstNumber: asString(pickFirst(root?.gstNumber, company?.gstNumber)),
+    gstinVisible: Boolean(
+      pickFirst(root?.gstNumber, company?.gstNumber),
+    ),
+    dpiitNumber: asString(
+      pickFirst(root?.dpiitNumber, company?.dpiitNumber),
+    ),
+    dpiitVisible: Boolean(
+      pickFirst(root?.dpiitNumber, company?.dpiitNumber),
+    ),
 
     countryId: Number(root?.registeredCountryR?.id ?? root?.registeredCountryId) || null,
     country: asString(
@@ -406,9 +417,11 @@ export const buildBasicInfoPayload = (info: BasicInfoForm) => ({
   facebookUrl: info.social.facebook,
   instagramUrl: info.social.instagram,
   youtubeUrl: info.social.youtube,
-  gstNumber: null,
-  dpiitNumber: null,
-  cinNumber: null,
+  // Regulatory numbers — send only when the user opted in / company is
+  // incorporated. Matches frontend's `payload.gstNumber = gstinVisible ? ... : null` pattern.
+  gstNumber: info.gstinVisible ? info.gstNumber || null : null,
+  dpiitNumber: info.dpiitVisible ? info.dpiitNumber || null : null,
+  cinNumber: info.isIncorporated === true ? info.cinNumber || null : null,
 });
 
 export const buildFinancialsPayload = (info: FinancialsForm) => ({

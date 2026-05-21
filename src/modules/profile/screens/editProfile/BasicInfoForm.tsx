@@ -1,10 +1,18 @@
-import React, {useState} from 'react';
+import React, {useContext, useState} from 'react';
 import {Image, Pressable, StyleSheet, Text, View} from 'react-native';
 
 import {AppTextField} from '../../../../core/components/AppTextField';
 import {Icon} from '../../../../core/components/Icon';
-import {url as urlValidator} from '../../../../core/form/validators';
+import {
+  facebookUrl,
+  instagramUrl,
+  linkedinUrl,
+  twitterUrl,
+  url as urlValidator,
+  youtubeUrl,
+} from '../../../../core/form/validators';
 import {colors} from '../../../../core/theme/colors';
+import {TenantContext} from '../../../../core/tenant/TenantProvider';
 import {
   BUSINESS_MODELS,
 } from './options';
@@ -54,8 +62,61 @@ export function BasicInfoForm({
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const markTouched = (key: string) =>
     setTouched(prev => ({...prev, [key]: true}));
-  const urlError = (key: string, val: string): string | undefined =>
-    touched[key] ? urlValidator(val) : undefined;
+  // Per-field validators — generic `url` for website, platform-specific
+  // patterns for social profiles (mirrors frontend's shared/constants/regex.ts).
+  const VALIDATORS: Record<string, (val: string) => string | undefined> = {
+    website: urlValidator,
+    linkedin: linkedinUrl,
+    twitter: twitterUrl,
+    facebook: facebookUrl,
+    instagram: instagramUrl,
+    youtube: youtubeUrl,
+  };
+  const urlError = (key: string, val: string): string | undefined => {
+    if (!touched[key]) return undefined;
+    const validate = VALIDATORS[key] || urlValidator;
+    return validate(val);
+  };
+
+  // Tenant-level feature flags decide whether regulatory fields appear.
+  // Matches the frontend's `brandDetails.features.company_identification_*`
+  // gates in startup-information.component.html.
+  const {globalSetting} = useContext(TenantContext);
+  const features = globalSetting?.features || {};
+  const users = globalSetting?.users || {};
+  const cinEnabled = Boolean(features.company_identification_cin);
+  const gstEnabled = Boolean(features.company_identification_gst);
+  const dpiitEnabled = Boolean(features.company_identification_dpiit);
+
+  // "What are you looking for from the platform?" — same option list and
+  // visibility rules as the frontend startup-information component. Each
+  // option is gated by either a feature flag or a stakeholder being enabled.
+  const servicesLookingForOptions = [
+    {label: 'Fund Raising', value: 'fundraising', show: true},
+    {label: 'Hiring', value: 'tech_hiring', show: Boolean(features.jobs)},
+    {
+      label: 'Market Access',
+      value: 'customer_access',
+      show: users.corporates !== false,
+    },
+    {
+      label: 'Mentorship',
+      value: 'mentorship',
+      show: users.mentors !== false,
+    },
+    {
+      label: 'Business Services',
+      value: 'business_services',
+      show: users.service_providers !== false,
+    },
+  ].filter(opt => opt.show);
+
+  const toggleServiceLookingFor = (val: string) => {
+    const next = value.servicesLookingFor.includes(val)
+      ? value.servicesLookingFor.filter(s => s !== val)
+      : [...value.servicesLookingFor, val];
+    onChange('servicesLookingFor', next);
+  };
 
   const updateLeadership = (index: number, patch: Partial<TeamMember>) => {
     const next = value.leadership.map((member, idx) =>
@@ -209,6 +270,89 @@ export function BasicInfoForm({
           </View>
         ) : null}
 
+        {value.isIncorporated === true && cinEnabled ? (
+          <View style={styles.field}>
+            <AppTextField
+              label="CIN / Registration Number"
+              placeholder="Corporate Identification Number"
+              value={value.cinNumber}
+              onChangeText={text => onChange('cinNumber', text.toUpperCase())}
+              autoCapitalize="characters"
+            />
+          </View>
+        ) : null}
+
+        {gstEnabled ? (
+          <>
+            <Text style={styles.fieldLabel}>Do you have a GST number?</Text>
+            <View style={styles.yesNoRow}>
+              <YesNoButton
+                label="Yes"
+                active={value.gstinVisible === true}
+                primaryColor={primaryColor}
+                onPress={() => onChange('gstinVisible', true)}
+              />
+              <YesNoButton
+                label="No"
+                active={value.gstinVisible === false}
+                primaryColor={primaryColor}
+                onPress={() => {
+                  onChange('gstinVisible', false);
+                  onChange('gstNumber', '');
+                }}
+              />
+            </View>
+            {value.gstinVisible ? (
+              <View style={styles.field}>
+                <AppTextField
+                  label="GST Number"
+                  placeholder="Enter GST number"
+                  value={value.gstNumber}
+                  onChangeText={text =>
+                    onChange('gstNumber', text.toUpperCase())
+                  }
+                  autoCapitalize="characters"
+                />
+              </View>
+            ) : null}
+          </>
+        ) : null}
+
+        {dpiitEnabled ? (
+          <>
+            <Text style={styles.fieldLabel}>
+              Are you registered with DPIIT?
+            </Text>
+            <View style={styles.yesNoRow}>
+              <YesNoButton
+                label="Yes"
+                active={value.dpiitVisible === true}
+                primaryColor={primaryColor}
+                onPress={() => onChange('dpiitVisible', true)}
+              />
+              <YesNoButton
+                label="No"
+                active={value.dpiitVisible === false}
+                primaryColor={primaryColor}
+                onPress={() => {
+                  onChange('dpiitVisible', false);
+                  onChange('dpiitNumber', '');
+                }}
+              />
+            </View>
+            {value.dpiitVisible ? (
+              <View style={styles.field}>
+                <AppTextField
+                  label="DPIIT Number"
+                  placeholder="Enter DPIIT number"
+                  value={value.dpiitNumber}
+                  onChangeText={text => onChange('dpiitNumber', text)}
+                />
+              </View>
+            ) : null}
+          </>
+        ) : null}
+
         <Subheading style={styles.spacedSubheading}>Headquartered in</Subheading>
 
         <DropdownField
@@ -304,6 +448,41 @@ export function BasicInfoForm({
             );
           })}
         </View>
+
+        {servicesLookingForOptions.length > 0 ? (
+          <>
+            <Subheading style={styles.spacedSubheading}>
+              What are you looking for from the platform?
+            </Subheading>
+            <View style={styles.servicesGrid}>
+              {servicesLookingForOptions.map(option => {
+                const isSelected = value.servicesLookingFor.includes(
+                  option.value,
+                );
+                return (
+                  <Pressable
+                    key={option.value}
+                    style={styles.serviceOption}
+                    onPress={() => toggleServiceLookingFor(option.value)}>
+                    <View
+                      style={[
+                        styles.checkbox,
+                        isSelected && {
+                          backgroundColor: primaryColor,
+                          borderColor: primaryColor,
+                        },
+                      ]}>
+                      {isSelected ? (
+                        <Icon name="check" size={14} color="#ffffff" />
+                      ) : null}
+                    </View>
+                    <Text style={styles.serviceLabel}>{option.label}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </>
+        ) : null}
       </SectionCard>
 
       {/* Section: Team */}
@@ -822,6 +1001,34 @@ const styles = StyleSheet.create({
   },
   chipTextActive: {
     color: '#ffffff',
+  },
+  servicesGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 12,
+    rowGap: 12,
+  },
+  serviceOption: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    paddingRight: 12,
+    width: '50%',
+  },
+  checkbox: {
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderColor: '#cbd5e1',
+    borderRadius: 6,
+    borderWidth: 1,
+    height: 22,
+    justifyContent: 'center',
+    marginRight: 10,
+    width: 22,
+  },
+  serviceLabel: {
+    color: '#0f172a',
+    flex: 1,
+    fontSize: 15,
   },
   memberCard: {
     backgroundColor: '#f8fafc',
