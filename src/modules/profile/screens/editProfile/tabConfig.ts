@@ -59,6 +59,9 @@ const TAB_LAYOUTS: Record<string, TabBlueprint[]> = {
   // shared/constants/navlinks.ts. Custom tenant forms still get appended by
   // EditProfileScreen at render time.
   program_office: [BASIC],
+  // Generic individual stakeholder (distinct from `investor:individual`).
+  // Frontend navlinks expose only Basic Information.
+  individual: [BASIC],
 };
 
 const BASIC_ONLY: TabBlueprint[] = [BASIC];
