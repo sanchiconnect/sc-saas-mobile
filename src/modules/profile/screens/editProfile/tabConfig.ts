@@ -22,6 +22,7 @@ export type AccountType =
   // normalizeRole() in auth.service.ts for backward compatibility.
   | 'service_provider'
   | 'partner'
+  | 'program_office'
   | string;
 
 export type InvestorSubtype = 'organization' | 'individual';
@@ -53,6 +54,11 @@ const TAB_LAYOUTS: Record<string, TabBlueprint[]> = {
     {key: 'industry', label: 'Industry / Vertical Focus'},
   ],
   partner: [BASIC, {key: 'industry', label: 'Industry / Technology'}],
+  // Frontend currently exposes ONLY Basic Information for program-office —
+  // the Industry/Technology link is commented out in
+  // shared/constants/navlinks.ts. Custom tenant forms still get appended by
+  // EditProfileScreen at render time.
+  program_office: [BASIC],
 };
 
 const BASIC_ONLY: TabBlueprint[] = [BASIC];

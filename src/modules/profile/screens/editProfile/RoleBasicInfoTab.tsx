@@ -69,7 +69,9 @@ type FieldKey =
   | 'partnerType'
   | 'address'
   | 'applicationLink'
-  | 'longDescription';
+  | 'longDescription'
+  | 'department'
+  | 'keyInterestAreas';
 
 type FieldConfig = {
   key: FieldKey;
@@ -96,7 +98,8 @@ type RoleKey =
   | 'corporate'
   | 'mentor'
   | 'service_provider'
-  | 'partner';
+  | 'partner'
+  | 'program_office';
 
 // Each role's field list mirrors the primary fields of the corresponding
 // frontend basic-info tab. Required + format validators match the frontend's
@@ -243,6 +246,48 @@ const ROLE_FIELDS: Record<RoleKey, FieldConfig[]> = {
     },
     {key: 'websiteUrl', label: 'Website', keyboardType: 'url'},
     {key: 'linkedinUrl', label: 'LinkedIn URL', keyboardType: 'url', required: true},
+    {key: 'twitterUrl', label: 'X URL', keyboardType: 'url'},
+    {key: 'facebookUrl', label: 'Facebook URL', keyboardType: 'url'},
+    {key: 'instagramUrl', label: 'Instagram URL', keyboardType: 'url'},
+    {key: 'youtubeUrl', label: 'YouTube URL', keyboardType: 'url'},
+  ],
+  program_office: [
+    {key: 'name', label: 'Full Name', required: true},
+    {key: 'designation', label: 'Designation', required: true},
+    {key: 'department', label: 'Department / Role', required: true},
+    {key: 'keyInterestAreas', label: 'Headline', required: true},
+    {
+      key: 'briefDescription',
+      label: 'About you',
+      multiline: true,
+      required: true,
+    },
+    {
+      key: 'shortDescription',
+      label: 'Who should reach out',
+      multiline: true,
+    },
+    {
+      key: 'registeredCountryId',
+      label: 'Country',
+      kind: 'dropdown',
+      dropdownSource: 'countries',
+      required: true,
+    },
+    {
+      key: 'registeredStateId',
+      label: 'State',
+      kind: 'dropdown',
+      dropdownSource: 'states',
+    },
+    {
+      key: 'registeredCityId',
+      label: 'City',
+      kind: 'dropdown',
+      dropdownSource: 'cities',
+    },
+    {key: 'websiteUrl', label: 'Website', keyboardType: 'url'},
+    {key: 'linkedinUrl', label: 'LinkedIn URL', keyboardType: 'url'},
     {key: 'twitterUrl', label: 'X URL', keyboardType: 'url'},
     {key: 'facebookUrl', label: 'Facebook URL', keyboardType: 'url'},
     {key: 'instagramUrl', label: 'Instagram URL', keyboardType: 'url'},
@@ -405,6 +450,9 @@ const resolveRoleKey = (
   if (type === 'partner') {
     return 'partner';
   }
+  if (type === 'program_office') {
+    return 'program_office';
+  }
   return null;
 };
 
@@ -538,10 +586,16 @@ export function RoleBasicInfoTab({
   const isMentor = roleKey === 'mentor';
   const isServiceProvider = roleKey === 'service_provider';
   const isPartner = roleKey === 'partner';
+  const isProgramOffice = roleKey === 'program_office';
   // Every multi-tenant role except plain startup supports a logo /
   // profile-photo upload — same UI, different endpoint chosen at upload time.
   const supportsLogoUpload =
-    isInvestor || isCorporate || isMentor || isServiceProvider || isPartner;
+    isInvestor ||
+    isCorporate ||
+    isMentor ||
+    isServiceProvider ||
+    isPartner ||
+    isProgramOffice;
   const [countryOptions, setCountryOptions] = useState<
     Array<{id: number; name: string}>
   >([]);
@@ -714,6 +768,8 @@ export function RoleBasicInfoTab({
           await authService.uploadServiceProviderLogo(token, file);
         } else if (isPartner) {
           await authService.uploadPartnerLogo(token, file);
+        } else if (isProgramOffice) {
+          await authService.uploadProgramOfficeLogo(token, file);
         } else {
           await authService.uploadInvestorLogo(token, file);
         }
@@ -819,7 +875,7 @@ export function RoleBasicInfoTab({
             <Text style={styles.logoLabel}>
               {isCorporate || isServiceProvider
                 ? 'Company logo'
-                : isMentor
+                : isMentor || isProgramOffice
                   ? 'Profile photo'
                   : isPartner
                     ? 'Organization logo'
