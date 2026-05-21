@@ -117,6 +117,8 @@ const INVESTOR_CONNECTION_DOC_UPLOAD_PATH =
   'api/v1/investors/upload/connection-document';
 const CORPORATE_LOGO_UPLOAD_PATH = 'api/v1/corporates/upload/logo';
 const MENTOR_LOGO_UPLOAD_PATH = 'api/v1/mentors/upload/logo';
+const SERVICE_PROVIDER_LOGO_UPLOAD_PATH =
+  'api/v1/service_providers/upload/logo';
 const PITCH_VIDEO_UPLOAD_PATH = 'api/v1/startups/pitch-deck/upload/pitch-video';
 const POWER_PITCH_VIDEO_PATH = 'api/v1/power-pitch/video';
 const POWER_PITCH_CONNECT_PATH = 'api/v1/power-pitch/connect';
@@ -235,7 +237,10 @@ const normalizeRole = (role?: string) => {
   const normalizedRole = (role || 'startup').trim().toLowerCase();
 
   switch (normalizedRole) {
+    // Tolerate hyphen + space variants that some legacy callers (UI types,
+    // older API responses) still emit — the canonical slug is underscored.
     case 'service provider':
+    case 'service-provider':
       return 'service_provider';
     default:
       return normalizedRole;
@@ -1238,6 +1243,46 @@ export const authService = {
       },
       body: formData as any,
     });
+    const raw = await response.text();
+    const data = raw ? safeJsonParse(raw) : null;
+    if (!response.ok) {
+      throw new Error(
+        getErrorMessage(data) ||
+          `Logo upload failed (${response.status}).`,
+      );
+    }
+    return data as ApiResponse;
+  },
+
+  async uploadServiceProviderLogo(
+    token: string,
+    file: {uri: string; name: string; type: string},
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    const normalizedToken = normalizeTokenValue(token);
+
+    if (!normalizedToken) {
+      throw new Error('Missing access token.');
+    }
+
+    const formData = new FormData();
+    formData.append('file', {
+      uri: file.uri,
+      name: file.name,
+      type: file.type,
+    } as any);
+
+    const response = await fetch(
+      `${baseUrl}${SERVICE_PROVIDER_LOGO_UPLOAD_PATH}`,
+      {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${normalizedToken}`,
+        },
+        body: formData as any,
+      },
+    );
     const raw = await response.text();
     const data = raw ? safeJsonParse(raw) : null;
     if (!response.ok) {

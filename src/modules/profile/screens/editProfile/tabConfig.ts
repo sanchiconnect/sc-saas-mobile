@@ -17,7 +17,10 @@ export type AccountType =
   | 'mentor'
   | 'corporate'
   | 'individual'
-  | 'service-provider'
+  // Canonical slug is underscore — matches the backend
+  // (api/v1/service_providers/...). The hyphenated string is accepted via
+  // normalizeRole() in auth.service.ts for backward compatibility.
+  | 'service_provider'
   | string;
 
 export type InvestorSubtype = 'organization' | 'individual';
@@ -44,6 +47,10 @@ const TAB_LAYOUTS: Record<string, TabBlueprint[]> = {
   ],
   mentor: [BASIC, {key: 'domain_expertise', label: 'Domain Expertise'}],
   corporate: [BASIC, {key: 'engagement', label: 'Engagement'}],
+  service_provider: [
+    BASIC,
+    {key: 'industry', label: 'Industry / Vertical Focus'},
+  ],
 };
 
 const BASIC_ONLY: TabBlueprint[] = [BASIC];
@@ -72,7 +79,10 @@ export const getTabLayout = (
   accountType: AccountType,
   investorSubtype: InvestorSubtype = 'organization',
 ): TabBlueprint[] => {
-  const type = normalize(accountType);
+  // Backend uses underscored slugs (service_provider); legacy callers may
+  // pass hyphenated or space-separated variants — fold them all back here so
+  // every TAB_LAYOUTS lookup hits the canonical key.
+  const type = normalize(accountType).replace(/[-\s]+/g, '_');
 
   if (type === 'investor') {
     return TAB_LAYOUTS[`investor:${investorSubtype}`] || BASIC_ONLY;

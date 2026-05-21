@@ -62,7 +62,9 @@ type FieldKey =
   | 'organizationTypeId'
   | 'registeredCountryId'
   | 'registeredStateId'
-  | 'registeredCityId';
+  | 'registeredCityId'
+  | 'providerTypeId'
+  | 'provideCategoryId';
 
 type FieldConfig = {
   key: FieldKey;
@@ -87,7 +89,8 @@ type RoleKey =
   | 'investor:organization'
   | 'investor:individual'
   | 'corporate'
-  | 'mentor';
+  | 'mentor'
+  | 'service_provider';
 
 // Each role's field list mirrors the primary fields of the corresponding
 // frontend basic-info tab. Required + format validators match the frontend's
@@ -239,6 +242,54 @@ const ROLE_FIELDS: Record<RoleKey, FieldConfig[]> = {
     {key: 'instagramUrl', label: 'Instagram URL', keyboardType: 'url'},
     {key: 'youtubeUrl', label: 'YouTube URL', keyboardType: 'url'},
   ],
+  service_provider: [
+    {key: 'name', label: 'Company Name', required: true},
+    {
+      key: 'providerTypeId',
+      label: 'Profile Type',
+      kind: 'dropdown',
+      dropdownSource: 'service_provider_types',
+      required: true,
+    },
+    {
+      key: 'provideCategoryId',
+      label: 'Category',
+      kind: 'dropdown',
+      dropdownSource: 'service_provider_categories',
+      required: true,
+    },
+    {
+      key: 'briefDescription',
+      label: 'Brief Description',
+      multiline: true,
+      required: true,
+    },
+    {
+      key: 'registeredCountryId',
+      label: 'Country',
+      kind: 'dropdown',
+      dropdownSource: 'countries',
+      required: true,
+    },
+    {
+      key: 'registeredStateId',
+      label: 'State',
+      kind: 'dropdown',
+      dropdownSource: 'states',
+    },
+    {
+      key: 'registeredCityId',
+      label: 'City',
+      kind: 'dropdown',
+      dropdownSource: 'cities',
+    },
+    {key: 'website', label: 'Website', keyboardType: 'url'},
+    {key: 'linkedinUrl', label: 'LinkedIn URL', keyboardType: 'url'},
+    {key: 'twitterUrl', label: 'X URL', keyboardType: 'url'},
+    {key: 'facebookUrl', label: 'Facebook URL', keyboardType: 'url'},
+    {key: 'instagramUrl', label: 'Instagram URL', keyboardType: 'url'},
+    {key: 'youtubeUrl', label: 'YouTube URL', keyboardType: 'url'},
+  ],
 };
 
 // Platform-specific URL validators (match frontend's shared/constants/regex.ts).
@@ -278,7 +329,9 @@ const resolveRoleKey = (
   accountType: string,
   investorSubtype: InvestorSubtype,
 ): RoleKey | null => {
-  const type = accountType.toLowerCase();
+  // Fold hyphen + space variants to the canonical underscored slug so the
+  // role-key switch below stays single-source-of-truth.
+  const type = accountType.toLowerCase().replace(/[-\s]+/g, '_');
   if (type === 'investor') {
     return investorSubtype === 'individual'
       ? 'investor:individual'
@@ -289,6 +342,9 @@ const resolveRoleKey = (
   }
   if (type === 'mentor') {
     return 'mentor';
+  }
+  if (type === 'service_provider') {
+    return 'service_provider';
   }
   return null;
 };
@@ -421,10 +477,12 @@ export function RoleBasicInfoTab({
   const isInvestor = roleKey?.startsWith('investor');
   const isCorporate = roleKey === 'corporate';
   const isMentor = roleKey === 'mentor';
-  // Investor (org + individual), corporate, and mentor roles all support a
-  // logo / profile-photo upload — same UI, different endpoint chosen at
-  // upload time.
-  const supportsLogoUpload = isInvestor || isCorporate || isMentor;
+  const isServiceProvider = roleKey === 'service_provider';
+  // Investor (org + individual), corporate, mentor, and service-provider
+  // roles all support a logo / profile-photo upload — same UI, different
+  // endpoint chosen at upload time.
+  const supportsLogoUpload =
+    isInvestor || isCorporate || isMentor || isServiceProvider;
   const [countryOptions, setCountryOptions] = useState<
     Array<{id: number; name: string}>
   >([]);
@@ -593,6 +651,8 @@ export function RoleBasicInfoTab({
           await authService.uploadCorporateLogo(token, file);
         } else if (isMentor) {
           await authService.uploadMentorLogo(token, file);
+        } else if (isServiceProvider) {
+          await authService.uploadServiceProviderLogo(token, file);
         } else {
           await authService.uploadInvestorLogo(token, file);
         }
@@ -696,7 +756,7 @@ export function RoleBasicInfoTab({
           </Pressable>
           <View style={styles.logoCopy}>
             <Text style={styles.logoLabel}>
-              {isCorporate
+              {isCorporate || isServiceProvider
                 ? 'Company logo'
                 : isMentor
                   ? 'Profile photo'
@@ -1015,6 +1075,22 @@ const seedValues = (
       seed[field.key] = nested == null ? '' : String(nested);
       return;
     }
+    if (field.key === 'providerTypeId') {
+      const nested =
+        data?.providerType?.id ??
+        data?.providerTypeR?.id ??
+        data?.providerTypeId;
+      seed[field.key] = nested == null ? '' : String(nested);
+      return;
+    }
+    if (field.key === 'provideCategoryId') {
+      const nested =
+        data?.provideCategory?.id ??
+        data?.provideCategoryR?.id ??
+        data?.provideCategoryId;
+      seed[field.key] = nested == null ? '' : String(nested);
+      return;
+    }
     const raw = data?.[field.key];
     seed[field.key] = raw == null ? '' : String(raw);
   });
@@ -1029,6 +1105,8 @@ const NUMERIC_PAYLOAD_KEYS = new Set([
   'registeredCountryId',
   'registeredStateId',
   'registeredCityId',
+  'providerTypeId',
+  'provideCategoryId',
 ]);
 
 const buildPayload = (

@@ -27,6 +27,7 @@ import {InvestorRepresentativeTab} from './editProfile/InvestorRepresentativeTab
 import {MentorDomainExpertiseTab} from './editProfile/MentorDomainExpertiseTab';
 import {Picker} from './editProfile/Picker';
 import {RoleBasicInfoTab} from './editProfile/RoleBasicInfoTab';
+import {ServiceProviderIndustryTab} from './editProfile/ServiceProviderIndustryTab';
 import {YourPitchDeck} from './editProfile/YourPitchDeck';
 import {
   buildBaseTabs,
@@ -347,6 +348,12 @@ export function EditProfileScreen({
   const [organizationTypeOptions, setOrganizationTypeOptions] = useState<
     Array<{id: number; name: string}>
   >([]);
+  // Service-provider catalogues — same pattern as organization_types above.
+  const [serviceProviderTypeOptions, setServiceProviderTypeOptions] = useState<
+    Array<{id: number; name: string}>
+  >([]);
+  const [serviceProviderCategoryOptions, setServiceProviderCategoryOptions] =
+    useState<Array<{id: number; name: string}>>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -534,7 +541,11 @@ export function EditProfileScreen({
     if (!baseUrl || !accountType) {
       return;
     }
-    if (accountType !== 'investor' && accountType !== 'mentor') {
+    if (
+      accountType !== 'investor' &&
+      accountType !== 'mentor' &&
+      accountType !== 'service_provider'
+    ) {
       return;
     }
     let cancelled = false;
@@ -542,7 +553,9 @@ export function EditProfileScreen({
     const keys =
       accountType === 'investor'
         ? 'investment_stages,investment_preferences,investability_metrics,business_models,organization_types'
-        : 'domain_areas';
+        : accountType === 'service_provider'
+          ? 'service_provider_types,service_provider_categories'
+          : 'domain_areas';
 
     fetch(`${baseUrl}api/v1/public/global/custom/${keys}`)
       .then(res => res.json())
@@ -555,6 +568,11 @@ export function EditProfileScreen({
           setAbilityMetricOptions(toIdName(d.investability_metrics));
           setBusinessModelOptions(toIdName(d.business_models));
           setOrganizationTypeOptions(toIdName(d.organization_types));
+        } else if (accountType === 'service_provider') {
+          setServiceProviderTypeOptions(toIdName(d.service_provider_types));
+          setServiceProviderCategoryOptions(
+            toIdName(d.service_provider_categories),
+          );
         } else {
           setDomainAreaOptions(toIdName(d.domain_areas));
         }
@@ -1379,6 +1397,8 @@ export function EditProfileScreen({
                 corporate_sizes: (globalSetting?.CorporateSizes || []).map(
                   s => ({id: s.value, name: s.name}),
                 ),
+                service_provider_types: serviceProviderTypeOptions,
+                service_provider_categories: serviceProviderCategoryOptions,
               }}
               onSave={async payload => {
                 try {
@@ -1406,6 +1426,13 @@ export function EditProfileScreen({
               }}
             />
           )
+        ) : activeTab === 'industry' && accountType === 'service_provider' ? (
+          <ServiceProviderIndustryTab
+            token={token}
+            primaryColor={primaryColor}
+            initialData={startupInfo}
+            industryOptions={industryOptions}
+          />
         ) : activeTab === 'industry' ? (
           <View style={styles.industryCard}>
             <Text style={styles.industryTitle}>Industry / Technology</Text>
@@ -1720,6 +1747,12 @@ export function EditProfileScreen({
                 label={isSaving ? 'Saving…' : 'SAVE'}
                 disabled={
                   isSaving ||
+                  // Global Save only handles the startup-flow tabs. Every
+                  // other role's basic-info tab uses RoleBasicInfoTab and the
+                  // per-role secondary tabs (engagement, domain_expertise,
+                  // investment_*, service_provider industry) render their own
+                  // internal Save button.
+                  (accountType ? accountType !== 'startup' : false) ||
                   (activeTab !== 'basic' &&
                     activeTab !== 'industry' &&
                     activeTab !== 'financials')
