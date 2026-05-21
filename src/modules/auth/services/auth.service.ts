@@ -428,6 +428,95 @@ export const authService = {
     );
   },
 
+  // Frontend auto-saves the newsletter toggle on change — no batching with
+  // other profile fields. Same PATCH shape (`{subscribeToNewsletter: boolean}`).
+  async updateNewsletterSubscription(
+    token: string,
+    subscribe: boolean,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      'api/v1/users/profile/subscribe-to-newsletter',
+      {
+        method: 'PATCH',
+        headers: getAuthHeader(token),
+        body: JSON.stringify({subscribeToNewsletter: subscribe}),
+      },
+      baseUrl,
+    );
+  },
+
+  // Sleep mode / reactivate — feature-gated by `can_deactivate_profile`.
+  // Single endpoint flips the deactivation state via a boolean payload.
+  async setAccountDeactivated(
+    token: string,
+    deactivated: boolean,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      'api/v1/users/deactivate_account',
+      {
+        method: 'PATCH',
+        headers: getAuthHeader(token),
+        body: JSON.stringify({isDeactivated: deactivated}),
+      },
+      baseUrl,
+    );
+  },
+
+  async updateUserSocialLinks(
+    token: string,
+    links: {linkedinUrl?: string; twitterUrl?: string},
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      'api/v1/users/profile/social-links',
+      {
+        method: 'PATCH',
+        headers: getAuthHeader(token),
+        body: JSON.stringify(links),
+      },
+      baseUrl,
+    );
+  },
+
+  async uploadUserAvatar(
+    token: string,
+    file: {uri: string; name: string; type: string},
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    const normalizedToken = normalizeTokenValue(token);
+
+    if (!normalizedToken) {
+      throw new Error('Missing access token.');
+    }
+
+    const formData = new FormData();
+    formData.append('file', {
+      uri: file.uri,
+      name: file.name,
+      type: file.type,
+    } as any);
+
+    const response = await fetch(`${baseUrl}api/v1/users/upload/avatar`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${normalizedToken}`,
+      },
+      body: formData as any,
+    });
+    const raw = await response.text();
+    const data = raw ? safeJsonParse(raw) : null;
+    if (!response.ok) {
+      throw new Error(
+        getErrorMessage(data) ||
+          `Avatar upload failed (${response.status}).`,
+      );
+    }
+    return data as ApiResponse;
+  },
+
   async getStartupInformation(
     token: string,
     accountType?: string,

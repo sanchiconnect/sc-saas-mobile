@@ -7,10 +7,17 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   useWindowDimensions,
   View,
 } from 'react-native';
+import {launchImageLibrary} from 'react-native-image-picker';
+
+import {
+  linkedinUrl as linkedinValidator,
+  twitterUrl as twitterValidator,
+} from '../../../core/form/validators';
 
 import {AuthSession} from '../../auth/models/auth.models';
 import {authService} from '../../auth/services/auth.service';
@@ -44,6 +51,14 @@ type PersonalInformation = {
   countryCode: string;
   mobileNumber: string;
   whatsappNumber: string;
+  // Frontend's parallel-save fields. None of these participate in the main
+  // "Save Changes" PATCH — each has its own endpoint and (for newsletter +
+  // deactivate) auto-saves on toggle.
+  accountType: string;
+  subscribeToNewsletter: boolean;
+  isDeactivated: boolean;
+  linkedinUrl: string;
+  twitterUrl: string;
 };
 
 type AvailabilityMode = 'anytime' | 'temporary-unavailable' | 'specific-days';
@@ -178,6 +193,15 @@ const extractPersonalInformation = (
         root?.contactNumber,
     ),
     whatsappNumber: asString(root?.whatsappNumber),
+    accountType: asString(root?.accountType).toLowerCase(),
+    subscribeToNewsletter: Boolean(
+      root?.subscribeToNewsletter ??
+        root?.newsletterSubscription ??
+        false,
+    ),
+    isDeactivated: Boolean(root?.isDeactivated ?? root?.deactivated ?? false),
+    linkedinUrl: asString(root?.linkedinUrl || root?.socialLinks?.linkedinUrl),
+    twitterUrl: asString(root?.twitterUrl || root?.socialLinks?.twitterUrl),
   };
 };
 
@@ -282,9 +306,24 @@ export function AccountSettingsScreen({
   );
   const isWideLayout = width >= 1040;
   const canDeleteProfile = tenantFeatures?.can_delete_profile !== false;
+  const canDeactivateProfile = tenantFeatures?.can_deactivate_profile === true;
   const canShowWhatsappNumber =
     tenantFeatures?.wa_enable === true ||
     tenantFeatures?.whatsapp_otp_verification === true;
+  // Frontend hides the avatar upload for mentor accounts. Mirror that exactly.
+  const showAvatarSection = personalInformation.accountType !== 'mentor';
+
+  // Per-section save state for the three auto-save / separate-save controls.
+  // Inline-saved bits don't share the top-level save banner because users
+  // expect immediate feedback right next to the control.
+  const [isSavingNewsletter, setIsSavingNewsletter] = useState(false);
+  const [isSavingDeactivate, setIsSavingDeactivate] = useState(false);
+  const [isSavingSocialLinks, setIsSavingSocialLinks] = useState(false);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [socialLinkErrors, setSocialLinkErrors] = useState<{
+    linkedin?: string;
+    twitter?: string;
+  }>({});
 
   const loadProfile = useCallback(async () => {
     setIsLoading(true);
@@ -432,6 +471,202 @@ export function AccountSettingsScreen({
 
   const handleUnavailableAction = (title: string) => {
     Alert.alert(title, SUPPORT_MESSAGE);
+  };
+
+  const handleAvatarPress = async () => {
+    try {
+      if (typeof launchImageLibrary !== 'function') {
+        Alert.alert(
+          'Avatar upload unavailable',
+          'Image picker is not ready yet. Please rebuild the app and try again.',
+        );
+        return;
+      }
+      const result = await launchImageLibrary({
+        mediaType: 'photo',
+        selectionLimit: 1,
+        includeBase64: false,
+      });
+      if (result.didCancel) return;
+      if (result.errorCode) {
+        Alert.alert(
+          'Avatar upload failed',
+          result.errorMessage || 'Could not open the image picker.',
+        );
+        return;
+      }
+      const asset = result.assets?.[0];
+      if (!asset?.uri) {
+        Alert.alert('Avatar upload failed', 'No image was selected.');
+        return;
+      }
+      // Frontend uses a 10MB cap; mirror to stay consistent across roles.
+      if ((asset.fileSize ?? 0) > 10 * 1024 * 1024) {
+        Alert.alert(
+          'Image too large',
+          'Please choose an image smaller than 10MB.',
+        );
+        return;
+      }
+      const mimeType = (asset.type || '').toLowerCase();
+      if (
+        mimeType &&
+        !['image/png', 'image/jpg', 'image/jpeg'].includes(mimeType)
+      ) {
+        Alert.alert(
+          'Unsupported format',
+          'Please choose a png, jpg, or jpeg image.',
+        );
+        return;
+      }
+
+      setIsUploadingAvatar(true);
+      // Optimistic preview while the upload is in flight.
+      setPersonalInformation(current => ({...current, avatarUrl: asset.uri!}));
+      try {
+        await authService.uploadUserAvatar(token, {
+          uri: asset.uri,
+          name: asset.fileName || `avatar-${Date.now()}.jpg`,
+          type: mimeType || 'image/jpeg',
+        });
+        // Refresh from server so we get the canonical CDN URL.
+        await loadProfile();
+        setSaveMessage({text: 'Profile photo updated.', tone: 'success'});
+      } catch (error) {
+        // Roll back the optimistic preview on failure.
+        setPersonalInformation(current => ({
+          ...current,
+          avatarUrl: initialPersonalInformation.avatarUrl,
+        }));
+        Alert.alert(
+          'Avatar upload failed',
+          error instanceof Error
+            ? error.message
+            : 'Could not upload your photo.',
+        );
+      } finally {
+        setIsUploadingAvatar(false);
+      }
+    } catch (error) {
+      Alert.alert(
+        'Avatar upload failed',
+        error instanceof Error ? error.message : 'Could not select the image.',
+      );
+    }
+  };
+
+  const handleNewsletterToggle = async (next: boolean) => {
+    // Optimistic update — flip the UI first, roll back on error.
+    const previous = personalInformation.subscribeToNewsletter;
+    setPersonalInformation(current => ({
+      ...current,
+      subscribeToNewsletter: next,
+    }));
+    setIsSavingNewsletter(true);
+    try {
+      await authService.updateNewsletterSubscription(token, next);
+      setInitialPersonalInformation(current => ({
+        ...current,
+        subscribeToNewsletter: next,
+      }));
+    } catch (error) {
+      setPersonalInformation(current => ({
+        ...current,
+        subscribeToNewsletter: previous,
+      }));
+      Alert.alert(
+        'Newsletter update failed',
+        error instanceof Error
+          ? error.message
+          : 'Could not update newsletter preference.',
+      );
+    } finally {
+      setIsSavingNewsletter(false);
+    }
+  };
+
+  const handleDeactivateToggle = (nextDeactivated: boolean) => {
+    const action = nextDeactivated ? 'Deactivate' : 'Reactivate';
+    Alert.alert(
+      `${action} account?`,
+      nextDeactivated
+        ? 'Your profile will be hidden across the platform until you reactivate it.'
+        : 'Your profile will become visible again on the platform.',
+      [
+        {text: 'Cancel', style: 'cancel'},
+        {
+          text: action,
+          style: nextDeactivated ? 'destructive' : 'default',
+          onPress: async () => {
+            const previous = personalInformation.isDeactivated;
+            setPersonalInformation(current => ({
+              ...current,
+              isDeactivated: nextDeactivated,
+            }));
+            setIsSavingDeactivate(true);
+            try {
+              await authService.setAccountDeactivated(token, nextDeactivated);
+              setInitialPersonalInformation(current => ({
+                ...current,
+                isDeactivated: nextDeactivated,
+              }));
+              setSaveMessage({
+                text: nextDeactivated
+                  ? 'Account deactivated.'
+                  : 'Account reactivated.',
+                tone: 'success',
+              });
+            } catch (error) {
+              setPersonalInformation(current => ({
+                ...current,
+                isDeactivated: previous,
+              }));
+              Alert.alert(
+                `${action} failed`,
+                error instanceof Error
+                  ? error.message
+                  : `Could not ${action.toLowerCase()} your account.`,
+              );
+            } finally {
+              setIsSavingDeactivate(false);
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const handleSaveSocialLinks = async () => {
+    const linkedin = personalInformation.linkedinUrl.trim();
+    const twitter = personalInformation.twitterUrl.trim();
+    const errors: {linkedin?: string; twitter?: string} = {};
+    const linkedinErr = linkedin ? linkedinValidator(linkedin) : undefined;
+    const twitterErr = twitter ? twitterValidator(twitter) : undefined;
+    if (linkedinErr) errors.linkedin = linkedinErr;
+    if (twitterErr) errors.twitter = twitterErr;
+    setSocialLinkErrors(errors);
+    if (linkedinErr || twitterErr) return;
+
+    setIsSavingSocialLinks(true);
+    try {
+      await authService.updateUserSocialLinks(token, {
+        linkedinUrl: linkedin,
+        twitterUrl: twitter,
+      });
+      setInitialPersonalInformation(current => ({
+        ...current,
+        linkedinUrl: linkedin,
+        twitterUrl: twitter,
+      }));
+      setSaveMessage({text: 'Social links saved.', tone: 'success'});
+    } catch (error) {
+      Alert.alert(
+        'Save failed',
+        error instanceof Error ? error.message : 'Could not save social links.',
+      );
+    } finally {
+      setIsSavingSocialLinks(false);
+    }
   };
 
   const selectAvailabilityMode = (mode: AvailabilityMode) => {
@@ -597,43 +832,54 @@ export function AccountSettingsScreen({
       header={<Text style={styles.cardTitle}>Your Personal Information</Text>}>
       <View style={styles.sectionDivider} />
 
-      <View style={styles.photoSection}>
-        <Text style={styles.photoLabel}>Your Photo</Text>
+      {showAvatarSection ? (
+        <View style={styles.photoSection}>
+          <Text style={styles.photoLabel}>Your Photo</Text>
 
-        <View style={styles.photoDetails}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Profile photo actions"
-            onPress={() => handleUnavailableAction('Profile photo')}
-            style={styles.photoFrame}>
-            {personalInformation.avatarUrl ? (
-              <Image
-                source={{uri: personalInformation.avatarUrl}}
-                style={styles.photoImage}
-              />
-            ) : (
-              <View style={styles.photoPlaceholder}>
-                <Icon name="account-outline" size={34} color="#94a3b8" />
-                <Text style={styles.photoPlaceholderText}>No photo</Text>
+          <View style={styles.photoDetails}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Profile photo actions"
+              onPress={handleAvatarPress}
+              disabled={isUploadingAvatar}
+              style={styles.photoFrame}>
+              {personalInformation.avatarUrl ? (
+                <Image
+                  source={{uri: personalInformation.avatarUrl}}
+                  style={styles.photoImage}
+                />
+              ) : (
+                <View style={styles.photoPlaceholder}>
+                  <Icon name="account-outline" size={34} color="#94a3b8" />
+                  <Text style={styles.photoPlaceholderText}>No photo</Text>
+                </View>
+              )}
+
+              <View style={styles.photoBadge}>
+                <Icon name="pencil" size={14} color="#64748b" />
               </View>
-            )}
+            </Pressable>
 
-            <View style={styles.photoBadge}>
-              <Icon name="pencil" size={14} color="#64748b" />
+            <View style={styles.photoCopy}>
+              <Text style={styles.photoHintTitle}>Profile photo</Text>
+              <Text style={styles.photoHintBody}>
+                {isUploadingAvatar
+                  ? 'Uploading…'
+                  : 'PNG, JPG, or JPEG up to 10MB.'}
+              </Text>
+              <Pressable
+                onPress={handleAvatarPress}
+                disabled={isUploadingAvatar}>
+                <Text style={[styles.photoAction, {color: primaryColor}]}>
+                  {personalInformation.avatarUrl
+                    ? 'Change photo'
+                    : 'Upload photo'}
+                </Text>
+              </Pressable>
             </View>
-          </Pressable>
-
-          <View style={styles.photoCopy}>
-            <Text style={styles.photoHintTitle}>Profile photo</Text>
-            <Text style={styles.photoHintBody}>
-              Avatar uploads are not connected in this mobile build yet.
-            </Text>
-            <Text style={[styles.photoAction, {color: primaryColor}]}>
-              Tap to view the current support path
-            </Text>
           </View>
         </View>
-      </View>
+      ) : null}
 
       <AppTextField
         label="Full Name"
@@ -709,9 +955,8 @@ export function AccountSettingsScreen({
       <View style={styles.infoBanner}>
         <Icon name="information-outline" size={18} color="#1d4ed8" />
         <Text style={styles.infoBannerText}>
-          Full name, designation, mobile number, and WhatsApp number now save
-          through your user profile endpoint. Email and avatar are still
-          managed separately.
+          Email cannot be changed from the app — contact your support team if
+          you need to update it.
         </Text>
       </View>
 
@@ -747,6 +992,102 @@ export function AccountSettingsScreen({
           style={styles.saveButtonDisabled}
         />
       </View>
+
+      <View style={styles.sectionDivider} />
+
+      <View style={styles.subSection}>
+        <Text style={styles.subSectionTitle}>Social Links</Text>
+        <AppTextField
+          label="LinkedIn URL"
+          value={personalInformation.linkedinUrl}
+          onChangeText={text => {
+            updatePersonalInformation('linkedinUrl', text);
+            if (socialLinkErrors.linkedin) {
+              setSocialLinkErrors(prev => ({...prev, linkedin: undefined}));
+            }
+          }}
+          placeholder="https://linkedin.com/in/your-handle"
+          error={socialLinkErrors.linkedin}
+          autoCapitalize="none"
+          keyboardType="url"
+          containerStyle={styles.field}
+        />
+        <AppTextField
+          label="X / Twitter URL"
+          value={personalInformation.twitterUrl}
+          onChangeText={text => {
+            updatePersonalInformation('twitterUrl', text);
+            if (socialLinkErrors.twitter) {
+              setSocialLinkErrors(prev => ({...prev, twitter: undefined}));
+            }
+          }}
+          placeholder="https://x.com/your-handle"
+          error={socialLinkErrors.twitter}
+          autoCapitalize="none"
+          keyboardType="url"
+          containerStyle={styles.field}
+        />
+        <View style={styles.formFooter}>
+          <AppButton
+            fullWidth={false}
+            label="Save Social Links"
+            loading={isSavingSocialLinks}
+            loadingLabel="Saving..."
+            onPress={handleSaveSocialLinks}
+          />
+        </View>
+      </View>
+
+      <View style={styles.sectionDivider} />
+
+      <View style={styles.toggleRow}>
+        <View style={styles.toggleCopy}>
+          <Text style={styles.toggleTitle}>Subscribe to newsletter</Text>
+          <Text style={styles.toggleHint}>
+            Receive product updates and announcements over email.
+          </Text>
+        </View>
+        <Switch
+          value={personalInformation.subscribeToNewsletter}
+          onValueChange={handleNewsletterToggle}
+          disabled={isSavingNewsletter}
+          trackColor={{false: '#cbd5e1', true: `${primaryColor}55`}}
+          thumbColor={
+            personalInformation.subscribeToNewsletter
+              ? primaryColor
+              : '#f1f5f9'
+          }
+        />
+      </View>
+
+      {canDeactivateProfile ? (
+        <>
+          <View style={styles.sectionDivider} />
+          <View style={styles.toggleRow}>
+            <View style={styles.toggleCopy}>
+              <Text style={styles.toggleTitle}>
+                {personalInformation.isDeactivated
+                  ? 'Account deactivated'
+                  : 'Sleep mode'}
+              </Text>
+              <Text style={styles.toggleHint}>
+                {personalInformation.isDeactivated
+                  ? 'Reactivate to make your profile visible again.'
+                  : 'Hide your profile across the platform temporarily.'}
+              </Text>
+            </View>
+            <Switch
+              value={personalInformation.isDeactivated}
+              onValueChange={handleDeactivateToggle}
+              disabled={isSavingDeactivate}
+              trackColor={{false: '#cbd5e1', true: '#fca5a5'}}
+              thumbColor={
+                personalInformation.isDeactivated ? '#dc2626' : '#f1f5f9'
+              }
+            />
+          </View>
+        </>
+      ) : null}
     </AppCard>
   );
 
@@ -1841,6 +2182,36 @@ const styles = StyleSheet.create({
   },
   saveButtonDisabled: {
     minWidth: 170,
+  },
+  subSection: {
+    gap: 4,
+    marginTop: 16,
+  },
+  subSectionTitle: {
+    color: '#0f172a',
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  toggleRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 16,
+    marginTop: 16,
+  },
+  toggleCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  toggleTitle: {
+    color: '#0f172a',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  toggleHint: {
+    color: '#64748b',
+    fontSize: 12,
+    lineHeight: 16,
   },
   deleteCard: {
     borderColor: '#fda4af',
