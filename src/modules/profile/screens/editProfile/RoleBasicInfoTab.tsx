@@ -6,6 +6,7 @@ import {
   StyleSheet,
   Switch,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import {launchImageLibrary} from 'react-native-image-picker';
@@ -17,13 +18,22 @@ import {Icon} from '../../../../core/components/Icon';
 import {useFormValidation} from '../../../../core/form/useFormValidation';
 import {
   combine,
+  facebookUrl,
+  instagramUrl,
+  linkedinUrl,
   required,
+  twitterUrl,
   url,
   Validator,
+  youtubeUrl,
 } from '../../../../core/form/validators';
 import {TenantContext} from '../../../../core/tenant/TenantProvider';
 
 import {authService} from '../../../auth/services/auth.service';
+import {
+  MultiSelectField,
+  MultiSelectOption,
+} from './MultiSelectField';
 import {Picker} from './Picker';
 import type {InvestorSubtype} from './tabConfig';
 
@@ -44,6 +54,10 @@ type FieldKey =
   | 'websiteUrl'
   | 'linkedinUrl'
   | 'twitterUrl'
+  | 'facebookUrl'
+  | 'instagramUrl'
+  | 'youtubeUrl'
+  | 'size'
   | 'establishmentYear'
   | 'organizationTypeId'
   | 'registeredCountryId'
@@ -66,7 +80,7 @@ type FieldConfig = {
 
 export type DropdownDataMap = Record<
   string,
-  Array<{id: number; name: string}>
+  Array<{id: number | string; name: string}>
 >;
 
 type RoleKey =
@@ -155,14 +169,43 @@ const ROLE_FIELDS: Record<RoleKey, FieldConfig[]> = {
   corporate: [
     {key: 'companyName', label: 'Company Name', required: true},
     {
+      key: 'size',
+      label: 'Company Size',
+      kind: 'dropdown',
+      dropdownSource: 'corporate_sizes',
+      required: true,
+    },
+    {
       key: 'briefDescription',
       label: 'Brief Description',
       multiline: true,
       required: true,
     },
+    {
+      key: 'registeredCountryId',
+      label: 'Country',
+      kind: 'dropdown',
+      dropdownSource: 'countries',
+      required: true,
+    },
+    {
+      key: 'registeredStateId',
+      label: 'State',
+      kind: 'dropdown',
+      dropdownSource: 'states',
+    },
+    {
+      key: 'registeredCityId',
+      label: 'City',
+      kind: 'dropdown',
+      dropdownSource: 'cities',
+    },
     {key: 'website', label: 'Website', keyboardType: 'url'},
     {key: 'linkedinUrl', label: 'LinkedIn URL', keyboardType: 'url'},
     {key: 'twitterUrl', label: 'Twitter / X URL', keyboardType: 'url'},
+    {key: 'facebookUrl', label: 'Facebook URL', keyboardType: 'url'},
+    {key: 'instagramUrl', label: 'Instagram URL', keyboardType: 'url'},
+    {key: 'youtubeUrl', label: 'YouTube URL', keyboardType: 'url'},
   ],
   mentor: [
     {key: 'name', label: 'Full Name', required: true},
@@ -173,6 +216,16 @@ const ROLE_FIELDS: Record<RoleKey, FieldConfig[]> = {
     {key: 'websiteUrl', label: 'Website', keyboardType: 'url'},
     {key: 'linkedinUrl', label: 'LinkedIn URL', keyboardType: 'url', required: true},
   ],
+};
+
+// Platform-specific URL validators (match frontend's shared/constants/regex.ts).
+// Falls back to the generic `url` validator for keys we don't have a regex for.
+const URL_VALIDATOR_BY_KEY: Record<string, Validator> = {
+  linkedinUrl,
+  twitterUrl,
+  facebookUrl,
+  instagramUrl,
+  youtubeUrl,
 };
 
 // Pre-compute per-field validators based on the FieldConfig flags.
@@ -186,7 +239,7 @@ const buildValidators = (
       validators.push(required(field.label));
     }
     if (field.keyboardType === 'url') {
-      validators.push(url);
+      validators.push(URL_VALIDATOR_BY_KEY[field.key] || url);
     }
     if (field.validator) {
       validators.push(field.validator);
@@ -231,6 +284,10 @@ type Props = {
   // /api/v1/investors/upload/logo endpoint. Mentor/corporate omit this prop.
   token?: string;
   onLogoUploaded?: () => void;
+  // Corporate role only: industries available to choose from. Each entry may
+  // carry nested industrySubCategoryDomains for the sub-category UI gated by
+  // globalSetting.features.enable_sub_industries.
+  industryOptions?: MultiSelectOption[];
 };
 
 export function RoleBasicInfoTab({
@@ -243,6 +300,7 @@ export function RoleBasicInfoTab({
   dropdownData = {},
   token,
   onLogoUploaded,
+  industryOptions = [],
 }: Props) {
   const roleKey = resolveRoleKey(accountType, investorSubtype);
   const fields = roleKey ? ROLE_FIELDS[roleKey] : [];
@@ -291,6 +349,43 @@ export function RoleBasicInfoTab({
         '',
     );
   }, [initialData]);
+
+  // Corporate industries / sub-categories / "others" — all saved as part of
+  // the corporate-information PATCH (frontend submits these in the same
+  // payload as basic info).
+  const features = globalSetting?.features || {};
+  const industriesSectionEnabled = Boolean(
+    features.industries_technologies_section,
+  );
+  const subIndustriesEnabled = Boolean(features.enable_sub_industries);
+  const [selectedIndustryIds, setSelectedIndustryIds] = useState<
+    Array<number | string>
+  >([]);
+  const [selectedSubCategoryIds, setSelectedSubCategoryIds] = useState<
+    Array<number | string>
+  >([]);
+  const [otherIndustriesActive, setOtherIndustriesActive] = useState(false);
+  const [otherIndustriesText, setOtherIndustriesText] = useState('');
+
+  useEffect(() => {
+    const inds = Array.isArray(initialData?.sectoralInterestIds)
+      ? initialData.sectoralInterestIds
+          .map((id: any) => Number(id))
+          .filter((n: number) => Number.isFinite(n))
+      : [];
+    setSelectedIndustryIds(inds);
+    const subs = Array.isArray(initialData?.sectoralInterestSubIds)
+      ? initialData.sectoralInterestSubIds
+          .map((id: any) => Number(id))
+          .filter((n: number) => Number.isFinite(n))
+      : [];
+    setSelectedSubCategoryIds(subs);
+    const others = Array.isArray(initialData?.sectoralInterestOthers)
+      ? initialData.sectoralInterestOthers
+      : [];
+    setOtherIndustriesActive(others.length > 0);
+    setOtherIndustriesText(others.join(','));
+  }, [initialData]);
   const investorLogo =
     initialData?.companyLogo || initialData?.avatar || initialData?.logo || '';
   const resolvedLogo = localLogoUri
@@ -301,6 +396,10 @@ export function RoleBasicInfoTab({
         : `${logoBaseUrl}${investorLogo}`
       : null;
   const isInvestor = roleKey?.startsWith('investor');
+  const isCorporate = roleKey === 'corporate';
+  // Both investor (org + individual) and corporate roles support a logo
+  // upload — same UI, different endpoint chosen at upload time.
+  const supportsLogoUpload = isInvestor || isCorporate;
   const [countryOptions, setCountryOptions] = useState<
     Array<{id: number; name: string}>
   >([]);
@@ -410,7 +509,7 @@ export function RoleBasicInfoTab({
   }
 
   const handleLogoPress = async () => {
-    if (!isInvestor || !token) return;
+    if (!supportsLogoUpload || !token) return;
     try {
       if (typeof launchImageLibrary !== 'function') {
         Alert.alert(
@@ -460,11 +559,16 @@ export function RoleBasicInfoTab({
       setLocalLogoUri(asset.uri);
       setLogoUploading(true);
       try {
-        await authService.uploadInvestorLogo(token, {
+        const file = {
           uri: asset.uri,
           name: asset.fileName || `logo-${Date.now()}.jpg`,
           type: mimeType || 'image/jpeg',
-        });
+        };
+        if (isCorporate) {
+          await authService.uploadCorporateLogo(token, file);
+        } else {
+          await authService.uploadInvestorLogo(token, file);
+        }
         onLogoUploaded?.();
       } catch (uploadError) {
         setLocalLogoUri(null);
@@ -522,10 +626,12 @@ export function RoleBasicInfoTab({
   };
 
   // Pulls dropdown options either from the parent-supplied map (e.g.
-  // organization_types) or from the locally-fetched location lists.
+  // organization_types, corporate_sizes) or from the locally-fetched
+  // location lists. Values may be numeric IDs or string codes (e.g. "1-10"
+  // for company sizes) — see labelForDropdown for the string-safe match.
   const optionsForDropdown = (
     field: FieldConfig,
-  ): Array<{id: number; name: string}> => {
+  ): Array<{id: number | string; name: string}> => {
     if (!field.dropdownSource) return [];
     if (field.dropdownSource === 'countries') return countryOptions;
     if (field.dropdownSource === 'states') return stateOptions;
@@ -534,9 +640,11 @@ export function RoleBasicInfoTab({
   };
 
   const labelForDropdown = (field: FieldConfig): string => {
-    const id = Number(form.values[field.key]);
-    if (!Number.isFinite(id) || id === 0) return '';
-    const option = optionsForDropdown(field).find(opt => opt.id === id);
+    const raw = form.values[field.key];
+    if (!raw) return '';
+    const option = optionsForDropdown(field).find(
+      opt => String(opt.id) === String(raw),
+    );
     return option?.name || '';
   };
 
@@ -548,7 +656,7 @@ export function RoleBasicInfoTab({
         your profile.
       </Text>
 
-      {isInvestor && token ? (
+      {supportsLogoUpload && token ? (
         <View style={styles.logoSection}>
           <Pressable
             onPress={handleLogoPress}
@@ -561,9 +669,11 @@ export function RoleBasicInfoTab({
           </Pressable>
           <View style={styles.logoCopy}>
             <Text style={styles.logoLabel}>
-              {investorSubtype === 'individual'
-                ? 'Profile photo'
-                : 'Organization logo'}
+              {isCorporate
+                ? 'Company logo'
+                : investorSubtype === 'individual'
+                  ? 'Profile photo'
+                  : 'Organization logo'}
             </Text>
             <Text style={styles.logoHint}>
               {logoUploading
@@ -647,6 +757,90 @@ export function RoleBasicInfoTab({
         );
       })}
 
+      {isCorporate && industriesSectionEnabled && industryOptions.length > 0 ? (
+        <View style={styles.industriesSection}>
+          <Text style={styles.industriesTitle}>Industry / Vertical Focus</Text>
+          <Text style={styles.industriesHint}>
+            Which sectors do you actively engage with?
+          </Text>
+
+          <MultiSelectField
+            label="Industries"
+            options={industryOptions}
+            selected={selectedIndustryIds}
+            primaryColor={primaryColor}
+            onChange={next => {
+              // Drop sub-category picks whose parent industry just got
+              // deselected, so the payload stays consistent.
+              const visibleSubIds = new Set<number>();
+              industryOptions
+                .filter(opt => next.includes(opt.id))
+                .forEach(opt => {
+                  opt.industrySubCategoryDomains?.forEach(sub =>
+                    visibleSubIds.add(sub.id),
+                  );
+                });
+              setSelectedIndustryIds(next);
+              setSelectedSubCategoryIds(prev =>
+                prev.filter(id => visibleSubIds.has(Number(id))),
+              );
+            }}
+            initiallyExpanded
+          />
+
+          {subIndustriesEnabled
+            ? (() => {
+                const subs: Array<{id: number; name: string}> = [];
+                const seen = new Set<number>();
+                industryOptions
+                  .filter(opt => selectedIndustryIds.includes(opt.id))
+                  .forEach(opt => {
+                    opt.industrySubCategoryDomains?.forEach(sub => {
+                      if (!seen.has(sub.id)) {
+                        seen.add(sub.id);
+                        subs.push(sub);
+                      }
+                    });
+                  });
+                if (subs.length === 0) return null;
+                return (
+                  <MultiSelectField
+                    label="Sub-categories"
+                    hint="Pick the sub-areas inside your selected industries."
+                    options={subs}
+                    selected={selectedSubCategoryIds}
+                    primaryColor={primaryColor}
+                    onChange={setSelectedSubCategoryIds}
+                  />
+                );
+              })()
+            : null}
+
+          <View style={styles.otherToggleRow}>
+            <Text style={styles.otherToggleLabel}>Add other sectors</Text>
+            <Switch
+              value={otherIndustriesActive}
+              onValueChange={val => {
+                setOtherIndustriesActive(val);
+                if (!val) setOtherIndustriesText('');
+              }}
+              trackColor={{false: '#cbd5e1', true: `${primaryColor}55`}}
+              thumbColor={otherIndustriesActive ? primaryColor : '#f1f5f9'}
+            />
+          </View>
+          {otherIndustriesActive ? (
+            <TextInput
+              style={styles.otherInput}
+              value={otherIndustriesText}
+              onChangeText={setOtherIndustriesText}
+              placeholder="Separate multiple entries with commas"
+              placeholderTextColor="#94a3b8"
+              autoCapitalize="words"
+            />
+          ) : null}
+        </View>
+      ) : null}
+
       {isInvestor && investorSubtype === 'organization' && token ? (
         <View style={styles.connDocSection}>
           <View style={styles.connDocHeader}>
@@ -689,9 +883,27 @@ export function RoleBasicInfoTab({
         disabled={isSaving}
         loading={isSaving}
         onPress={() =>
-          form.handleSubmit(values =>
-            onSave({...buildPayload(values), askForConnectionDocument: askForConnDoc}),
-          )
+          form.handleSubmit(values => {
+            const otherList = otherIndustriesActive
+              ? otherIndustriesText
+                  .split(',')
+                  .map(s => s.trim())
+                  .filter(Boolean)
+              : [];
+            const corporateExtras =
+              isCorporate && industriesSectionEnabled
+                ? {
+                    sectoralInterestIds: selectedIndustryIds.map(Number),
+                    sectoralInterestSubIds: selectedSubCategoryIds.map(Number),
+                    sectoralInterestOthers: otherList,
+                  }
+                : {};
+            onSave({
+              ...buildPayload(values),
+              askForConnectionDocument: askForConnDoc,
+              ...corporateExtras,
+            });
+          })
         }
         style={{backgroundColor: primaryColor}}
       />
@@ -946,5 +1158,41 @@ const styles = StyleSheet.create({
     color: '#0f172a',
     flex: 1,
     fontSize: 14,
+  },
+  industriesSection: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    gap: 12,
+    padding: 14,
+  },
+  industriesTitle: {
+    color: '#0f172a',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  industriesHint: {
+    color: '#64748b',
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  otherToggleRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  otherToggleLabel: {
+    color: '#0f172a',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  otherInput: {
+    backgroundColor: '#ffffff',
+    borderColor: '#e2e8f0',
+    borderRadius: 10,
+    borderWidth: 1,
+    color: '#0f172a',
+    fontSize: 15,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
 });

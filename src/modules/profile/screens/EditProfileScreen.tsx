@@ -1369,8 +1369,16 @@ export function EditProfileScreen({
               isSaving={isSaving}
               token={token}
               onLogoUploaded={() => loadProfile()}
+              industryOptions={industryOptions}
               dropdownData={{
                 organization_types: organizationTypeOptions,
+                // Tenant-defined company-size buckets for corporate role
+                // (e.g. "1-10", "11-50", ...). Comes from
+                // globalSetting.CorporateSizes — same source the frontend
+                // corporate-intro page reads from.
+                corporate_sizes: (globalSetting?.CorporateSizes || []).map(
+                  s => ({id: s.value, name: s.name}),
+                ),
               }}
               onSave={async payload => {
                 try {
