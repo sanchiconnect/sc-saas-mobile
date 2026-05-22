@@ -68,8 +68,17 @@ export type Connection = {
   acceptedAt?: string;
   rejectedAt?: string;
   createdAt?: string;
+
+  // Profile snapshot attached to request rows — used by the detail sheet to
+  // render Funding Type / Business Model / etc. without a separate profile
+  // fetch. Shape varies per accountType (startup / investor / corporate).
+  otherDetails?: Record<string, any>;
 };
 
+// Backend ships these as `data.counts.{myConnections,sentConnections,
+// receivedConnections}` — all plural. We surface a flatter object so the UI
+// reads counts.received / counts.sent / counts.myConnection without thinking
+// about wrappers.
 export type ConnectionCounts = {
   myConnection?: number;
   sent?: number;
@@ -78,7 +87,13 @@ export type ConnectionCounts = {
 };
 
 export type ConnectionCountsResponse = {
-  data: ConnectionCounts;
+  data: {
+    counts?: {
+      myConnections?: number;
+      sentConnections?: number;
+      receivedConnections?: number;
+    };
+  };
 };
 
 export type PaginationMeta = {

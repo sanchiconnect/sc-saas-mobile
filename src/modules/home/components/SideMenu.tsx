@@ -41,6 +41,11 @@ type SideMenuProps = {
   // The current user's account type — drives per-role menu filtering and the
   // exclusion of self ("Investors" is hidden for investor users, etc.).
   accountType?: string | null;
+  // Live badge counts on the Messages / Connections quick cards. Parent
+  // (HomeScreen) keeps these in sync via the existing chat + connections
+  // services so we don't double-fetch from inside the drawer.
+  unreadMessagesCount?: number;
+  pendingConnectionsCount?: number;
 };
 
 type ExpandableSectionProps = {
@@ -196,6 +201,8 @@ export function SideMenu({
   primaryColor,
   selectedMenu,
   accountType,
+  unreadMessagesCount,
+  pendingConnectionsCount,
 }: SideMenuProps) {
   if (!isVisible) {
     return null;
@@ -289,7 +296,16 @@ export function SideMenu({
                 onSelectMenu({section: 'chat'});
                 onClose();
               }}>
-              <Icon name="message-text-outline" size={18} color="#475569" />
+              <View style={styles.quickIconWrap}>
+                <Icon name="message-text-outline" size={18} color="#475569" />
+                {unreadMessagesCount && unreadMessagesCount > 0 ? (
+                  <View style={styles.quickBadge}>
+                    <Text style={styles.quickBadgeText}>
+                      {unreadMessagesCount > 99 ? '99+' : unreadMessagesCount}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
               <Text style={styles.quickLabel}>Messages</Text>
             </Pressable>
             <View style={styles.quickDivider} />
@@ -299,7 +315,18 @@ export function SideMenu({
                 onSelectMenu({section: 'connections'});
                 onClose();
               }}>
-              <Icon name="account-group-outline" size={18} color="#475569" />
+              <View style={styles.quickIconWrap}>
+                <Icon name="account-group-outline" size={18} color="#475569" />
+                {pendingConnectionsCount && pendingConnectionsCount > 0 ? (
+                  <View style={styles.quickBadge}>
+                    <Text style={styles.quickBadgeText}>
+                      {pendingConnectionsCount > 99
+                        ? '99+'
+                        : pendingConnectionsCount}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
               <Text style={styles.quickLabel}>Connections</Text>
             </Pressable>
           </View>
@@ -515,7 +542,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: 'row',
     marginBottom: 22,
-    overflow: 'hidden',
+    // No `overflow: hidden` here — it clipped the absolute-positioned
+    // count badges that float above each icon. The borderRadius still
+    // rounds the row corners; the inner divider stays a 1px line and the
+    // cards have their own bounds, so nothing actually spills out.
   },
   quickDivider: {
     backgroundColor: '#e2e8f0',
@@ -533,6 +563,30 @@ const styles = StyleSheet.create({
     color: '#0f172a',
     fontSize: 14,
     fontWeight: '600',
+  },
+  // Icon + red count chip stacked together so the badge floats top-right
+  // of the icon like a typical notification dot.
+  quickIconWrap: {
+    position: 'relative',
+  },
+  quickBadge: {
+    alignItems: 'center',
+    backgroundColor: '#ef4444',
+    borderColor: '#ffffff',
+    borderRadius: 9,
+    borderWidth: 1.5,
+    height: 18,
+    justifyContent: 'center',
+    minWidth: 18,
+    paddingHorizontal: 4,
+    position: 'absolute',
+    right: -10,
+    top: -8,
+  },
+  quickBadgeText: {
+    color: '#ffffff',
+    fontSize: 10,
+    fontWeight: '800',
   },
   menuButton: {
     alignItems: 'center',

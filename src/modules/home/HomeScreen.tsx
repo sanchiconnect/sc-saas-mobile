@@ -1,4 +1,4 @@
-import React, {useContext, useEffect, useState} from 'react';
+import React, {useCallback, useContext, useEffect, useState} from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -16,6 +16,7 @@ import {Icon} from '../../core/components/Icon';
 import {DashboardContent} from './components/DashboardContent';
 import {SectionScreen} from './components/SectionScreen';
 import {SideMenu} from './components/SideMenu';
+import {authService} from '../auth/services/auth.service';
 import {AccountSettingsScreen} from '../profile/screens/AccountSettingsScreen';
 import {ProfileScreen} from '../profile/screens/ProfileScreen';
 import {ProgramsScreen} from '../programs/screens/ProgramsScreen';
@@ -73,6 +74,10 @@ export function HomeScreen({
   // detail screen. Cleared when the user leaves the chat section.
   const [activeConversation, setActiveConversation] =
     useState<Conversation | null>(null);
+  // Drawer badge counts. Fetched on mount and whenever the drawer opens so
+  // the numbers reflect the latest state without polling.
+  const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
+  const [pendingConnectionsCount, setPendingConnectionsCount] = useState(0);
 
   // Tell App.tsx to hide the floating feedback FAB while the user is inside
   // a chat thread — otherwise it overlaps the send button.
@@ -81,6 +86,32 @@ export function HomeScreen({
       selectedMenu.section === 'chat' && activeConversation !== null;
     onSuppressFeedbackFab?.(suppress);
   }, [selectedMenu.section, activeConversation, onSuppressFeedbackFab]);
+
+  // Drawer badge counts. The /notifications/count endpoint already ships
+  // unreadMessageCount + pendingConnectionCount + sentConnectionCount in a
+  // single payload (same one the dashboard uses), so we hit it directly
+  // instead of summing per-conversation data.
+  const refreshDrawerCounts = useCallback(async () => {
+    try {
+      const res = await authService.getNotificationsCount(session.token);
+      const c: any = res?.data || res || {};
+      setUnreadMessagesCount(Number(c.unreadMessageCount) || 0);
+      // Only count incoming requests — outgoing/sent aren't actionable from
+      // the drawer; the user just sees the number of requests waiting on
+      // their response.
+      setPendingConnectionsCount(Number(c.pendingConnectionCount) || 0);
+    } catch {
+      // Non-fatal — drawer renders without badges if the call fails.
+    }
+  }, [session.token]);
+
+  useEffect(() => {
+    refreshDrawerCounts();
+  }, [refreshDrawerCounts]);
+
+  useEffect(() => {
+    if (isMenuOpen) refreshDrawerCounts();
+  }, [isMenuOpen, refreshDrawerCounts]);
 
   const {globalSetting, theme} = useContext(TenantContext);
 
@@ -235,6 +266,8 @@ export function HomeScreen({
           selectedMenu={selectedMenu}
           session={session}
           accountType={summary?.accountType}
+          unreadMessagesCount={unreadMessagesCount}
+          pendingConnectionsCount={pendingConnectionsCount}
         />
 
         <EditProfileScreen
@@ -259,6 +292,8 @@ export function HomeScreen({
           selectedMenu={selectedMenu}
           session={session}
           accountType={summary?.accountType}
+          unreadMessagesCount={unreadMessagesCount}
+          pendingConnectionsCount={pendingConnectionsCount}
         />
 
         <ProfileScreen
@@ -285,6 +320,8 @@ export function HomeScreen({
           selectedMenu={selectedMenu}
           session={session}
           accountType={summary?.accountType}
+          unreadMessagesCount={unreadMessagesCount}
+          pendingConnectionsCount={pendingConnectionsCount}
         />
 
         <ProgramsScreen
@@ -321,6 +358,8 @@ export function HomeScreen({
           selectedMenu={selectedMenu}
           session={session}
           accountType={summary?.accountType}
+          unreadMessagesCount={unreadMessagesCount}
+          pendingConnectionsCount={pendingConnectionsCount}
         />
 
         <TicketsScreen
@@ -345,6 +384,8 @@ export function HomeScreen({
           selectedMenu={selectedMenu}
           session={session}
           accountType={summary?.accountType}
+          unreadMessagesCount={unreadMessagesCount}
+          pendingConnectionsCount={pendingConnectionsCount}
         />
 
         <AccountSettingsScreen
@@ -388,6 +429,8 @@ export function HomeScreen({
           selectedMenu={selectedMenu}
           session={session}
           accountType={summary?.accountType}
+          unreadMessagesCount={unreadMessagesCount}
+          pendingConnectionsCount={pendingConnectionsCount}
         />
         <View style={styles.topBar}>
           <Pressable
@@ -422,6 +465,8 @@ export function HomeScreen({
           selectedMenu={selectedMenu}
           session={session}
           accountType={summary?.accountType}
+          unreadMessagesCount={unreadMessagesCount}
+          pendingConnectionsCount={pendingConnectionsCount}
         />
         <View style={styles.topBar}>
           <Pressable
@@ -436,6 +481,7 @@ export function HomeScreen({
         <ConnectionsScreen
           token={session.token}
           currentUserUuid={summary?.userUuid || session.user.uuid || session.user.id}
+          currentUserAccountType={summary?.accountType}
           onOpenChat={conversation => {
             setActiveConversation(conversation);
             setSelectedMenu({section: 'chat'});
