@@ -85,7 +85,7 @@ const buildDashboardPath = (accountType?: string): string => {
   return `api/v1/${plural}/dashboard`;
 };
 
-const NOTIFICATIONS_COUNT_PATH = 'api/v1/users/notifications/counts';
+const NOTIFICATIONS_COUNT_PATH = 'api/v1/notifications/count';
 
 const buildProfileCompletenessPath = (
   accountType?: string,

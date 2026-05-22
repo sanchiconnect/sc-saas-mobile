@@ -433,7 +433,14 @@ export function HomeScreen({
           </Pressable>
           <Text style={styles.topBarTitle}>Connections</Text>
         </View>
-        <ConnectionsScreen token={session.token} />
+        <ConnectionsScreen
+          token={session.token}
+          currentUserUuid={summary?.userUuid || session.user.uuid || session.user.id}
+          onOpenChat={conversation => {
+            setActiveConversation(conversation);
+            setSelectedMenu({section: 'chat'});
+          }}
+        />
       </View>
     );
   }

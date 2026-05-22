@@ -25,7 +25,8 @@ export const connectionsService = {
     const baseUrl = await resolveBaseUrl();
     const params = new URLSearchParams();
     if (searchName) params.set('searchName', searchName);
-    params.set('sortBy', 'createdAt');
+    // Backend accepts: connectedAt | name | investor. createdAt isn't valid.
+    params.set('sortBy', 'connectedAt');
     params.set('orderBy', 'DESC');
     params.set('pageNumber', String(page));
     params.set('limit', String(limit));
