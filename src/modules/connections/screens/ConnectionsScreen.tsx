@@ -599,109 +599,121 @@ export function ConnectionsScreen({
     const name = resolveName(item);
     const u = resolveCounterparty(item);
     const avatar = resolveAvatarUri(u);
-    const subtitle = [u.accountType?.replace(/_/g, ' '), u.designation]
-      .filter(Boolean)
-      .join(' • ');
+    const accountType = (u.accountType || '').replace(/_/g, ' ');
     const isRowBusy = pendingActionUUID === item.connectionUUID;
     const showActions =
       activeTab === 'pending' && pendingSubTab === 'received';
 
+    // Rejection timestamp lookup — backend uses snake_case here.
+    const rejectedTs =
+      (item as any).rejected_at ||
+      item.rejectedAt ||
+      (item as any).actionAt ||
+      item.createdAt ||
+      null;
+
     return (
       <Pressable
-        style={({pressed}) => [styles.row, pressed && styles.rowPressed]}
+        style={({pressed}) => [
+          styles.requestCard,
+          pressed && styles.requestCardPressed,
+        ]}
         onPress={() => setDetailFor(item)}>
-        <View style={styles.avatarWrap}>
-          <View
-            style={[
-              styles.avatarFallback,
-              {backgroundColor: `${primaryColor}1f`},
-            ]}>
-            <Text style={[styles.avatarInitials, {color: primaryColor}]}>
-              {initials(name) || '?'}
-            </Text>
+        <View style={styles.requestTopRow}>
+          <View style={styles.avatarWrap}>
+            <View
+              style={[
+                styles.avatarFallback,
+                {backgroundColor: `${primaryColor}1f`},
+              ]}>
+              <Text style={[styles.avatarInitials, {color: primaryColor}]}>
+                {initials(name) || '?'}
+              </Text>
+            </View>
+            {avatar ? (
+              <Image
+                source={{uri: avatar}}
+                style={[styles.avatar, styles.avatarOverlay]}
+              />
+            ) : null}
           </View>
-          {avatar ? (
-            <Image
-              source={{uri: avatar}}
-              style={[styles.avatar, styles.avatarOverlay]}
-            />
-          ) : null}
-        </View>
-        <View style={styles.rowBody}>
-          <Text style={styles.rowName} numberOfLines={1}>
-            {name}
-          </Text>
-          {subtitle ? (
-            <Text style={styles.rowSubtitle} numberOfLines={1}>
-              {subtitle}
-            </Text>
-          ) : null}
-          {activeTab === 'pending' && item.message ? (
-            <Text style={styles.rowMessage} numberOfLines={2}>
-              "{stripHtml(item.message)}"
-            </Text>
-          ) : null}
-          {activeTab === 'rejected' && item.actionMessage ? (
-            <Text style={styles.rowMessage} numberOfLines={2}>
-              Reason: {item.actionMessage}
-            </Text>
-          ) : null}
-          {activeTab === 'rejected' ? (() => {
-            // Backend serializes the rejection timestamp as `rejected_at`
-            // (snake_case) on this endpoint — not `rejectedAt`. Try the
-            // snake_case alias first, then the camelCase one, then fall
-            // back to the row's createdAt so something always renders.
-            const ts =
-              (item as any).rejected_at ||
-              item.rejectedAt ||
-              (item as any).actionAt ||
-              item.createdAt ||
-              null;
-            if (!ts) return null;
-            return (
-              <View style={styles.rejectedMeta}>
-                <Icon
-                  name="calendar-remove-outline"
-                  size={12}
-                  color="#dc2626"
-                />
-                <Text style={styles.rejectedMetaText}>
-                  Rejected on {formatDate(ts)}
+          <View style={styles.requestBody}>
+            <View style={styles.requestNameRow}>
+              <Text style={styles.requestName} numberOfLines={1}>
+                {name}
+              </Text>
+            </View>
+            {accountType ? (
+              <View
+                style={[
+                  styles.requestTypeChip,
+                  {
+                    backgroundColor: withAlpha(primaryColor, 0.1),
+                    borderColor: withAlpha(primaryColor, 0.25),
+                  },
+                ]}>
+                <Text
+                  style={[
+                    styles.requestTypeChipText,
+                    {color: primaryColor},
+                  ]}>
+                  {accountType.toUpperCase()}
                 </Text>
               </View>
-            );
-          })() : null}
-        </View>
-        {showActions ? (
-          <View style={styles.rowActions}>
-            <Pressable
-              disabled={isRowBusy}
-              onPress={() => handleAccept(item)}
-              style={[
-                styles.actionButton,
-                {backgroundColor: primaryColor},
-                isRowBusy && styles.actionButtonBusy,
-              ]}>
-              {isRowBusy ? (
-                <ActivityIndicator color="#ffffff" size="small" />
-              ) : (
-                <Icon name="check" size={16} color="#ffffff" />
-              )}
-            </Pressable>
-            <Pressable
-              disabled={isRowBusy}
-              onPress={() => handleReject(item)}
-              style={[
-                styles.actionButton,
-                styles.actionButtonOutline,
-                isRowBusy && styles.actionButtonBusy,
-              ]}>
-              <Icon name="close" size={16} color="#dc2626" />
-            </Pressable>
+            ) : null}
           </View>
-        ) : (
-          <Icon name="chevron-right" size={20} color="#cbd5e1" />
-        )}
+          {showActions ? (
+            <View style={styles.rowActions}>
+              <Pressable
+                disabled={isRowBusy}
+                onPress={() => handleAccept(item)}
+                style={[
+                  styles.actionButton,
+                  {backgroundColor: primaryColor},
+                  isRowBusy && styles.actionButtonBusy,
+                ]}>
+                {isRowBusy ? (
+                  <ActivityIndicator color="#ffffff" size="small" />
+                ) : (
+                  <Icon name="check" size={16} color="#ffffff" />
+                )}
+              </Pressable>
+              <Pressable
+                disabled={isRowBusy}
+                onPress={() => handleReject(item)}
+                style={[
+                  styles.actionButton,
+                  styles.actionButtonOutline,
+                  isRowBusy && styles.actionButtonBusy,
+                ]}>
+                <Icon name="close" size={16} color="#dc2626" />
+              </Pressable>
+            </View>
+          ) : null}
+        </View>
+
+        {activeTab === 'pending' && item.message ? (
+          <Text style={styles.requestMessage} numberOfLines={2}>
+            “{stripHtml(item.message)}”
+          </Text>
+        ) : null}
+        {activeTab === 'rejected' && item.actionMessage ? (
+          <Text style={styles.requestMessage} numberOfLines={2}>
+            Reason: {item.actionMessage}
+          </Text>
+        ) : null}
+        {activeTab === 'rejected' && rejectedTs ? (
+          <View style={styles.rejectedMeta}>
+            <Icon
+              name="calendar-remove-outline"
+              size={12}
+              color="#dc2626"
+            />
+            <Text style={styles.rejectedMetaText}>
+              Rejected on {formatDate(rejectedTs)}
+            </Text>
+          </View>
+        ) : null}
       </Pressable>
     );
   };
@@ -821,47 +833,58 @@ export function ConnectionsScreen({
 
   return (
     <View style={styles.page}>
-      <View style={styles.tabsRow}>
-        {TABS.map(tab => {
-          const isActive = tab.key === activeTab;
-          const count = tabCount(tab.key);
-          return (
-            <Pressable
-              key={tab.key}
-              onPress={() => setActiveTab(tab.key)}
-              style={[
-                styles.tab,
-                isActive && {borderBottomColor: primaryColor},
-              ]}>
-              <Text
+      {/* Top tabs match Account Settings: horizontal scroll strip with a
+          status dot + label, primary-color underline + bold weight when
+          active. Counts live in the per-tab sub-pills below (Received/Sent
+          for Pending, All/Received/Sent for Rejected), so we keep the top
+          tabs visually quiet here. */}
+      <View style={styles.tabsSection}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.tabsStrip}
+          contentContainerStyle={styles.tabsRow}>
+          {TABS.map(tab => {
+            const isActive = tab.key === activeTab;
+            const count = tabCount(tab.key);
+            const dotColor =
+              tab.key === 'active'
+                ? colors.success
+                : tab.key === 'pending'
+                  ? '#f59e0b'
+                  : colors.danger;
+            return (
+              <Pressable
+                key={tab.key}
+                onPress={() => setActiveTab(tab.key)}
                 style={[
-                  styles.tabText,
-                  isActive && {color: primaryColor, fontWeight: '800'},
+                  styles.tab,
+                  isActive && {borderBottomColor: primaryColor},
                 ]}>
-                {tab.label}
-              </Text>
-              {count != null && count > 0 ? (
                 <View
+                  style={[styles.tabStatusDot, {backgroundColor: dotColor}]}
+                />
+                <Text
                   style={[
-                    styles.tabBadge,
-                    isActive
-                      ? {backgroundColor: primaryColor}
-                      : styles.tabBadgeInactive,
+                    styles.tabText,
+                    isActive && styles.tabTextActive,
+                    isActive && {color: primaryColor},
                   ]}>
+                  {tab.label}
+                </Text>
+                {count != null && count > 0 ? (
                   <Text
                     style={[
-                      styles.tabBadgeText,
-                      isActive
-                        ? styles.tabBadgeTextActive
-                        : styles.tabBadgeTextInactive,
+                      styles.tabInlineCount,
+                      isActive && {color: primaryColor},
                     ]}>
-                    {count > 99 ? '99+' : count}
+                    ({count > 99 ? '99+' : count})
                   </Text>
-                </View>
-              ) : null}
-            </Pressable>
-          );
-        })}
+                ) : null}
+              </Pressable>
+            );
+          })}
+        </ScrollView>
       </View>
 
       {activeTab === 'pending' ? (
@@ -990,10 +1013,10 @@ export function ConnectionsScreen({
           data={visibleItems}
           keyExtractor={c => c.connectionUUID}
           renderItem={renderItem}
-          contentContainerStyle={
-            visibleItems.length === 0 ? styles.emptyContent : undefined
-          }
-          ItemSeparatorComponent={() => <View style={styles.separator} />}
+          contentContainerStyle={[
+            styles.listContent,
+            visibleItems.length === 0 && styles.emptyContent,
+          ]}
           refreshControl={
             <RefreshControl
               refreshing={isRefreshing}
@@ -1386,46 +1409,49 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 24,
   },
-  tabsRow: {
+  // Top tabs — mirror AccountSettingsScreen's tabsSection/tabsStrip/tabsRow
+  // structure so the underline indicator + horizontal scroll behaviour is
+  // consistent across the app.
+  tabsSection: {
     backgroundColor: '#ffffff',
     borderBottomColor: '#e2e8f0',
     borderBottomWidth: 1,
+    paddingHorizontal: 12,
+  },
+  tabsStrip: {
+    width: '100%',
+    flexGrow: 0,
+  },
+  tabsRow: {
     flexDirection: 'row',
-    paddingHorizontal: 4,
   },
   tab: {
     alignItems: 'center',
     borderBottomColor: 'transparent',
     borderBottomWidth: 2,
     flexDirection: 'row',
-    gap: 6,
-    paddingHorizontal: 16,
+    flexShrink: 0,
+    gap: 8,
+    paddingHorizontal: 14,
     paddingVertical: 12,
+  },
+  tabStatusDot: {
+    borderRadius: 4,
+    height: 8,
+    width: 8,
   },
   tabText: {
     color: '#64748b',
     fontSize: 14,
     fontWeight: '600',
   },
-  tabBadge: {
-    alignItems: 'center',
-    borderRadius: 10,
-    minWidth: 22,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+  tabTextActive: {
+    fontWeight: '700',
   },
-  tabBadgeInactive: {
-    backgroundColor: '#e2e8f0',
-  },
-  tabBadgeText: {
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  tabBadgeTextActive: {
-    color: '#ffffff',
-  },
-  tabBadgeTextInactive: {
-    color: '#475569',
+  tabInlineCount: {
+    color: '#94a3b8',
+    fontSize: 13,
+    fontWeight: '700',
   },
   searchRow: {
     alignItems: 'center',
@@ -1474,6 +1500,70 @@ const styles = StyleSheet.create({
   },
   rowPressed: {
     backgroundColor: '#f8fafc',
+  },
+  // ---------- Request card (pending / rejected rows) ----------
+  // Same visual language as the active-connection card so the tabs feel
+  // consistent — soft border, mild shadow, account-type chip, and a tight
+  // body that only shows extra lines (message / rejection reason / date)
+  // when the data exists.
+  requestCard: {
+    backgroundColor: '#ffffff',
+    borderColor: '#e2e8f0',
+    borderRadius: 14,
+    borderWidth: 1,
+    gap: 8,
+    marginBottom: 10,
+    marginHorizontal: 12,
+    padding: 12,
+    shadowColor: '#0f172a',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 1,
+  },
+  requestCardPressed: {
+    backgroundColor: '#f8fafc',
+  },
+  requestTopRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 12,
+  },
+  requestBody: {
+    flex: 1,
+    gap: 4,
+  },
+  requestNameRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+  },
+  requestName: {
+    color: '#0f172a',
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  requestTypeChip: {
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  requestTypeChipText: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+  },
+  requestMessage: {
+    color: '#475569',
+    fontSize: 12,
+    fontStyle: 'italic',
+    lineHeight: 17,
+  },
+  listContent: {
+    paddingBottom: 16,
+    paddingTop: 4,
   },
   // ---------- Pending sub-tabs (Received / Sent) ----------
   // Pills split the row 50/50 so the toggle reads as a proper segmented
