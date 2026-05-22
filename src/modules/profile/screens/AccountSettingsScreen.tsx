@@ -20,8 +20,12 @@ import {TenantContext} from '../../../core/tenant/TenantProvider';
 import {AppButton} from '../../../core/components/AppButton';
 import {AppCard} from '../../../core/components/AppCard';
 import {AppTextField} from '../../../core/components/AppTextField';
+import {CalendarPicker} from '../../../core/components/CalendarPicker';
+import {ConfirmModal} from '../../../core/components/ConfirmModal';
 import {Icon} from '../../../core/components/Icon';
-import {colors} from '../../../core/theme/colors';
+import {fromApi, toApi} from '../availabilityMapper';
+import {availabilityService} from '../services/availability.service';
+import {colors, withAlpha} from '../../../core/theme/colors';
 import {Picker} from './editProfile/Picker';
 import {useToast} from '../../../core/toast/ToastProvider';
 import {FeedbackModal} from '../../feedback/FeedbackWidget';
@@ -155,6 +159,22 @@ const DEFAULT_WEEKLY_AVAILABILITY: WeeklyAvailabilityRow[] = [
 
 const asString = (value: unknown) =>
   value === undefined || value === null ? '' : String(value).trim();
+
+// Renders "2026-05-22" as "May 22, 2026". Falls back to the raw label when
+// the input isn't a valid ISO date so manually-typed strings don't disappear.
+const formatSpecificDateLabel = (raw: string): string => {
+  if (!raw) return '';
+  const match = raw.trim().match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (!match) return raw;
+  const [, y, m, d] = match;
+  const parsed = new Date(Number(y), Number(m) - 1, Number(d));
+  if (Number.isNaN(parsed.getTime())) return raw;
+  return parsed.toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
+};
 
 const toAbsoluteAssetUrl = (
   value: unknown,
@@ -290,13 +310,13 @@ export function AccountSettingsScreen({
   const [specificDateRows, setSpecificDateRows] = useState<
     SpecificDateAvailabilityRow[]
   >([]);
-  const [availabilitySaveMessage, setAvailabilitySaveMessage] = useState<{
-    text: string;
-    tone: 'success' | 'error';
-  } | null>(null);
   const [timePickerTarget, setTimePickerTarget] =
     useState<TimePickerTarget>(null);
   const [isAddingSpecificDate, setIsAddingSpecificDate] = useState(false);
+  const [isCalendarPickerOpen, setIsCalendarPickerOpen] = useState(false);
+  const [pendingDeleteDateId, setPendingDeleteDateId] = useState<string | null>(
+    null,
+  );
   const [newSpecificDate, setNewSpecificDate] = useState<{
     dateLabel: string;
     unavailable: boolean;
@@ -359,6 +379,30 @@ export function AccountSettingsScreen({
   useEffect(() => {
     loadProfile();
   }, [loadProfile]);
+
+  // Hydrate availability from the calendar-availability endpoint on mount.
+  // Same endpoint the web uses, so changes made on either client stay in
+  // sync. Missing days fall back to the empty defaults already in state.
+  useEffect(() => {
+    let cancelled = false;
+    if (!token) return;
+    (async () => {
+      try {
+        const data = await availabilityService.get(token);
+        if (cancelled || !data) return;
+        const {mode, weekly, specificDates} = fromApi(data);
+        setAvailabilityMode(mode);
+        setWeeklyAvailability(weekly);
+        setSpecificDateRows(specificDates);
+      } catch {
+        // Non-fatal — first-time users will not have a record yet and the
+        // backend can 404. Defaults already in state will show.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
 
   useEffect(() => {
     if (!tabs.some(tab => tab.key === activeTab)) {
@@ -623,7 +667,6 @@ export function AccountSettingsScreen({
 
   const selectAvailabilityMode = (mode: AvailabilityMode) => {
     setAvailabilityMode(mode);
-    setAvailabilitySaveMessage(null);
   };
 
   const updateWeeklyAvailability = (
@@ -635,7 +678,6 @@ export function AccountSettingsScreen({
         row.dayKey === dayKey ? {...row, ...patch} : row,
       ),
     );
-    setAvailabilitySaveMessage(null);
   };
 
   const updateSpecificDateRow = (
@@ -645,7 +687,10 @@ export function AccountSettingsScreen({
     setSpecificDateRows(current =>
       current.map(row => (row.id === id ? {...row, ...patch} : row)),
     );
-    setAvailabilitySaveMessage(null);
+  };
+
+  const removeSpecificDateRow = (id: string) => {
+    setSpecificDateRows(current => current.filter(row => row.id !== id));
   };
 
   const addSpecificDateRow = () => {
@@ -656,16 +701,12 @@ export function AccountSettingsScreen({
       toTime: '',
     });
     setIsAddingSpecificDate(true);
-    setAvailabilitySaveMessage(null);
   };
 
   const handleSaveNewSpecificDate = () => {
     const trimmedDate = newSpecificDate.dateLabel.trim();
     if (!trimmedDate) {
-      setAvailabilitySaveMessage({
-        text: 'Please enter a date in yyyy-mm-dd format.',
-        tone: 'error',
-      });
+      toast.error('Please pick a date first.');
       return;
     }
 
@@ -686,7 +727,6 @@ export function AccountSettingsScreen({
       fromTime: '',
       toTime: '',
     });
-    setAvailabilitySaveMessage(null);
   };
 
   const handleCancelNewSpecificDate = () => {
@@ -697,7 +737,6 @@ export function AccountSettingsScreen({
       fromTime: '',
       toTime: '',
     });
-    setAvailabilitySaveMessage(null);
   };
 
   const assignTimeValue = (value: string) => {
@@ -722,12 +761,22 @@ export function AccountSettingsScreen({
     setTimePickerTarget(null);
   };
 
-  const handleSaveAvailability = () => {
-    setAvailabilitySaveMessage({
-      text:
-        'Availability Hours UI is ready. The save API is not confirmed yet, so this is staged locally for now.',
-      tone: 'success',
-    });
+  const handleSaveAvailability = async () => {
+    if (!token) {
+      toast.error('Could not save — sign in again.');
+      return;
+    }
+    try {
+      await availabilityService.update(
+        token,
+        toApi(availabilityMode, weeklyAvailability, specificDateRows),
+      );
+      toast.success('Availability hours saved.');
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Could not save availability.';
+      toast.error(message);
+    }
   };
 
   const renderTabs = () => (
@@ -983,6 +1032,8 @@ export function AccountSettingsScreen({
   const renderAvailabilityOption = (
     value: AvailabilityMode,
     label: string,
+    iconName: string,
+    description: string,
   ) => {
     const active = availabilityMode === value;
     return (
@@ -993,8 +1044,36 @@ export function AccountSettingsScreen({
         onPress={() => selectAvailabilityMode(value)}
         style={[
           styles.availabilityOption,
-          active && {borderColor: primaryColor},
+          active && {
+            borderColor: primaryColor,
+            backgroundColor: withAlpha(primaryColor, 0.08),
+          },
         ]}>
+        <View
+          style={[
+            styles.availabilityOptionIconWrap,
+            {
+              backgroundColor: active
+                ? withAlpha(primaryColor, 0.15)
+                : '#f1f5f9',
+            },
+          ]}>
+          <Icon
+            name={iconName}
+            size={20}
+            color={active ? primaryColor : '#64748b'}
+          />
+        </View>
+        <View style={styles.availabilityOptionCopy}>
+          <Text
+            style={[
+              styles.availabilityOptionText,
+              active && {color: primaryColor},
+            ]}>
+            {label}
+          </Text>
+          <Text style={styles.availabilityOptionHint}>{description}</Text>
+        </View>
         <View
           style={[
             styles.radioOuter,
@@ -1009,7 +1088,6 @@ export function AccountSettingsScreen({
             />
           ) : null}
         </View>
-        <Text style={styles.availabilityOptionText}>{label}</Text>
       </Pressable>
     );
   };
@@ -1024,6 +1102,11 @@ export function AccountSettingsScreen({
       disabled={disabled}
       onPress={onPress}
       style={[styles.timeCell, disabled && styles.timeCellDisabled]}>
+      <Icon
+        name="clock-outline"
+        size={16}
+        color={disabled ? '#cbd5e1' : '#94a3b8'}
+      />
       <Text
         style={[
           styles.timeCellText,
@@ -1034,25 +1117,59 @@ export function AccountSettingsScreen({
       </Text>
       <Icon
         name="chevron-down"
-        size={18}
+        size={16}
         color={disabled ? '#cbd5e1' : '#94a3b8'}
       />
     </Pressable>
   );
 
-  const renderAvailabilityTableHeader = (label: 'Day' | 'Date') => (
-    <View style={styles.tableHeaderRow}>
-      <Text style={[styles.tableHeaderText, styles.tableDayColumn]}>
-        {label}
+  const renderUnavailableToggle = (
+    checked: boolean,
+    onToggle: () => void,
+  ) => (
+    <Pressable
+      accessibilityRole="switch"
+      accessibilityState={{checked}}
+      onPress={onToggle}
+      style={styles.inlineSwitchWrap}>
+      <Text
+        style={[
+          styles.inlineSwitchLabel,
+          checked && {color: primaryColor},
+        ]}>
+        Unavailable
       </Text>
-      <Text style={[styles.tableHeaderText, styles.tableCheckColumn]}>
-        Not Available
-      </Text>
-      <Text style={[styles.tableHeaderText, styles.tableTimeColumn]}>
-        Time From
-      </Text>
-      <Text style={[styles.tableHeaderText, styles.tableTimeColumn]}>
-        Time To
+      <View
+        style={[
+          styles.switchTrack,
+          checked && {backgroundColor: primaryColor},
+        ]}>
+        <View
+          style={[
+            styles.switchThumb,
+            checked && styles.switchThumbActive,
+          ]}
+        />
+      </View>
+    </Pressable>
+  );
+
+  const renderDayBadge = (label: string, muted: boolean) => (
+    <View
+      style={[
+        styles.dayBadge,
+        {
+          backgroundColor: muted
+            ? '#f1f5f9'
+            : withAlpha(primaryColor, 0.12),
+        },
+      ]}>
+      <Text
+        style={[
+          styles.dayBadgeText,
+          {color: muted ? '#94a3b8' : primaryColor},
+        ]}>
+        {label.slice(0, 1)}
       </Text>
     </View>
   );
@@ -1070,247 +1187,380 @@ export function AccountSettingsScreen({
 
         <Text style={styles.availabilityLabel}>Choose an option</Text>
         <View style={styles.availabilityOptionsRow}>
-          {renderAvailabilityOption('anytime', 'Anytime')}
+          {renderAvailabilityOption(
+            'anytime',
+            'Anytime',
+            'calendar-check-outline',
+            'Available all the time',
+          )}
           {renderAvailabilityOption(
             'temporary-unavailable',
             'Temporary Unavailable',
+            'calendar-remove-outline',
+            'Pause new requests for now',
           )}
-          {renderAvailabilityOption('specific-days', 'Specific Days')}
+          {renderAvailabilityOption(
+            'specific-days',
+            'Specific Days',
+            'calendar-clock-outline',
+            'Pick weekly windows and dates',
+          )}
         </View>
 
         {showWeeklySchedule ? (
-          <View style={styles.availabilityTableSection}>
-            {renderAvailabilityTableHeader('Day')}
+          <View style={styles.availabilityScheduleSection}>
+            <Text style={styles.availabilitySectionTitle}>Weekly schedule</Text>
+            <Text style={styles.availabilitySectionHint}>
+              Set the hours you&apos;re available on each day of the week.
+            </Text>
             {weeklyAvailability.map(row => (
-              <View key={row.dayKey} style={styles.tableBodyRow}>
-                <Text style={[styles.tableBodyText, styles.tableDayColumn]}>
-                  {row.label}
-                </Text>
-                <View style={[styles.tableCheckColumn, styles.checkCellWrap]}>
-                  <Pressable
-                    accessibilityRole="checkbox"
-                    accessibilityState={{checked: row.unavailable}}
-                    onPress={() =>
-                      updateWeeklyAvailability(row.dayKey, {
-                        unavailable: !row.unavailable,
-                      })
-                    }
-                    style={[
-                      styles.checkbox,
-                      row.unavailable && {borderColor: primaryColor},
-                    ]}>
-                    {row.unavailable ? (
-                      <Icon name="check" size={16} color={primaryColor} />
-                    ) : null}
-                  </Pressable>
-                </View>
-                <View style={styles.tableTimeColumn}>
-                  {renderTimeCell(
-                    row.fromTime,
-                    () =>
-                      setTimePickerTarget({
-                        kind: 'weekly-from',
-                        dayKey: row.dayKey,
-                      }),
-                    row.unavailable,
+              <View
+                key={row.dayKey}
+                style={[
+                  styles.scheduleCard,
+                  row.unavailable && styles.scheduleCardMuted,
+                ]}>
+                <View style={styles.scheduleCardHeader}>
+                  <View style={styles.scheduleDayLeft}>
+                    {renderDayBadge(row.label, row.unavailable)}
+                    <Text
+                      style={[
+                        styles.scheduleCardTitle,
+                        row.unavailable && styles.scheduleCardTitleMuted,
+                      ]}>
+                      {row.label}
+                    </Text>
+                  </View>
+                  {renderUnavailableToggle(row.unavailable, () =>
+                    updateWeeklyAvailability(row.dayKey, {
+                      unavailable: !row.unavailable,
+                    }),
                   )}
                 </View>
-                <View style={styles.tableTimeColumn}>
-                  {renderTimeCell(
-                    row.toTime,
-                    () =>
-                      setTimePickerTarget({
-                        kind: 'weekly-to',
-                        dayKey: row.dayKey,
-                      }),
-                    row.unavailable,
-                  )}
-                </View>
+                {row.unavailable ? (
+                  <View style={styles.unavailableSlim}>
+                    <Icon
+                      name="moon-waning-crescent"
+                      size={14}
+                      color="#94a3b8"
+                    />
+                    <Text style={styles.unavailableSlimText}>
+                      Marked unavailable
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={styles.scheduleTimesRow}>
+                    <View style={styles.scheduleTimeCol}>
+                      <Text style={styles.scheduleTimeLabel}>From</Text>
+                      {renderTimeCell(
+                        row.fromTime,
+                        () =>
+                          setTimePickerTarget({
+                            kind: 'weekly-from',
+                            dayKey: row.dayKey,
+                          }),
+                        row.unavailable,
+                      )}
+                    </View>
+                    <View style={styles.scheduleTimeCol}>
+                      <Text style={styles.scheduleTimeLabel}>To</Text>
+                      {renderTimeCell(
+                        row.toTime,
+                        () =>
+                          setTimePickerTarget({
+                            kind: 'weekly-to',
+                            dayKey: row.dayKey,
+                          }),
+                        row.unavailable,
+                      )}
+                    </View>
+                  </View>
+                )}
               </View>
             ))}
           </View>
         ) : null}
 
         {showSpecificDatesSection ? (
-          <View style={styles.availabilityTableSection}>
-            <Text style={styles.availabilitySectionTitle}>Specific Dates</Text>
-            {renderAvailabilityTableHeader('Date')}
-            {specificDateRows.length === 0 ? (
-              <View style={styles.emptySpecificDatesRow}>
+          <View style={styles.availabilityScheduleSection}>
+            <Text style={styles.availabilitySectionTitle}>Specific dates</Text>
+            <Text style={styles.availabilitySectionHint}>
+              Override your default availability for one-off dates.
+            </Text>
+            {specificDateRows.length === 0 && !isAddingSpecificDate ? (
+              <View style={styles.emptySpecificDates}>
+                <View style={styles.emptySpecificDatesIcon}>
+                  <Icon name="calendar-blank-outline" size={22} color="#94a3b8" />
+                </View>
+                <Text style={styles.emptySpecificDatesTitle}>
+                  No specific dates yet
+                </Text>
                 <Text style={styles.emptySpecificDatesText}>
-                  No specific dates added yet
+                  Add a date to override your weekly availability.
                 </Text>
               </View>
             ) : (
               specificDateRows.map(row => (
-                <View key={row.id} style={styles.tableBodyRow}>
-                  <Text style={[styles.tableBodyText, styles.tableDayColumn]}>
-                    {row.dateLabel}
-                  </Text>
-                  <View style={[styles.tableCheckColumn, styles.checkCellWrap]}>
-                    <Pressable
-                      accessibilityRole="checkbox"
-                      accessibilityState={{checked: row.unavailable}}
-                      onPress={() =>
-                        updateSpecificDateRow(row.id, {
-                          unavailable: !row.unavailable,
-                        })
-                      }
+                <View
+                  key={row.id}
+                  style={[
+                    styles.scheduleCard,
+                    styles.specificDateCard,
+                    row.unavailable && styles.scheduleCardMuted,
+                  ]}>
+                  <View style={styles.scheduleCardHeader}>
+                    <View
                       style={[
-                        styles.checkbox,
-                        row.unavailable && {borderColor: primaryColor},
+                        styles.scheduleDateBadge,
+                        {
+                          backgroundColor: withAlpha(primaryColor, 0.1),
+                          borderColor: withAlpha(primaryColor, 0.25),
+                        },
                       ]}>
-                      {row.unavailable ? (
-                        <Icon name="check" size={16} color={primaryColor} />
-                      ) : null}
+                      <Icon
+                        name="calendar-blank-outline"
+                        size={14}
+                        color={primaryColor}
+                      />
+                      <Text
+                        style={[
+                          styles.scheduleDateBadgeText,
+                          {color: primaryColor},
+                        ]}>
+                        {formatSpecificDateLabel(row.dateLabel)}
+                      </Text>
+                    </View>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Remove date"
+                      hitSlop={8}
+                      onPress={() => setPendingDeleteDateId(row.id)}
+                      style={styles.scheduleCardDelete}>
+                      <Icon
+                        name="trash-can-outline"
+                        size={16}
+                        color="#94a3b8"
+                      />
                     </Pressable>
                   </View>
-                  <View style={styles.tableTimeColumn}>
-                    {renderTimeCell(
-                      row.fromTime,
-                      () =>
-                        setTimePickerTarget({
-                          kind: 'specific-from',
-                          id: row.id,
-                        }),
-                      row.unavailable,
+                  <View style={styles.scheduleToggleRow}>
+                    {renderUnavailableToggle(row.unavailable, () =>
+                      updateSpecificDateRow(row.id, {
+                        unavailable: !row.unavailable,
+                      }),
                     )}
                   </View>
-                  <View style={styles.tableTimeColumn}>
-                    {renderTimeCell(
-                      row.toTime,
-                      () =>
-                        setTimePickerTarget({
-                          kind: 'specific-to',
-                          id: row.id,
-                        }),
-                      row.unavailable,
-                    )}
-                  </View>
+                  {row.unavailable ? (
+                    <View style={styles.unavailableSlim}>
+                      <Icon
+                        name="moon-waning-crescent"
+                        size={14}
+                        color="#94a3b8"
+                      />
+                      <Text style={styles.unavailableSlimText}>
+                        Unavailable all day
+                      </Text>
+                    </View>
+                  ) : (
+                    <View style={styles.scheduleTimesRow}>
+                      <View style={styles.scheduleTimeCol}>
+                        <Text style={styles.scheduleTimeLabel}>From</Text>
+                        {renderTimeCell(
+                          row.fromTime,
+                          () =>
+                            setTimePickerTarget({
+                              kind: 'specific-from',
+                              id: row.id,
+                            }),
+                          row.unavailable,
+                        )}
+                      </View>
+                      <View style={styles.scheduleTimeCol}>
+                        <Text style={styles.scheduleTimeLabel}>To</Text>
+                        {renderTimeCell(
+                          row.toTime,
+                          () =>
+                            setTimePickerTarget({
+                              kind: 'specific-to',
+                              id: row.id,
+                            }),
+                          row.unavailable,
+                        )}
+                      </View>
+                    </View>
+                  )}
                 </View>
               ))
             )}
 
             {isAddingSpecificDate ? (
               <View style={styles.addDateCard}>
-                <Text style={styles.addDateTitle}>Add a date</Text>
-                <View style={styles.addDateDivider} />
-                <View style={styles.addDateRow}>
-                  <AppTextField
-                    value={newSpecificDate.dateLabel}
-                    onChangeText={text =>
-                      setNewSpecificDate(current => ({
-                        ...current,
-                        dateLabel: text,
-                      }))
-                    }
-                    placeholder="yyyy-mm-dd"
-                    containerStyle={styles.addDateField}
-                  />
-                  <View style={styles.addDateCheckWrap}>
-                    <Pressable
-                      accessibilityRole="checkbox"
-                      accessibilityState={{
-                        checked: newSpecificDate.unavailable,
-                      }}
-                      onPress={() =>
-                        setNewSpecificDate(current => ({
-                          ...current,
-                          unavailable: !current.unavailable,
-                          fromTime: !current.unavailable ? '' : current.fromTime,
-                          toTime: !current.unavailable ? '' : current.toTime,
-                        }))
-                      }
-                      style={[
-                        styles.checkbox,
-                        newSpecificDate.unavailable && {
-                          borderColor: primaryColor,
-                        },
-                      ]}>
-                      {newSpecificDate.unavailable ? (
-                        <Icon name="check" size={16} color={primaryColor} />
-                      ) : null}
-                    </Pressable>
-                    <Text style={styles.addDateCheckLabel}>Not available</Text>
+                <View style={styles.addDateHeader}>
+                  <View
+                    style={[
+                      styles.addDateIconWrap,
+                      {backgroundColor: withAlpha(primaryColor, 0.12)},
+                    ]}>
+                    <Icon
+                      name="calendar-plus"
+                      size={18}
+                      color={primaryColor}
+                    />
                   </View>
-                  <View style={styles.addDateTimeWrap}>
-                    {renderTimeCell(
-                      newSpecificDate.fromTime,
-                      () => setTimePickerTarget({kind: 'new-from'}),
-                      newSpecificDate.unavailable,
-                    )}
+                  <View style={styles.addDateHeaderCopy}>
+                    <Text style={styles.addDateTitle}>Add a date</Text>
+                    <Text style={styles.addDateSubtitle}>
+                      Override your availability for a single day.
+                    </Text>
                   </View>
-                  <View style={styles.addDateTimeWrap}>
-                    {renderTimeCell(
-                      newSpecificDate.toTime,
-                      () => setTimePickerTarget({kind: 'new-to'}),
-                      newSpecificDate.unavailable,
-                    )}
-                  </View>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Close"
+                    hitSlop={8}
+                    onPress={handleCancelNewSpecificDate}
+                    style={styles.addDateCloseButton}>
+                    <Icon name="close" size={16} color="#64748b" />
+                  </Pressable>
                 </View>
+                <View style={styles.addDateDivider} />
+
+                <View style={styles.addDateFormGroup}>
+                  <Text style={styles.addDateFieldLabel}>
+                    Date <Text style={{color: dangerColor}}>*</Text>
+                  </Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Pick a date"
+                    onPress={() => setIsCalendarPickerOpen(true)}
+                    style={styles.datePickerTrigger}>
+                    <Icon
+                      name="calendar-blank-outline"
+                      size={18}
+                      color={
+                        newSpecificDate.dateLabel ? primaryColor : '#94a3b8'
+                      }
+                    />
+                    <Text
+                      style={[
+                        styles.datePickerTriggerText,
+                        !newSpecificDate.dateLabel &&
+                          styles.datePickerTriggerPlaceholder,
+                      ]}>
+                      {newSpecificDate.dateLabel
+                        ? formatSpecificDateLabel(newSpecificDate.dateLabel)
+                        : 'Select a date'}
+                    </Text>
+                    <Icon name="chevron-down" size={18} color="#94a3b8" />
+                  </Pressable>
+                </View>
+
+                <Pressable
+                  accessibilityRole="switch"
+                  accessibilityState={{checked: newSpecificDate.unavailable}}
+                  onPress={() =>
+                    setNewSpecificDate(current => ({
+                      ...current,
+                      unavailable: !current.unavailable,
+                      fromTime: !current.unavailable ? '' : current.fromTime,
+                      toTime: !current.unavailable ? '' : current.toTime,
+                    }))
+                  }
+                  style={styles.allDayRow}>
+                  <View style={styles.allDayCopy}>
+                    <Text style={styles.allDayTitle}>Unavailable all day</Text>
+                    <Text style={styles.allDayHint}>
+                      Skip the time window for this date.
+                    </Text>
+                  </View>
+                  <View
+                    style={[
+                      styles.switchTrack,
+                      newSpecificDate.unavailable && {
+                        backgroundColor: primaryColor,
+                      },
+                    ]}>
+                    <View
+                      style={[
+                        styles.switchThumb,
+                        newSpecificDate.unavailable &&
+                          styles.switchThumbActive,
+                      ]}
+                    />
+                  </View>
+                </Pressable>
+
+                {!newSpecificDate.unavailable ? (
+                  <View style={styles.addDateFormGroup}>
+                    <Text style={styles.addDateFieldLabel}>Time window</Text>
+                    <View style={styles.scheduleTimesRow}>
+                      <View style={styles.scheduleTimeCol}>
+                        <Text style={styles.scheduleTimeLabel}>Starts</Text>
+                        {renderTimeCell(
+                          newSpecificDate.fromTime,
+                          () => setTimePickerTarget({kind: 'new-from'}),
+                          newSpecificDate.unavailable,
+                        )}
+                      </View>
+                      <View style={styles.scheduleTimeCol}>
+                        <Text style={styles.scheduleTimeLabel}>Ends</Text>
+                        {renderTimeCell(
+                          newSpecificDate.toTime,
+                          () => setTimePickerTarget({kind: 'new-to'}),
+                          newSpecificDate.unavailable,
+                        )}
+                      </View>
+                    </View>
+                  </View>
+                ) : null}
+
                 <View style={styles.addDateActions}>
-                  <AppButton
-                    fullWidth={false}
-                    label="Save"
+                  <Pressable
+                    accessibilityRole="button"
                     onPress={handleSaveNewSpecificDate}
                     style={[
-                      styles.addDateSaveButton,
+                      styles.addDateSavePrimary,
                       {backgroundColor: primaryColor},
-                    ]}
-                  />
-                  <AppButton
-                    fullWidth={false}
-                    label="Cancel"
+                    ]}>
+                    <Icon name="check" size={16} color="#ffffff" />
+                    <Text style={styles.addDateSavePrimaryLabel}>
+                      Save date
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
                     onPress={handleCancelNewSpecificDate}
-                    style={[styles.addDateCancelButton, {backgroundColor: secondaryColor}]}
-                    labelStyle={styles.addDateCancelLabel}
-                  />
+                    style={styles.addDateCancelGhost}>
+                    <Text style={styles.addDateCancelGhostLabel}>Cancel</Text>
+                  </Pressable>
                 </View>
               </View>
             ) : (
-              <View style={styles.addNewRow}>
-                <AppButton
-                  fullWidth={false}
-                  label="+ Add new"
-                  onPress={addSpecificDateRow}
-                  style={[styles.addNewButton, {backgroundColor: secondaryColor}]}
-                  labelStyle={styles.addNewButtonLabel}
-                />
-              </View>
+              <Pressable
+                accessibilityRole="button"
+                onPress={addSpecificDateRow}
+                style={[styles.addNewButton, {borderColor: primaryColor}]}>
+                <Icon name="plus" size={16} color={primaryColor} />
+                <Text
+                  style={[styles.addNewButtonLabel, {color: primaryColor}]}>
+                  Add new date
+                </Text>
+              </Pressable>
             )}
-          </View>
-        ) : null}
-
-        {availabilitySaveMessage ? (
-          <View
-            style={[
-              styles.saveMessage,
-              availabilitySaveMessage.tone === 'success'
-                ? styles.saveMessageSuccess
-                : styles.saveMessageError,
-            ]}>
-            <Text
-              style={[
-                styles.saveMessageText,
-                {
-                  color:
-                    availabilitySaveMessage.tone === 'success'
-                      ? successColor
-                      : dangerColor,
-                },
-              ]}>
-              {availabilitySaveMessage.text}
-            </Text>
           </View>
         ) : null}
 
         <View style={styles.formFooter}>
           <AppButton
-            fullWidth={false}
-            label="Save"
+            label="Save changes"
             onPress={handleSaveAvailability}
-            style={styles.saveButtonDisabled}
+            style={[styles.availabilitySaveButton, {backgroundColor: primaryColor}]}
           />
+          <View style={styles.availabilityFootnote}>
+            <Icon name="information-outline" size={13} color="#94a3b8" />
+            <Text style={styles.availabilityFootnoteText}>
+              Synced with your web calendar.
+            </Text>
+          </View>
         </View>
       </AppCard>
     );
@@ -1544,6 +1794,38 @@ export function AccountSettingsScreen({
         </View>
       </Modal>
 
+      <CalendarPicker
+        visible={isCalendarPickerOpen}
+        value={newSpecificDate.dateLabel}
+        onSelect={iso => {
+          setNewSpecificDate(current => ({...current, dateLabel: iso}));
+          setIsCalendarPickerOpen(false);
+        }}
+        onClose={() => setIsCalendarPickerOpen(false)}
+      />
+
+      <ConfirmModal
+        visible={pendingDeleteDateId !== null}
+        title="Remove this date?"
+        message={(() => {
+          const row = specificDateRows.find(
+            r => r.id === pendingDeleteDateId,
+          );
+          if (!row) return undefined;
+          return `${formatSpecificDateLabel(row.dateLabel)} will no longer override your weekly availability.`;
+        })()}
+        confirmLabel="Remove"
+        cancelLabel="Keep"
+        variant="destructive"
+        onConfirm={() => {
+          if (pendingDeleteDateId) {
+            removeSpecificDateRow(pendingDeleteDateId);
+          }
+          setPendingDeleteDateId(null);
+        }}
+        onCancel={() => setPendingDeleteDateId(null)}
+      />
+
       <Modal
         animationType="fade"
         transparent
@@ -1744,102 +2026,185 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   availabilityOptionsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
+    flexDirection: 'column',
+    gap: 10,
   },
   availabilityOption: {
     alignItems: 'center',
     backgroundColor: '#ffffff',
-    borderColor: '#dbe4ef',
-    borderRadius: 16,
-    borderStyle: 'dashed',
-    borderWidth: 1,
-    flexDirection: 'row',
-    minWidth: 200,
-    paddingHorizontal: 14,
-    paddingVertical: 16,
-  },
-  availabilityOptionText: {
-    color: '#1e293b',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  radioOuter: {
-    alignItems: 'center',
     borderColor: '#e2e8f0',
     borderRadius: 14,
-    borderWidth: 2,
-    height: 28,
-    justifyContent: 'center',
-    marginRight: 10,
-    width: 28,
-  },
-  radioInner: {
-    borderRadius: 8,
-    height: 14,
-    width: 14,
-  },
-  availabilityTableSection: {
-    marginTop: 28,
-  },
-  availabilitySectionTitle: {
-    color: '#0f172a',
-    fontSize: 16,
-    fontWeight: '800',
-    marginBottom: 14,
-  },
-  tableHeaderRow: {
-    backgroundColor: '#ffffff',
-    borderColor: '#e2e8f0',
     borderWidth: 1,
     flexDirection: 'row',
-    paddingHorizontal: 12,
+    gap: 12,
+    paddingHorizontal: 14,
     paddingVertical: 14,
   },
-  tableHeaderText: {
-    color: '#0f172a',
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  tableBodyRow: {
+  availabilityOptionIconWrap: {
     alignItems: 'center',
-    backgroundColor: '#f8fafc',
-    borderColor: '#e2e8f0',
-    borderLeftWidth: 1,
-    borderRightWidth: 1,
-    borderTopWidth: 1,
-    flexDirection: 'row',
-    minHeight: 80,
-    paddingHorizontal: 12,
+    borderRadius: 10,
+    height: 38,
+    justifyContent: 'center',
+    width: 38,
   },
-  tableBodyText: {
-    color: '#1e293b',
+  availabilityOptionCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  availabilityOptionText: {
+    color: '#0f172a',
     fontSize: 14,
     fontWeight: '700',
   },
-  tableDayColumn: {
-    flex: 1.2,
+  availabilityOptionHint: {
+    color: '#64748b',
+    fontSize: 12,
+    fontWeight: '500',
   },
-  tableCheckColumn: {
-    flex: 1,
-  },
-  tableTimeColumn: {
-    flex: 1.2,
-    marginLeft: 10,
-  },
-  checkCellWrap: {
+  radioOuter: {
     alignItems: 'center',
+    borderColor: '#cbd5e1',
+    borderRadius: 11,
+    borderWidth: 2,
+    height: 22,
+    justifyContent: 'center',
+    width: 22,
+  },
+  radioInner: {
+    borderRadius: 6,
+    height: 10,
+    width: 10,
+  },
+  availabilityScheduleSection: {
+    marginTop: 24,
+  },
+  availabilitySectionTitle: {
+    color: '#0f172a',
+    fontSize: 15,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  availabilitySectionHint: {
+    color: '#64748b',
+    fontSize: 12,
+    fontWeight: '500',
+    marginBottom: 14,
+  },
+  scheduleCard: {
+    backgroundColor: '#ffffff',
+    borderColor: '#e2e8f0',
+    borderRadius: 14,
+    borderWidth: 1,
+    gap: 14,
+    marginBottom: 10,
+    padding: 14,
+  },
+  scheduleCardMuted: {
+    backgroundColor: '#f8fafc',
+  },
+  scheduleCardHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 10,
+    justifyContent: 'space-between',
+  },
+  scheduleCardTitle: {
+    color: '#0f172a',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  scheduleDateBadge: {
+    alignItems: 'center',
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  scheduleDateBadgeText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  scheduleCardDelete: {
+    alignItems: 'center',
+    backgroundColor: '#f1f5f9',
+    borderRadius: 8,
+    height: 30,
+    justifyContent: 'center',
+    width: 30,
+  },
+  specificDateCard: {
+    gap: 12,
+  },
+  scheduleToggleRow: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+  },
+  scheduleTimesRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  scheduleTimeCol: {
+    flex: 1,
+    gap: 6,
+  },
+  scheduleTimeLabel: {
+    color: '#64748b',
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  inlineSwitchWrap: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  inlineSwitchLabel: {
+    color: '#64748b',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  dayBadge: {
+    alignItems: 'center',
+    borderRadius: 10,
+    height: 32,
+    justifyContent: 'center',
+    width: 32,
+  },
+  dayBadgeText: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  scheduleDayLeft: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 10,
+  },
+  scheduleCardTitleMuted: {
+    color: '#94a3b8',
+  },
+  unavailableSlim: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 6,
+    paddingTop: 2,
+  },
+  unavailableSlimText: {
+    color: '#94a3b8',
+    fontSize: 12,
+    fontWeight: '600',
   },
   checkbox: {
     alignItems: 'center',
     backgroundColor: '#ffffff',
     borderColor: '#cbd5e1',
-    borderRadius: 10,
-    borderWidth: 1,
-    height: 30,
+    borderRadius: 5,
+    borderWidth: 1.5,
+    height: 18,
     justifyContent: 'center',
-    width: 30,
+    width: 18,
   },
   timeCell: {
     alignItems: 'center',
@@ -1848,8 +2213,8 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 1,
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    minHeight: 46,
+    gap: 8,
+    minHeight: 44,
     paddingHorizontal: 12,
   },
   timeCellDisabled: {
@@ -1857,7 +2222,7 @@ const styles = StyleSheet.create({
     borderColor: '#e2e8f0',
   },
   timeCellText: {
-    color: '#334155',
+    color: '#0f172a',
     flex: 1,
     fontSize: 14,
     fontWeight: '600',
@@ -1869,98 +2234,231 @@ const styles = StyleSheet.create({
   timeCellTextDisabled: {
     color: '#cbd5e1',
   },
-  emptySpecificDatesRow: {
+  emptySpecificDates: {
     alignItems: 'center',
     backgroundColor: '#f8fafc',
     borderColor: '#e2e8f0',
-    borderLeftWidth: 1,
-    borderRightWidth: 1,
-    borderTopWidth: 1,
+    borderRadius: 14,
+    borderStyle: 'dashed',
+    borderWidth: 1,
+    gap: 6,
     paddingHorizontal: 16,
-    paddingVertical: 18,
+    paddingVertical: 22,
+  },
+  emptySpecificDatesIcon: {
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderRadius: 22,
+    height: 44,
+    justifyContent: 'center',
+    marginBottom: 4,
+    width: 44,
+  },
+  emptySpecificDatesTitle: {
+    color: '#0f172a',
+    fontSize: 14,
+    fontWeight: '700',
   },
   emptySpecificDatesText: {
-    color: '#334155',
-    fontSize: 14,
+    color: '#64748b',
+    fontSize: 12,
     fontWeight: '500',
-  },
-  addNewRow: {
-    borderColor: '#e2e8f0',
-    borderLeftWidth: 1,
-    borderRightWidth: 1,
-    borderBottomWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 16,
+    textAlign: 'center',
   },
   addNewButton: {
-    backgroundColor: '#1e1f3a',
-    minWidth: 140,
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    borderStyle: 'dashed',
+    borderWidth: 1.5,
+    flexDirection: 'row',
+    gap: 6,
+    justifyContent: 'center',
+    marginTop: 10,
+    paddingVertical: 12,
   },
   addNewButtonLabel: {
-    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '700',
   },
   addDateCard: {
     backgroundColor: '#ffffff',
     borderColor: '#e2e8f0',
     borderRadius: 16,
     borderWidth: 1,
-    marginTop: 14,
+    marginTop: 10,
     padding: 18,
+    shadowColor: '#0f172a',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 1,
+  },
+  addDateHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 12,
+  },
+  addDateIconWrap: {
+    alignItems: 'center',
+    borderRadius: 10,
+    height: 36,
+    justifyContent: 'center',
+    width: 36,
+  },
+  addDateHeaderCopy: {
+    flex: 1,
+    gap: 2,
   },
   addDateTitle: {
     color: '#0f172a',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '800',
+  },
+  addDateSubtitle: {
+    color: '#64748b',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  addDateCloseButton: {
+    alignItems: 'center',
+    backgroundColor: '#f1f5f9',
+    borderRadius: 14,
+    height: 28,
+    justifyContent: 'center',
+    width: 28,
   },
   addDateDivider: {
     backgroundColor: '#e2e8f0',
     height: 1,
     marginHorizontal: -18,
     marginTop: 14,
+    marginBottom: 16,
   },
-  addDateRow: {
-    alignItems: 'flex-end',
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 14,
-    marginTop: 16,
-  },
-  addDateField: {
-    flexGrow: 1,
-    flexShrink: 1,
-    marginTop: 0,
-    minWidth: 200,
-  },
-  addDateCheckWrap: {
-    alignItems: 'center',
-    flexDirection: 'column',
+  addDateFormGroup: {
     gap: 6,
-    paddingBottom: 4,
+    marginBottom: 14,
   },
-  addDateCheckLabel: {
-    color: '#64748b',
+  addDateFieldLabel: {
+    color: '#0f172a',
     fontSize: 13,
+    fontWeight: '700',
+  },
+  datePickerTrigger: {
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    borderColor: '#e2e8f0',
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+  },
+  datePickerTriggerText: {
+    color: '#0f172a',
+    flex: 1,
+    fontSize: 14,
     fontWeight: '600',
   },
-  addDateTimeWrap: {
-    flexGrow: 1,
-    flexShrink: 1,
-    minWidth: 160,
+  datePickerTriggerPlaceholder: {
+    color: '#94a3b8',
+    fontWeight: '500',
   },
-  addDateActions: {
+  allDayRow: {
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    borderColor: '#e2e8f0',
+    borderRadius: 12,
+    borderWidth: 1,
     flexDirection: 'row',
     gap: 12,
-    marginTop: 20,
+    marginBottom: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
   },
-  addDateSaveButton: {
-    minWidth: 120,
+  allDayCopy: {
+    flex: 1,
+    gap: 2,
   },
-  addDateCancelButton: {
-    backgroundColor: '#1e1f3a',
-    minWidth: 120,
+  allDayTitle: {
+    color: '#0f172a',
+    fontSize: 14,
+    fontWeight: '700',
   },
-  addDateCancelLabel: {
+  allDayHint: {
+    color: '#64748b',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  switchTrack: {
+    backgroundColor: '#cbd5e1',
+    borderRadius: 14,
+    height: 26,
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+    width: 46,
+  },
+  switchThumb: {
+    backgroundColor: '#ffffff',
+    borderRadius: 10,
+    height: 20,
+    shadowColor: '#0f172a',
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.15,
+    shadowRadius: 2,
+    elevation: 2,
+    width: 20,
+  },
+  switchThumbActive: {
+    transform: [{translateX: 20}],
+  },
+  addDateActions: {
+    flexDirection: 'column',
+    gap: 10,
+    marginTop: 6,
+  },
+  addDateCancelGhost: {
+    alignItems: 'center',
+    backgroundColor: '#f1f5f9',
+    borderRadius: 12,
+    justifyContent: 'center',
+    paddingVertical: 14,
+    width: '100%',
+  },
+  addDateCancelGhostLabel: {
+    color: '#334155',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  addDateSavePrimary: {
+    alignItems: 'center',
+    borderRadius: 12,
+    flexDirection: 'row',
+    gap: 6,
+    justifyContent: 'center',
+    paddingVertical: 14,
+    width: '100%',
+  },
+  addDateSavePrimaryLabel: {
     color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  availabilitySaveButton: {
+    marginTop: 4,
+  },
+  availabilityFootnote: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 6,
+    justifyContent: 'center',
+    marginTop: 10,
+  },
+  availabilityFootnoteText: {
+    color: '#94a3b8',
+    fontSize: 12,
+    fontWeight: '500',
   },
   photoSection: {
     alignItems: 'center',
@@ -2121,9 +2619,6 @@ const styles = StyleSheet.create({
     // Padding below the button prevents it from butting up against the
     // following sectionDivider — gives the save action room to breathe.
     marginBottom: 4,
-  },
-  saveButtonDisabled: {
-    minWidth: 170,
   },
   subSection: {
     gap: 4,
