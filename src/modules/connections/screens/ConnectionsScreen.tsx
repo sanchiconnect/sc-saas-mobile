@@ -619,6 +619,25 @@ export function ConnectionsScreen({
           pressed && styles.requestCardPressed,
         ]}
         onPress={() => setDetailFor(item)}>
+        {/* Floating chip in the top-right corner so the name + body can
+            use the full card width. */}
+        {accountType ? (
+          <View
+            style={[
+              styles.requestTypeChip,
+              styles.requestTypeChipCorner,
+              {
+                backgroundColor: withAlpha(primaryColor, 0.1),
+                borderColor: withAlpha(primaryColor, 0.25),
+              },
+            ]}>
+            <Text
+              style={[styles.requestTypeChipText, {color: primaryColor}]}>
+              {accountType.toUpperCase()}
+            </Text>
+          </View>
+        ) : null}
+
         <View style={styles.requestTopRow}>
           <View style={styles.avatarWrap}>
             <View
@@ -638,80 +657,63 @@ export function ConnectionsScreen({
             ) : null}
           </View>
           <View style={styles.requestBody}>
-            <View style={styles.requestNameRow}>
-              <Text style={styles.requestName} numberOfLines={1}>
-                {name}
+            <Text style={styles.requestName} numberOfLines={1}>
+              {name}
+            </Text>
+            {activeTab === 'pending' && item.message ? (
+              <Text style={styles.requestMessage} numberOfLines={2}>
+                “{stripHtml(item.message)}”
               </Text>
-            </View>
-            {accountType ? (
-              <View
-                style={[
-                  styles.requestTypeChip,
-                  {
-                    backgroundColor: withAlpha(primaryColor, 0.1),
-                    borderColor: withAlpha(primaryColor, 0.25),
-                  },
-                ]}>
-                <Text
-                  style={[
-                    styles.requestTypeChipText,
-                    {color: primaryColor},
-                  ]}>
-                  {accountType.toUpperCase()}
+            ) : null}
+            {activeTab === 'rejected' && item.actionMessage ? (
+              <Text style={styles.requestMessage} numberOfLines={2}>
+                Reason: {item.actionMessage}
+              </Text>
+            ) : null}
+            {activeTab === 'rejected' && rejectedTs ? (
+              <View style={styles.rejectedMeta}>
+                <Icon
+                  name="calendar-remove-outline"
+                  size={12}
+                  color="#dc2626"
+                />
+                <Text style={styles.rejectedMetaText}>
+                  Rejected on {formatDate(rejectedTs)}
                 </Text>
               </View>
             ) : null}
           </View>
-          {showActions ? (
-            <View style={styles.rowActions}>
-              <Pressable
-                disabled={isRowBusy}
-                onPress={() => handleAccept(item)}
-                style={[
-                  styles.actionButton,
-                  {backgroundColor: primaryColor},
-                  isRowBusy && styles.actionButtonBusy,
-                ]}>
-                {isRowBusy ? (
-                  <ActivityIndicator color="#ffffff" size="small" />
-                ) : (
-                  <Icon name="check" size={16} color="#ffffff" />
-                )}
-              </Pressable>
-              <Pressable
-                disabled={isRowBusy}
-                onPress={() => handleReject(item)}
-                style={[
-                  styles.actionButton,
-                  styles.actionButtonOutline,
-                  isRowBusy && styles.actionButtonBusy,
-                ]}>
-                <Icon name="close" size={16} color="#dc2626" />
-              </Pressable>
-            </View>
-          ) : null}
         </View>
 
-        {activeTab === 'pending' && item.message ? (
-          <Text style={styles.requestMessage} numberOfLines={2}>
-            “{stripHtml(item.message)}”
-          </Text>
-        ) : null}
-        {activeTab === 'rejected' && item.actionMessage ? (
-          <Text style={styles.requestMessage} numberOfLines={2}>
-            Reason: {item.actionMessage}
-          </Text>
-        ) : null}
-        {activeTab === 'rejected' && rejectedTs ? (
-          <View style={styles.rejectedMeta}>
-            <Icon
-              name="calendar-remove-outline"
-              size={12}
-              color="#dc2626"
-            />
-            <Text style={styles.rejectedMetaText}>
-              Rejected on {formatDate(rejectedTs)}
-            </Text>
+        {showActions ? (
+          <View style={styles.requestActions}>
+            <Pressable
+              disabled={isRowBusy}
+              onPress={() => handleAccept(item)}
+              style={[
+                styles.requestActionBtn,
+                styles.requestAcceptBtn,
+                {backgroundColor: primaryColor},
+                isRowBusy && styles.actionButtonBusy,
+              ]}>
+              {isRowBusy ? (
+                <ActivityIndicator color="#ffffff" size="small" />
+              ) : (
+                <Icon name="check" size={12} color="#ffffff" />
+              )}
+              <Text style={styles.requestAcceptLabel}>Accept</Text>
+            </Pressable>
+            <Pressable
+              disabled={isRowBusy}
+              onPress={() => handleReject(item)}
+              style={[
+                styles.requestActionBtn,
+                styles.requestRejectBtn,
+                isRowBusy && styles.actionButtonBusy,
+              ]}>
+              <Icon name="close" size={12} color="#dc2626" />
+              <Text style={styles.requestRejectLabel}>Reject</Text>
+            </Pressable>
           </View>
         ) : null}
       </Pressable>
@@ -1509,16 +1511,16 @@ const styles = StyleSheet.create({
   requestCard: {
     backgroundColor: '#ffffff',
     borderColor: '#e2e8f0',
-    borderRadius: 14,
+    borderRadius: 12,
     borderWidth: 1,
-    gap: 8,
-    marginBottom: 10,
+    gap: 6,
+    marginBottom: 8,
     marginHorizontal: 12,
-    padding: 12,
+    padding: 10,
     shadowColor: '#0f172a',
-    shadowOffset: {width: 0, height: 2},
+    shadowOffset: {width: 0, height: 1},
     shadowOpacity: 0.04,
-    shadowRadius: 6,
+    shadowRadius: 4,
     elevation: 1,
   },
   requestCardPressed: {
@@ -1527,11 +1529,11 @@ const styles = StyleSheet.create({
   requestTopRow: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: 12,
+    gap: 10,
   },
   requestBody: {
     flex: 1,
-    gap: 4,
+    gap: 3,
   },
   requestNameRow: {
     alignItems: 'center',
@@ -1539,9 +1541,10 @@ const styles = StyleSheet.create({
   },
   requestName: {
     color: '#0f172a',
-    flex: 1,
     fontSize: 15,
     fontWeight: '800',
+    // Reserve space for the floating chip on the FIRST line only.
+    paddingRight: 70,
   },
   requestTypeChip: {
     alignSelf: 'flex-start',
@@ -1550,10 +1553,48 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 2,
   },
+  // Floats the chip to the card's top-right corner.
+  requestTypeChipCorner: {
+    position: 'absolute',
+    right: 10,
+    top: 10,
+  },
   requestTypeChipText: {
     fontSize: 10,
     fontWeight: '800',
     letterSpacing: 0.6,
+  },
+  requestActions: {
+    flexDirection: 'row',
+    gap: 6,
+    justifyContent: 'flex-start',
+    marginTop: 4,
+  },
+  requestActionBtn: {
+    alignItems: 'center',
+    borderRadius: 8,
+    flexDirection: 'row',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  requestAcceptBtn: {},
+  requestAcceptLabel: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+  requestRejectBtn: {
+    backgroundColor: '#ffffff',
+    borderColor: '#fecaca',
+    borderWidth: 1,
+  },
+  requestRejectLabel: {
+    color: '#dc2626',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
   requestMessage: {
     color: '#475569',
@@ -1906,13 +1947,13 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   avatarWrap: {
-    height: 48,
-    width: 48,
+    height: 40,
+    width: 40,
   },
   avatar: {
-    borderRadius: 24,
-    height: 48,
-    width: 48,
+    borderRadius: 20,
+    height: 40,
+    width: 40,
   },
   avatarOverlay: {
     position: 'absolute',
@@ -1921,10 +1962,10 @@ const styles = StyleSheet.create({
   },
   avatarFallback: {
     alignItems: 'center',
-    borderRadius: 24,
-    height: 48,
+    borderRadius: 20,
+    height: 40,
     justifyContent: 'center',
-    width: 48,
+    width: 40,
   },
   // ---------- Active connection card ----------
   card: {
@@ -2108,7 +2149,7 @@ const styles = StyleSheet.create({
     marginVertical: 4,
   },
   avatarInitials: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '700',
   },
   rowBody: {
