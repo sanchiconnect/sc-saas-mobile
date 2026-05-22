@@ -164,7 +164,10 @@ function ToastHost({
           },
         ]}>
         <Icon name={palette.icon} size={20} color={palette.fg} />
-        <Text style={[styles.message, {color: palette.fg}]} numberOfLines={3}>
+        <Text
+          style={[styles.message, {color: palette.fg}]}
+          numberOfLines={1}
+          ellipsizeMode="tail">
           {toast.message}
         </Text>
         <Pressable
@@ -227,7 +230,10 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    alignItems: 'center',
+    // alignItems removed — the toast now stretches to use the host's full
+    // width (constrained by its own marginHorizontal) so longer messages
+    // like "Personal information saved." aren't truncated by an overly
+    // narrow minimum width.
     zIndex: 1000,
   },
   toast: {
@@ -239,8 +245,6 @@ const styles = StyleSheet.create({
     marginHorizontal: spacing.lg,
     borderWidth: 1,
     borderRadius: radii.lg,
-    minWidth: 240,
-    maxWidth: '92%',
     ...shadows.md,
   },
   message: {

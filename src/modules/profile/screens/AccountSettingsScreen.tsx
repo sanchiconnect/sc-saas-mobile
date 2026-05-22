@@ -14,11 +14,6 @@ import {
 } from 'react-native';
 import {launchImageLibrary} from 'react-native-image-picker';
 
-import {
-  linkedinUrl as linkedinValidator,
-  twitterUrl as twitterValidator,
-} from '../../../core/form/validators';
-
 import {AuthSession} from '../../auth/models/auth.models';
 import {authService} from '../../auth/services/auth.service';
 import {TenantContext} from '../../../core/tenant/TenantProvider';
@@ -27,7 +22,23 @@ import {AppCard} from '../../../core/components/AppCard';
 import {AppTextField} from '../../../core/components/AppTextField';
 import {Icon} from '../../../core/components/Icon';
 import {colors} from '../../../core/theme/colors';
+import {Picker} from './editProfile/Picker';
+import {useToast} from '../../../core/toast/ToastProvider';
 import {FeedbackModal} from '../../feedback/FeedbackWidget';
+
+// Supported country dial codes — mirrors COUNTRY_CODES in the frontend's
+// shared/constants/country-code.ts so the mobile picker offers the same
+// menu as the web's <ng-select>.
+const COUNTRY_CODES: Array<{name: string; value: string}> = [
+  {name: 'USA', value: '1'},
+  {name: 'India', value: '91'},
+  {name: 'Canada', value: '1'},
+  {name: 'United Arab Emirates', value: '971'},
+  {name: 'Singapore', value: '65'},
+];
+
+const formatCountryCodeOption = (entry: {name: string; value: string}) =>
+  `${entry.name} (+${entry.value})`;
 
 type AccountSettingsScreenProps = {
   token: string;
@@ -245,6 +256,7 @@ export function AccountSettingsScreen({
   onLogout,
 }: AccountSettingsScreenProps) {
   const {theme, globalSetting} = useContext(TenantContext);
+  const toast = useToast();
   const {width} = useWindowDimensions();
   const primaryColor = theme?.primary || colors.primary;
   const secondaryColor = theme?.secondary || '#1e1f3a';
@@ -316,14 +328,9 @@ export function AccountSettingsScreen({
   // Per-section save state for the three auto-save / separate-save controls.
   // Inline-saved bits don't share the top-level save banner because users
   // expect immediate feedback right next to the control.
-  const [isSavingNewsletter, setIsSavingNewsletter] = useState(false);
   const [isSavingDeactivate, setIsSavingDeactivate] = useState(false);
-  const [isSavingSocialLinks, setIsSavingSocialLinks] = useState(false);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
-  const [socialLinkErrors, setSocialLinkErrors] = useState<{
-    linkedin?: string;
-    twitter?: string;
-  }>({});
+  const [isCountryCodePickerOpen, setIsCountryCodePickerOpen] = useState(false);
 
   const loadProfile = useCallback(async () => {
     setIsLoading(true);
@@ -358,6 +365,15 @@ export function AccountSettingsScreen({
       setActiveTab('personal-information');
     }
   }, [activeTab, tabs]);
+
+  // Success messages auto-dismiss after 3s so they don't linger; errors stay
+  // visible until the user retries or edits the form (so they have time to
+  // read what went wrong).
+  useEffect(() => {
+    if (!saveMessage || saveMessage.tone !== 'success') return;
+    const timer = setTimeout(() => setSaveMessage(null), 3000);
+    return () => clearTimeout(timer);
+  }, [saveMessage]);
 
   const updatePersonalInformation = <
     K extends keyof PersonalInformation,
@@ -427,7 +443,7 @@ export function AccountSettingsScreen({
 
       setPersonalInformation(nextPersonalInformation);
       setInitialPersonalInformation(nextPersonalInformation);
-      setSaveMessage({text: 'Personal information saved.', tone: 'success'});
+      toast.success('Personal information saved.');
     } catch (error) {
       setSaveMessage({
         text:
@@ -531,7 +547,7 @@ export function AccountSettingsScreen({
         });
         // Refresh from server so we get the canonical CDN URL.
         await loadProfile();
-        setSaveMessage({text: 'Profile photo updated.', tone: 'success'});
+        toast.success('Profile photo updated.');
       } catch (error) {
         // Roll back the optimistic preview on failure.
         setPersonalInformation(current => ({
@@ -552,36 +568,6 @@ export function AccountSettingsScreen({
         'Avatar upload failed',
         error instanceof Error ? error.message : 'Could not select the image.',
       );
-    }
-  };
-
-  const handleNewsletterToggle = async (next: boolean) => {
-    // Optimistic update — flip the UI first, roll back on error.
-    const previous = personalInformation.subscribeToNewsletter;
-    setPersonalInformation(current => ({
-      ...current,
-      subscribeToNewsletter: next,
-    }));
-    setIsSavingNewsletter(true);
-    try {
-      await authService.updateNewsletterSubscription(token, next);
-      setInitialPersonalInformation(current => ({
-        ...current,
-        subscribeToNewsletter: next,
-      }));
-    } catch (error) {
-      setPersonalInformation(current => ({
-        ...current,
-        subscribeToNewsletter: previous,
-      }));
-      Alert.alert(
-        'Newsletter update failed',
-        error instanceof Error
-          ? error.message
-          : 'Could not update newsletter preference.',
-      );
-    } finally {
-      setIsSavingNewsletter(false);
     }
   };
 
@@ -610,12 +596,11 @@ export function AccountSettingsScreen({
                 ...current,
                 isDeactivated: nextDeactivated,
               }));
-              setSaveMessage({
-                text: nextDeactivated
+              toast.success(
+                nextDeactivated
                   ? 'Account deactivated.'
                   : 'Account reactivated.',
-                tone: 'success',
-              });
+              );
             } catch (error) {
               setPersonalInformation(current => ({
                 ...current,
@@ -634,39 +619,6 @@ export function AccountSettingsScreen({
         },
       ],
     );
-  };
-
-  const handleSaveSocialLinks = async () => {
-    const linkedin = personalInformation.linkedinUrl.trim();
-    const twitter = personalInformation.twitterUrl.trim();
-    const errors: {linkedin?: string; twitter?: string} = {};
-    const linkedinErr = linkedin ? linkedinValidator(linkedin) : undefined;
-    const twitterErr = twitter ? twitterValidator(twitter) : undefined;
-    if (linkedinErr) errors.linkedin = linkedinErr;
-    if (twitterErr) errors.twitter = twitterErr;
-    setSocialLinkErrors(errors);
-    if (linkedinErr || twitterErr) return;
-
-    setIsSavingSocialLinks(true);
-    try {
-      await authService.updateUserSocialLinks(token, {
-        linkedinUrl: linkedin,
-        twitterUrl: twitter,
-      });
-      setInitialPersonalInformation(current => ({
-        ...current,
-        linkedinUrl: linkedin,
-        twitterUrl: twitter,
-      }));
-      setSaveMessage({text: 'Social links saved.', tone: 'success'});
-    } catch (error) {
-      Alert.alert(
-        'Save failed',
-        error instanceof Error ? error.message : 'Could not save social links.',
-      );
-    } finally {
-      setIsSavingSocialLinks(false);
-    }
   };
 
   const selectAvailabilityMode = (mode: AvailabilityMode) => {
@@ -814,11 +766,12 @@ export function AccountSettingsScreen({
   const renderReadonlyField = (
     label: string,
     value: string,
-    options?: {helperText?: string},
+    options?: {helperText?: string; required?: boolean},
   ) => (
     <AppTextField
       editable={false}
       label={label}
+      required={options?.required}
       value={value}
       helperText={options?.helperText}
       placeholder="Not available"
@@ -834,49 +787,43 @@ export function AccountSettingsScreen({
 
       {showAvatarSection ? (
         <View style={styles.photoSection}>
-          <Text style={styles.photoLabel}>Your Photo</Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Change profile photo"
+            onPress={handleAvatarPress}
+            disabled={isUploadingAvatar}
+            style={styles.photoFrame}>
+            {personalInformation.avatarUrl ? (
+              <Image
+                source={{uri: personalInformation.avatarUrl}}
+                style={styles.photoImage}
+              />
+            ) : (
+              <View style={styles.photoPlaceholder}>
+                <Icon name="account-outline" size={36} color="#94a3b8" />
+              </View>
+            )}
+            <View style={[styles.photoBadge, {backgroundColor: primaryColor}]}>
+              <Icon name="camera" size={14} color="#ffffff" />
+            </View>
+          </Pressable>
 
-          <View style={styles.photoDetails}>
+          <View style={styles.photoCopy}>
+            <Text style={styles.photoHintTitle}>Profile photo</Text>
+            <Text style={styles.photoHintBody}>
+              {isUploadingAvatar
+                ? 'Uploading…'
+                : 'PNG, JPG, or JPEG · up to 10MB'}
+            </Text>
             <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Profile photo actions"
               onPress={handleAvatarPress}
               disabled={isUploadingAvatar}
-              style={styles.photoFrame}>
-              {personalInformation.avatarUrl ? (
-                <Image
-                  source={{uri: personalInformation.avatarUrl}}
-                  style={styles.photoImage}
-                />
-              ) : (
-                <View style={styles.photoPlaceholder}>
-                  <Icon name="account-outline" size={34} color="#94a3b8" />
-                  <Text style={styles.photoPlaceholderText}>No photo</Text>
-                </View>
-              )}
-
-              <View style={styles.photoBadge}>
-                <Icon name="pencil" size={14} color="#64748b" />
-              </View>
-            </Pressable>
-
-            <View style={styles.photoCopy}>
-              <Text style={styles.photoHintTitle}>Profile photo</Text>
-              <Text style={styles.photoHintBody}>
-                {isUploadingAvatar
-                  ? 'Uploading…'
-                  : 'PNG, JPG, or JPEG up to 10MB.'}
+              hitSlop={4}
+              style={styles.photoActionPill}>
+              <Text style={[styles.photoAction, {color: primaryColor}]}>
+                {personalInformation.avatarUrl ? 'Change photo' : 'Upload photo'}
               </Text>
-              <Pressable
-                onPress={handleAvatarPress}
-                disabled={isUploadingAvatar}>
-                <Text style={[styles.photoAction, {color: primaryColor}]}>
-                  {personalInformation.avatarUrl
-                    ? 'Change photo'
-                    : 'Upload photo'}
-                </Text>
-              </Pressable>
-            </View>
+            </Pressable>
           </View>
         </View>
       ) : null}
@@ -890,14 +837,7 @@ export function AccountSettingsScreen({
         containerStyle={styles.field}
         autoCapitalize="words"
       />
-      {renderReadonlyField(
-        'Email',
-        personalInformation.email,
-        {
-          helperText:
-            'To change your email address, please contact your support team.',
-        },
-      )}
+      {renderReadonlyField('Email', personalInformation.email, {required: true})}
       <AppTextField
         label="Designation"
         required
@@ -908,19 +848,19 @@ export function AccountSettingsScreen({
         autoCapitalize="words"
       />
       <View style={styles.phoneRow}>
-        <AppTextField
-          label="Country Code"
-          value={`+${personalInformation.countryCode}`}
-          onChangeText={text =>
-            updatePersonalInformation(
-              'countryCode',
-              text.replace(/[^0-9]/g, '').slice(0, 4),
-            )
-          }
-          placeholder="+91"
-          containerStyle={[styles.field, styles.countryCodeField]}
-          keyboardType="phone-pad"
-        />
+        <View style={[styles.field, styles.countryCodeField]}>
+          <Text style={styles.countryCodeLabel}>Country Code</Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Choose country code"
+            onPress={() => setIsCountryCodePickerOpen(true)}
+            style={styles.countryCodeDropdown}>
+            <Text style={styles.countryCodeValue}>
+              +{personalInformation.countryCode || '91'}
+            </Text>
+            <Icon name="chevron-down" size={18} color="#64748b" />
+          </Pressable>
+        </View>
         <AppTextField
           label="Mobile Number"
           required
@@ -952,14 +892,6 @@ export function AccountSettingsScreen({
         />
       ) : null}
 
-      <View style={styles.infoBanner}>
-        <Icon name="information-outline" size={18} color="#1d4ed8" />
-        <Text style={styles.infoBannerText}>
-          Email cannot be changed from the app — contact your support team if
-          you need to update it.
-        </Text>
-      </View>
-
       {saveMessage ? (
         <View
           style={[
@@ -983,80 +915,15 @@ export function AccountSettingsScreen({
 
       <View style={styles.formFooter}>
         <AppButton
-          fullWidth={false}
           label="Save Changes"
           loading={isSaving}
           loadingLabel="Saving..."
-          disabled={!isDirty}
+          // Always enabled (except while submitting) — users found the
+          // disable-when-pristine state confusing since the form looks
+          // fully filled. The handler validates required fields before
+          // posting, so an unnecessary tap still surfaces useful feedback.
+          disabled={isSaving}
           onPress={handleSavePersonalInformation}
-          style={styles.saveButtonDisabled}
-        />
-      </View>
-
-      <View style={styles.sectionDivider} />
-
-      <View style={styles.subSection}>
-        <Text style={styles.subSectionTitle}>Social Links</Text>
-        <AppTextField
-          label="LinkedIn URL"
-          value={personalInformation.linkedinUrl}
-          onChangeText={text => {
-            updatePersonalInformation('linkedinUrl', text);
-            if (socialLinkErrors.linkedin) {
-              setSocialLinkErrors(prev => ({...prev, linkedin: undefined}));
-            }
-          }}
-          placeholder="https://linkedin.com/in/your-handle"
-          error={socialLinkErrors.linkedin}
-          autoCapitalize="none"
-          keyboardType="url"
-          containerStyle={styles.field}
-        />
-        <AppTextField
-          label="X / Twitter URL"
-          value={personalInformation.twitterUrl}
-          onChangeText={text => {
-            updatePersonalInformation('twitterUrl', text);
-            if (socialLinkErrors.twitter) {
-              setSocialLinkErrors(prev => ({...prev, twitter: undefined}));
-            }
-          }}
-          placeholder="https://x.com/your-handle"
-          error={socialLinkErrors.twitter}
-          autoCapitalize="none"
-          keyboardType="url"
-          containerStyle={styles.field}
-        />
-        <View style={styles.formFooter}>
-          <AppButton
-            fullWidth={false}
-            label="Save Social Links"
-            loading={isSavingSocialLinks}
-            loadingLabel="Saving..."
-            onPress={handleSaveSocialLinks}
-          />
-        </View>
-      </View>
-
-      <View style={styles.sectionDivider} />
-
-      <View style={styles.toggleRow}>
-        <View style={styles.toggleCopy}>
-          <Text style={styles.toggleTitle}>Subscribe to newsletter</Text>
-          <Text style={styles.toggleHint}>
-            Receive product updates and announcements over email.
-          </Text>
-        </View>
-        <Switch
-          value={personalInformation.subscribeToNewsletter}
-          onValueChange={handleNewsletterToggle}
-          disabled={isSavingNewsletter}
-          trackColor={{false: '#cbd5e1', true: `${primaryColor}55`}}
-          thumbColor={
-            personalInformation.subscribeToNewsletter
-              ? primaryColor
-              : '#f1f5f9'
-          }
         />
       </View>
 
@@ -1092,28 +959,25 @@ export function AccountSettingsScreen({
   );
 
   const renderDeleteCard = () => (
-    <AppCard
-      style={styles.deleteCard}
-      header={
-        <Text style={[styles.deleteTitle, {color: dangerColor}]}>
-          Delete Account
+    <View style={styles.deleteSection}>
+      <View style={styles.deleteCopy}>
+        <Text style={styles.deleteSectionTitle}>Delete account</Text>
+        <Text style={styles.deleteSectionBody}>
+          Permanently removes your profile, data, and connections. This cannot
+          be undone.
         </Text>
-      }>
-      <View style={styles.sectionDivider} />
-      <Text style={styles.deleteBody}>
-        Deleting your account permanently removes your profile, data, and
-        connections from the platform. This action cannot be undone.
-      </Text>
-      <View style={styles.deleteFooter}>
-        <AppButton
-          fullWidth={false}
-          label="Delete Account"
-          onPress={() => setIsDeleteModalVisible(true)}
-          style={[styles.deleteButton, {backgroundColor: dangerColor}]}
-          labelStyle={styles.deleteButtonLabel}
-        />
       </View>
-    </AppCard>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Delete account"
+        onPress={() => setIsDeleteModalVisible(true)}
+        style={styles.deleteLink}>
+        <Icon name="trash-can-outline" size={16} color={dangerColor} />
+        <Text style={[styles.deleteLinkText, {color: dangerColor}]}>
+          Delete account
+        </Text>
+      </Pressable>
+    </View>
   );
 
   const renderAvailabilityOption = (
@@ -1534,18 +1398,23 @@ export function AccountSettingsScreen({
           <View style={styles.headerCopy}>
             <Text style={styles.pageTitle}>Account Settings</Text>
             <Text style={styles.pageSubtitle}>
-              Review your account information and keep unsupported actions safely
-              gated until their mobile APIs are ready.
+              Manage your personal information, preferences, and account
+              controls.
             </Text>
           </View>
 
-          <AppButton
-            fullWidth={false}
-            label="Leave Feedback"
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Leave feedback"
             onPress={() => setIsFeedbackModalVisible(true)}
-            variant="secondary"
-            style={styles.feedbackButton}
-          />
+            hitSlop={6}
+            style={styles.feedbackIconButton}>
+            <Icon
+              name="message-text-outline"
+              size={20}
+              color={primaryColor}
+            />
+          </Pressable>
         </View>
 
         {loadError ? (
@@ -1573,6 +1442,35 @@ export function AccountSettingsScreen({
       <FeedbackModal
         visible={isFeedbackModalVisible}
         onClose={() => setIsFeedbackModalVisible(false)}
+      />
+
+      <Picker
+        visible={isCountryCodePickerOpen}
+        title="Select country code"
+        options={COUNTRY_CODES.map(formatCountryCodeOption)}
+        selected={
+          COUNTRY_CODES.find(
+            c => c.value === personalInformation.countryCode,
+          )
+            ? formatCountryCodeOption(
+                COUNTRY_CODES.find(
+                  c => c.value === personalInformation.countryCode,
+                )!,
+              )
+            : undefined
+        }
+        primaryColor={primaryColor}
+        searchable
+        onClose={() => setIsCountryCodePickerOpen(false)}
+        onSelect={(label: string) => {
+          const match = COUNTRY_CODES.find(
+            c => formatCountryCodeOption(c) === label,
+          );
+          if (match) {
+            updatePersonalInformation('countryCode', match.value);
+          }
+          setIsCountryCodePickerOpen(false);
+        }}
       />
 
       <Modal
@@ -1717,34 +1615,50 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   headerRow: {
-    alignItems: 'flex-start',
+    alignItems: 'center',
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 14,
+    gap: 12,
     marginBottom: 20,
   },
   backButton: {
     alignItems: 'center',
     backgroundColor: '#ffffff',
-    borderRadius: 14,
-    height: 48,
+    borderRadius: 12,
+    elevation: 1,
+    height: 40,
     justifyContent: 'center',
-    width: 48,
+    shadowColor: '#0f172a',
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    width: 40,
   },
   headerCopy: {
     flex: 1,
-    minWidth: 240,
   },
   pageTitle: {
     color: '#0f172a',
-    fontSize: 30,
+    fontSize: 22,
     fontWeight: '800',
   },
   pageSubtitle: {
     color: '#64748b',
-    fontSize: 15,
-    lineHeight: 22,
-    marginTop: 8,
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 3,
+  },
+  feedbackIconButton: {
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    elevation: 1,
+    height: 40,
+    justifyContent: 'center',
+    shadowColor: '#0f172a',
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    width: 40,
   },
   feedbackButton: {
     minWidth: 160,
@@ -1820,7 +1734,7 @@ const styles = StyleSheet.create({
   sectionDivider: {
     backgroundColor: '#e2e8f0',
     height: 1,
-    marginBottom: 18,
+    marginVertical: 18,
     marginHorizontal: -20,
   },
   availabilityLabel: {
@@ -2049,7 +1963,10 @@ const styles = StyleSheet.create({
     color: '#ffffff',
   },
   photoSection: {
-    marginBottom: 12,
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 16,
+    marginBottom: 16,
   },
   photoLabel: {
     color: '#334155',
@@ -2064,25 +1981,23 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   photoFrame: {
-    backgroundColor: '#f8fafc',
-    borderColor: '#dbe4ef',
-    borderRadius: 18,
-    borderWidth: 1,
-    minHeight: 132,
-    minWidth: 132,
-    padding: 8,
+    alignItems: 'center',
+    backgroundColor: '#f1f5f9',
+    borderRadius: 40,
+    height: 80,
+    justifyContent: 'center',
+    overflow: 'visible',
     position: 'relative',
+    width: 80,
   },
   photoImage: {
-    borderRadius: 14,
-    height: 116,
-    width: 116,
+    borderRadius: 40,
+    height: 80,
+    width: 80,
   },
   photoPlaceholder: {
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 116,
-    minWidth: 116,
   },
   photoPlaceholderText: {
     color: '#94a3b8',
@@ -2092,18 +2007,18 @@ const styles = StyleSheet.create({
   },
   photoBadge: {
     alignItems: 'center',
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    height: 32,
+    borderColor: '#ffffff',
+    borderRadius: 14,
+    borderWidth: 2,
+    bottom: -2,
+    height: 28,
     justifyContent: 'center',
     position: 'absolute',
-    right: -6,
-    top: -8,
-    width: 32,
+    right: -2,
+    width: 28,
   },
   photoCopy: {
     flex: 1,
-    minWidth: 200,
   },
   photoHintTitle: {
     color: '#0f172a',
@@ -2112,14 +2027,16 @@ const styles = StyleSheet.create({
   },
   photoHintBody: {
     color: '#64748b',
-    fontSize: 14,
-    lineHeight: 21,
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 2,
+  },
+  photoActionPill: {
     marginTop: 6,
   },
   photoAction: {
     fontSize: 13,
     fontWeight: '700',
-    marginTop: 8,
   },
   field: {
     marginTop: 16,
@@ -2147,6 +2064,29 @@ const styles = StyleSheet.create({
   },
   countryCodeField: {
     flex: 0.8,
+  },
+  countryCodeLabel: {
+    color: '#334155',
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 6,
+  },
+  countryCodeDropdown: {
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderColor: '#e2e8f0',
+    borderRadius: 10,
+    borderWidth: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    minHeight: 48,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  countryCodeValue: {
+    color: '#0f172a',
+    fontSize: 15,
+    fontWeight: '600',
   },
   mobileNumberField: {
     flex: 1.6,
@@ -2177,8 +2117,10 @@ const styles = StyleSheet.create({
     color: '#991b1b',
   },
   formFooter: {
-    alignItems: 'flex-end',
     marginTop: 22,
+    // Padding below the button prevents it from butting up against the
+    // following sectionDivider — gives the save action room to breathe.
+    marginBottom: 4,
   },
   saveButtonDisabled: {
     minWidth: 170,
@@ -2212,6 +2154,45 @@ const styles = StyleSheet.create({
     color: '#64748b',
     fontSize: 12,
     lineHeight: 16,
+  },
+  // Subtle, non-aggressive delete-account section — a quiet row at the
+  // bottom of the page with a danger-coloured link instead of a big red card.
+  deleteSection: {
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderColor: '#e2e8f0',
+    borderRadius: 16,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  deleteCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  deleteSectionTitle: {
+    color: '#0f172a',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  deleteSectionBody: {
+    color: '#64748b',
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  deleteLink: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  deleteLinkText: {
+    fontSize: 13,
+    fontWeight: '700',
   },
   deleteCard: {
     borderColor: '#fda4af',
