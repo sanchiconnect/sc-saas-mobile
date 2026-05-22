@@ -14,6 +14,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  RefreshControl,
   StyleSheet,
   Text,
   TextInput,
@@ -27,10 +28,11 @@ import {launchImageLibrary} from 'react-native-image-picker';
 import {pick, types as DocumentPickerTypes} from '@react-native-documents/picker';
 import EmojiPicker from 'rn-emoji-keyboard';
 
+import {ConfirmModal} from '../../../core/components/ConfirmModal';
 import {ReplyThreadSheet} from '../components/ReplyThreadSheet';
 import {chatService} from '../services/chat.service';
 import {chatSocket} from '../services/chat.socket';
-import type {Conversation, Message} from '../types';
+import type {Conversation, ConversationParticipant, Message} from '../types';
 import {stripHtml} from '../utils';
 
 type Props = {
@@ -53,36 +55,63 @@ const formatTime = (raw?: string): string => {
   });
 };
 
-// Resolve the counterparty's display name for header + initials fallback.
+// Match the web's getConversationTitle(): for 1:1 chats prefer the *other*
+// member's name (so users see their counterparty, not a slash-concatenated
+// conversation name); for group chats fall back to conversation.name.
+const findOtherMember = (
+  conversation: Conversation,
+  currentUserUuid?: string,
+): ConversationParticipant | undefined => {
+  if (conversation.otherUser) return conversation.otherUser;
+  const pool =
+    conversation.members && conversation.members.length > 0
+      ? conversation.members
+      : conversation.participants;
+  return pool?.find(p => p.uuid !== currentUserUuid);
+};
+
+const isDirectChat = (conversation: Conversation): boolean => {
+  if (conversation.conversationType === 'user') return true;
+  if (conversation.chatType === 'private') return true;
+  const pool =
+    conversation.members && conversation.members.length > 0
+      ? conversation.members
+      : conversation.participants;
+  if (pool && pool.length === 2) return true;
+  return false;
+};
+
 const resolveHeaderName = (
   conversation: Conversation,
   currentUserUuid?: string,
 ): string => {
-  if (conversation.name) return conversation.name;
-  const other =
-    conversation.otherUser ||
-    conversation.participants?.find(p => p.uuid !== currentUserUuid);
-  return other?.name || 'Conversation';
+  if (isDirectChat(conversation)) {
+    const other = findOtherMember(conversation, currentUserUuid);
+    if (other?.name) return other.name;
+  }
+  return conversation.name || 'Conversation';
 };
 
 const resolveHeaderAvatar = (
   conversation: Conversation,
   currentUserUuid?: string,
 ): string | null => {
-  if (conversation.logo) return conversation.logo;
-  if (conversation.avatar) return conversation.avatar;
-  const other =
-    conversation.otherUser ||
-    conversation.participants?.find(p => p.uuid !== currentUserUuid);
-  return other?.avatar || null;
+  if (isDirectChat(conversation)) {
+    const other = findOtherMember(conversation, currentUserUuid);
+    if (other?.avatar) return other.avatar;
+  }
+  return conversation.logo || conversation.avatar || null;
 };
 
-// Decide if a message was sent by the current user. Backend either embeds the
-// sender uuid directly on `senderUUID` or in a nested sender object.
+// Decide if a message was sent by the current user. The web compares against
+// `message.user.uuid` — match that primarily and keep `sender` / `senderUUID`
+// as fallbacks for sockets / older payloads.
 const isOwnMessage = (m: Message, currentUserUuid?: string): boolean => {
   if (!currentUserUuid) return false;
   return (
-    m.senderUUID === currentUserUuid || m.sender?.uuid === currentUserUuid
+    m.user?.uuid === currentUserUuid ||
+    m.senderUUID === currentUserUuid ||
+    m.sender?.uuid === currentUserUuid
   );
 };
 
@@ -101,6 +130,7 @@ export function ConversationDetailScreen({
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [draft, setDraft] = useState('');
@@ -113,6 +143,11 @@ export function ConversationDetailScreen({
   // Active reply target — when set, the ReplyThreadSheet renders for this
   // parent message. Null = no thread open.
   const [replyParent, setReplyParent] = useState<Message | null>(null);
+  // Long-press → ConfirmModal flow for deleting your own messages. Holds the
+  // pending message until the user confirms or cancels.
+  const [pendingDeleteMessage, setPendingDeleteMessage] =
+    useState<Message | null>(null);
+  const [isDeletingMessage, setIsDeletingMessage] = useState(false);
 
   // Attachment + emoji UI state. `attachmentUploading` blocks send and shows
   // a spinner on the active attachment icon. `emojiPickerOpen` toggles the
@@ -250,6 +285,46 @@ export function ConversationDetailScreen({
     setIsLoadingMore(true);
     await fetchPage(currentPage + 1, 'prepend');
     setIsLoadingMore(false);
+  };
+
+  // Delete (soft) the user's own message. Mirrors the web's handleDelete:
+  // hit the API, then mark the local copy as deleted so the "tombstone"
+  // bubble renders without removing the row.
+  const handleConfirmDelete = async () => {
+    const target = pendingDeleteMessage;
+    if (!target?.uuid) return;
+    setIsDeletingMessage(true);
+    try {
+      await chatService.deleteMessage(token, conversation.uuid, target.uuid);
+      setMessages(prev =>
+        prev.map(m =>
+          m.uuid === target.uuid
+            ? {...m, isDeleted: true, message: 'Deleted'}
+            : m,
+        ),
+      );
+      setPendingDeleteMessage(null);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'Could not delete the message.',
+      );
+    } finally {
+      setIsDeletingMessage(false);
+    }
+  };
+
+  // Pull-to-refresh: re-fetch the first page and replace the visible list.
+  // Skipped while a paginated load-older is already in flight to avoid
+  // racing two writes against the same messages state.
+  const handleRefresh = async () => {
+    if (isRefreshing || isLoadingMore) return;
+    setIsRefreshing(true);
+    try {
+      await fetchPage(1, 'replace');
+      setCurrentPage(1);
+    } finally {
+      setIsRefreshing(false);
+    }
   };
 
   // Append an attachment message to the local list after a successful upload.
@@ -409,7 +484,7 @@ export function ConversationDetailScreen({
     }
   };
 
-  const renderMessage = ({item}: {item: Message}) => {
+  const renderMessage = ({item, index}: {item: Message; index: number}) => {
     const own = isOwnMessage(item, currentUserUuid);
     const time = formatTime(item.createdAt);
     const body = item.isDeleted
@@ -422,13 +497,22 @@ export function ConversationDetailScreen({
     const replyCount = item.replyCount || 0;
     const canReply =
       !item.isDeleted && item.uuid && !item.uuid.startsWith('temp_');
-    // Sender chip — mirrors the web layout where each message shows the
-    // sender's name + a small avatar above the bubble. For own messages we
-    // use the session's display name; for received messages we fall back to
-    // the conversation header (1:1) when the message itself lacks a sender.
+
+    // Tighter spacing between consecutive messages from the same sender —
+    // the avatar + name strip still renders on every message (matches the
+    // web's layout) but a run reads as a single utterance.
+    const prev = index > 0 ? messages[index - 1] : null;
+    const prevSenderUuid =
+      prev?.user?.uuid || prev?.sender?.uuid || prev?.senderUUID || null;
+    const thisSenderUuid =
+      item.user?.uuid || item.sender?.uuid || item.senderUUID || null;
+    const sameSenderAsPrev =
+      prev != null && prevSenderUuid != null && prevSenderUuid === thisSenderUuid;
+
+    const messageSender = item.user || item.sender;
     const senderName = own
-      ? currentUserName || 'You'
-      : item.sender?.name || headerName;
+      ? currentUserName || messageSender?.name || 'You'
+      : messageSender?.name || headerName;
     const senderInitials = (senderName || 'U')
       .split(' ')
       .map(n => n[0])
@@ -436,80 +520,105 @@ export function ConversationDetailScreen({
       .slice(0, 2)
       .join('')
       .toUpperCase();
-    const senderRawAvatar =
-      !own && (item.sender?.avatar || headerAvatar) ? item.sender?.avatar || headerAvatar : null;
+    const senderRawAvatar = own
+      ? messageSender?.avatar || null
+      : messageSender?.avatar || headerAvatar;
     const senderAvatar = senderRawAvatar
       ? senderRawAvatar.startsWith('http')
         ? senderRawAvatar
         : `${logoBaseUrl}${senderRawAvatar}`
       : null;
+
+    const avatarNode = (
+      <View style={styles.bubbleAvatarWrap}>
+        <View
+          style={[
+            styles.bubbleAvatarFallback,
+            {backgroundColor: `${primaryColor}1f`},
+          ]}>
+          <Text style={[styles.bubbleAvatarInitials, {color: primaryColor}]}>
+            {senderInitials || '?'}
+          </Text>
+        </View>
+        {senderAvatar ? (
+          <Image
+            source={{uri: senderAvatar}}
+            style={[styles.bubbleAvatar, styles.bubbleAvatarOverlay]}
+          />
+        ) : null}
+      </View>
+    );
+
     return (
       <View
         style={[
           styles.bubbleRow,
           own ? styles.bubbleRowOwn : styles.bubbleRowOther,
+          sameSenderAsPrev ? styles.bubbleRowTight : null,
         ]}>
-        <View style={styles.bubbleColumn}>
-          <View
+        {!own ? avatarNode : null}
+        <View
+          style={[
+            styles.bubbleColumn,
+            own ? styles.bubbleColumnOwn : styles.bubbleColumnOther,
+          ]}>
+          <Text
             style={[
-              styles.senderHeader,
-              own ? styles.senderHeaderOwn : styles.senderHeaderOther,
-            ]}>
-            {!own ? (
-              senderAvatar ? (
-                <Image source={{uri: senderAvatar}} style={styles.senderAvatar} />
-              ) : (
-                <View
-                  style={[
-                    styles.senderAvatarFallback,
-                    {backgroundColor: `${primaryColor}1f`},
-                  ]}>
-                  <Text
-                    style={[styles.senderInitials, {color: primaryColor}]}>
-                    {senderInitials}
-                  </Text>
-                </View>
-              )
-            ) : null}
-            <Text style={styles.senderName} numberOfLines={1}>
-              {senderName}
-            </Text>
-            {own ? (
-              <View
-                style={[
-                  styles.senderAvatarFallback,
-                  {backgroundColor: `${primaryColor}1f`},
-                ]}>
-                <Text style={[styles.senderInitials, {color: primaryColor}]}>
-                  {senderInitials}
-                </Text>
-              </View>
-            ) : null}
-          </View>
+              styles.senderName,
+              own ? styles.senderNameOwn : null,
+              {color: own ? '#475569' : primaryColor},
+            ]}
+            numberOfLines={1}>
+            {senderName}
+          </Text>
 
-          <View
-            style={[
-              styles.bubble,
-              own
-                ? [styles.bubbleOwn, {backgroundColor: primaryColor}]
-                : styles.bubbleOther,
-            ]}>
-            <Text
+          {item.isDeleted ? (
+            // Muted "deleted" bubble — matches the web layout: warning icon
+            // + italic "This message is deleted" text on a neutral surface,
+            // no timestamp inside the bubble.
+            <View style={styles.bubbleDeleted}>
+              <Icon
+                name="alert-outline"
+                size={14}
+                color="#94a3b8"
+              />
+              <Text style={styles.bubbleDeletedText}>
+                This message is deleted
+              </Text>
+            </View>
+          ) : (
+            <Pressable
+              // Long-press own messages to open the delete confirm. Skipped
+              // for received messages and for optimistic temp rows that
+              // haven't been acknowledged by the server yet.
+              onLongPress={
+                own && item.uuid && !item.uuid.startsWith('temp_')
+                  ? () => setPendingDeleteMessage(item)
+                  : undefined
+              }
+              delayLongPress={350}
               style={[
-                styles.bubbleText,
-                own ? styles.bubbleTextOwn : styles.bubbleTextOther,
-                item.isDeleted && styles.bubbleTextDeleted,
+                styles.bubble,
+                own
+                  ? [styles.bubbleOwn, {backgroundColor: primaryColor}]
+                  : styles.bubbleOther,
               ]}>
-              {body}
-            </Text>
-            <Text
-              style={[
-                styles.bubbleTime,
-                own ? styles.bubbleTimeOwn : styles.bubbleTimeOther,
-              ]}>
-              {time}
-            </Text>
-          </View>
+              <Text
+                style={[
+                  styles.bubbleText,
+                  own ? styles.bubbleTextOwn : styles.bubbleTextOther,
+                ]}>
+                {body}
+              </Text>
+              <Text
+                style={[
+                  styles.bubbleTime,
+                  own ? styles.bubbleTimeOwn : styles.bubbleTimeOther,
+                ]}>
+                {time}
+              </Text>
+            </Pressable>
+          )}
           {canReply ? (
             <Pressable
               style={[
@@ -518,17 +627,14 @@ export function ConversationDetailScreen({
               ]}
               onPress={() => setReplyParent(item)}
               hitSlop={6}>
-              <Icon
-                name="reply-outline"
-                size={13}
-                color={primaryColor}
-              />
-              <Text style={[styles.replyActionText, {color: primaryColor}]}>
+              <Icon name="reply-outline" size={13} color="#94a3b8" />
+              <Text style={styles.replyActionText}>
                 {replyCount > 0 ? `Reply (${replyCount})` : 'Reply'}
               </Text>
             </Pressable>
           ) : null}
         </View>
+        {own ? avatarNode : null}
       </View>
     );
   };
@@ -563,23 +669,25 @@ export function ConversationDetailScreen({
           <Icon name="arrow-left" size={22} color="#0f172a" />
         </Pressable>
         <View style={styles.headerAvatarWrap}>
+          {/* Initials fallback always renders behind the Image so a broken
+              avatar URL still surfaces something visible instead of an empty
+              circle. */}
+          <View
+            style={[
+              styles.headerAvatarFallback,
+              {backgroundColor: `${primaryColor}1f`},
+            ]}>
+            <Text
+              style={[styles.headerAvatarInitials, {color: primaryColor}]}>
+              {initials || '?'}
+            </Text>
+          </View>
           {resolvedHeaderAvatar ? (
             <Image
               source={{uri: resolvedHeaderAvatar}}
-              style={styles.headerAvatar}
+              style={[styles.headerAvatar, styles.headerAvatarOverlay]}
             />
-          ) : (
-            <View
-              style={[
-                styles.headerAvatarFallback,
-                {backgroundColor: `${primaryColor}1f`},
-              ]}>
-              <Text
-                style={[styles.headerAvatarInitials, {color: primaryColor}]}>
-                {initials || '?'}
-              </Text>
-            </View>
-          )}
+          ) : null}
         </View>
         <Text style={styles.headerName} numberOfLines={1}>
           {headerName}
@@ -593,12 +701,23 @@ export function ConversationDetailScreen({
       ) : (
         <FlatList
           data={messages}
-          keyExtractor={m => m.uuid}
-          renderItem={renderMessage}
+          // Fall back to index when a message arrives without a uuid (rare,
+          // but observed on some legacy events) — otherwise multiple rows
+          // collide on the undefined key and React warns.
+          keyExtractor={(m, index) => m.uuid || `idx-${index}`}
+          renderItem={({item, index}) => renderMessage({item, index})}
           style={styles.messagesList}
           contentContainerStyle={styles.messagesContent}
           keyboardShouldPersistTaps="handled"
           onEndReachedThreshold={0.2}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={handleRefresh}
+              tintColor={primaryColor}
+              colors={[primaryColor]}
+            />
+          }
           ListHeaderComponent={
             isLoadingMore ? (
               <View style={styles.headerLoading}>
@@ -695,6 +814,18 @@ export function ConversationDetailScreen({
         onEmojiSelected={emoji => setDraft(prev => prev + emoji.emoji)}
       />
 
+      <ConfirmModal
+        visible={pendingDeleteMessage !== null}
+        title="Delete this message?"
+        message="The message will be marked as deleted for everyone in this conversation. This can't be undone."
+        confirmLabel="Delete"
+        cancelLabel="Keep"
+        variant="destructive"
+        loading={isDeletingMessage}
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setPendingDeleteMessage(null)}
+      />
+
       <ReplyThreadSheet
         visible={replyParent !== null}
         token={token}
@@ -750,6 +881,11 @@ const styles = StyleSheet.create({
     height: 36,
     width: 36,
   },
+  headerAvatarOverlay: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+  },
   headerAvatarFallback: {
     alignItems: 'center',
     borderRadius: 18,
@@ -774,10 +910,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   messagesContent: {
-    // flexGrow: 1 + justifyContent: 'flex-end' pins messages to the bottom
-    // (WhatsApp-style) when the thread doesn't yet fill the viewport.
-    flexGrow: 1,
-    justifyContent: 'flex-end',
+    // Messages start at the top of the list and fill downward. The previous
+    // bottom-anchor (flexGrow:1 + justifyContent:'flex-end') created a large
+    // blank area above sparse threads.
     padding: 12,
   },
   headerLoading: {
@@ -792,52 +927,69 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   bubbleRow: {
+    alignItems: 'flex-start',
     flexDirection: 'row',
+    gap: 8,
     marginBottom: 8,
   },
-  bubbleColumn: {
-    flexShrink: 1,
-    maxWidth: '85%',
+  // Tighter spacing for consecutive messages from the same sender (chat-app
+  // convention — runs read as a single utterance).
+  bubbleRowTight: {
+    marginBottom: 2,
   },
-  senderHeader: {
+  bubbleAvatarWrap: {
+    height: 32,
+    width: 32,
+  },
+  bubbleAvatar: {
+    borderRadius: 16,
+    height: 32,
+    width: 32,
+  },
+  bubbleAvatarOverlay: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+  },
+  bubbleAvatarFallback: {
     alignItems: 'center',
-    flexDirection: 'row',
-    gap: 6,
-    marginBottom: 4,
-  },
-  senderHeaderOwn: {
-    alignSelf: 'flex-end',
-  },
-  senderHeaderOther: {
-    alignSelf: 'flex-start',
-  },
-  senderAvatar: {
-    borderRadius: 11,
-    height: 22,
-    width: 22,
-  },
-  senderAvatarFallback: {
-    alignItems: 'center',
-    borderRadius: 11,
-    height: 22,
+    borderRadius: 16,
+    height: 32,
     justifyContent: 'center',
-    width: 22,
+    width: 32,
   },
-  senderInitials: {
-    fontSize: 10,
+  bubbleAvatarInitials: {
+    fontSize: 11,
     fontWeight: '800',
   },
+  bubbleColumn: {
+    // Tighter cap so the bubble + avatar combo fits comfortably side by side
+    // without spilling against the screen edge.
+    flexShrink: 1,
+    maxWidth: '72%',
+  },
+  bubbleColumnOwn: {
+    alignItems: 'flex-end',
+  },
+  bubbleColumnOther: {
+    alignItems: 'flex-start',
+  },
   senderName: {
-    color: '#0f172a',
     fontSize: 12,
     fontWeight: '700',
+    marginBottom: 2,
+    marginLeft: 4,
+  },
+  senderNameOwn: {
+    marginLeft: 0,
+    marginRight: 4,
   },
   replyAction: {
     alignItems: 'center',
     flexDirection: 'row',
     gap: 4,
-    marginTop: 4,
-    paddingHorizontal: 6,
+    marginTop: 2,
+    paddingHorizontal: 4,
     paddingVertical: 2,
   },
   replyActionOwn: {
@@ -847,8 +999,9 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   replyActionText: {
+    color: '#94a3b8',
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   bubbleRowOwn: {
     justifyContent: 'flex-end',
@@ -857,18 +1010,25 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
   },
   bubble: {
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: 6,
+    // Subtle shadow so bubbles read clearly against the chat surface.
+    elevation: 1,
+    shadowColor: '#0f172a',
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.06,
+    shadowRadius: 2,
   },
   bubbleOwn: {
-    borderBottomRightRadius: 4,
+    // Tail on the right — looks like the message points toward your avatar.
+    borderTopRightRadius: 4,
   },
   bubbleOther: {
     backgroundColor: '#ffffff',
-    borderBottomLeftRadius: 4,
-    borderColor: '#e2e8f0',
-    borderWidth: 1,
+    // Tail on the left — points toward the counterparty's avatar.
+    borderTopLeftRadius: 4,
   },
   bubbleText: {
     fontSize: 14,
@@ -884,13 +1044,28 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     opacity: 0.6,
   },
+  bubbleDeleted: {
+    alignItems: 'center',
+    backgroundColor: '#f1f5f9',
+    borderRadius: 16,
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  bubbleDeletedText: {
+    color: '#94a3b8',
+    fontSize: 13,
+    fontStyle: 'italic',
+    fontWeight: '500',
+  },
   bubbleTime: {
     fontSize: 10,
-    marginTop: 4,
+    marginTop: 2,
+    textAlign: 'right',
   },
   bubbleTimeOwn: {
     color: '#e0e7ff',
-    textAlign: 'right',
   },
   bubbleTimeOther: {
     color: '#94a3b8',

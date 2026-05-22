@@ -130,6 +130,62 @@ export const chatService = {
     return data;
   },
 
+  // Soft-delete a message. Backend swaps the body to 'Deleted' and flips
+  // isDeleted=true; the UI then renders the "tombstone" placeholder.
+  async deleteMessage(
+    token: string,
+    conversationId: string,
+    messageId: string,
+  ): Promise<unknown> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson(
+      `${CHAT_BASE}/${conversationId}/messages/${messageId}`,
+      {method: 'DELETE', headers: getAuthHeader(token)},
+      baseUrl,
+    );
+  },
+
+  // Same shape as uploadAttachment but routes through the reply-file
+  // endpoint so the uploaded message lands inside the parent's thread.
+  async uploadReplyAttachment(
+    token: string,
+    conversationId: string,
+    messageId: string,
+    file: {uri: string; name: string; type: string},
+  ): Promise<{data?: Message; message?: Message} | unknown> {
+    const baseUrl = await resolveBaseUrl();
+    const normalizedToken = normalizeTokenValue(token);
+    if (!normalizedToken) {
+      throw new Error('Missing access token.');
+    }
+    const formData = new FormData();
+    formData.append('file', {
+      uri: file.uri,
+      name: file.name,
+      type: file.type,
+    } as any);
+    const response = await fetch(
+      `${baseUrl}${CHAT_BASE}/${conversationId}/messages/${messageId}/reply-file`,
+      {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${normalizedToken}`,
+        },
+        body: formData as any,
+      },
+    );
+    const raw = await response.text();
+    const data = raw ? safeJsonParse(raw) : null;
+    if (!response.ok) {
+      throw new Error(
+        getErrorMessage(data) ||
+          `Attachment upload failed (${response.status}).`,
+      );
+    }
+    return data;
+  },
+
   async sendReply(
     token: string,
     conversationId: string,

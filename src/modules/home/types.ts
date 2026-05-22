@@ -53,6 +53,10 @@ export type DashboardSummary = {
   // Resolved at fetch-time so the rest of the home surface (sidebar filtering,
   // role-specific tiles, redirect logic) doesn't need a second profile call.
   accountType: string;
+  // Backend UUID for the signed-in user. Chat / connections compare against
+  // this; the auth session's `id` is the numeric primary key and won't match
+  // `message.user.uuid`.
+  userUuid?: string;
   investorType?: string;
   profileCompletion: number;
   stats: DashboardStat[];

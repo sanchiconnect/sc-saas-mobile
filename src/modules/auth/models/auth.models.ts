@@ -48,6 +48,9 @@ export type OtpRequestResult = {
 
 export type AuthUser = {
   id: string;
+  // Backend's UUID for this user. Chat / connections compare against this
+  // (not the numeric `id`) so we capture both at login.
+  uuid?: string;
   email: string;
   fullName: string;
 };

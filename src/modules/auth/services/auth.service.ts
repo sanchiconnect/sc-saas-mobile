@@ -280,6 +280,7 @@ const buildSession = (
     token: normalizedToken,
     user: {
       id: String(user?.id || user?._id || fallback.email),
+      uuid: user?.uuid ? String(user.uuid) : undefined,
       email: user?.email || user?.emailAddress || fallback.email,
       fullName,
     },

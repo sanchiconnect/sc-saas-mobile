@@ -23,9 +23,13 @@ export type Conversation = {
   logo?: string | null;
   avatar?: string | null;
   participants?: ConversationParticipant[];
+  // Backend uses `members` on the conversation-details endpoint; treat both
+  // as aliases.
+  members?: ConversationParticipant[];
   // 1:1 chats expose the counterparty; group chats won't.
   otherUser?: ConversationParticipant | null;
-  // Tag used by the frontend to distinguish group vs DM.
+  // Tag used by the frontend to distinguish group vs DM. The web treats
+  // 'user' as 1:1 and anything else as group.
   chatType?: 'private' | 'group' | string;
   conversationType?: string;
 };
@@ -35,7 +39,10 @@ export type Message = {
   message?: string;
   messageType?: 'text' | 'image' | 'file' | string;
   fileUrl?: string;
-  // Backend either embeds `senderUUID` directly or a nested user object.
+  // Backend shape for sender info. The frontend uses `user` (uuid/name/avatar)
+  // — keep `sender`/`senderUUID` aliases for resilience against older payloads
+  // and our own optimistic-send entries.
+  user?: ConversationParticipant;
   senderUUID?: string;
   sender?: ConversationParticipant;
   createdAt?: string;

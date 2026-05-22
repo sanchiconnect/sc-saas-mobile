@@ -116,7 +116,7 @@ export const dashboardService = {
 
     try {
       const profile = await authService.getProfile(token);
-      profileData = profile?.data || {};
+      profileData = profile?.data?.user || profile?.data || {};
       accountType =
         String(profileData?.accountType || 'startup').toLowerCase() ||
         'startup';
@@ -145,6 +145,7 @@ export const dashboardService = {
 
     return {
       accountType,
+      userUuid: profileData?.uuid ? String(profileData.uuid) : undefined,
       investorType,
       profileCompletion,
       stats: buildStatsFor(accountType, counts),

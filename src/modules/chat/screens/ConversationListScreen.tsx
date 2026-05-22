@@ -21,35 +21,85 @@ import {stripHtml} from '../utils';
 type Props = {
   token: string;
   currentUserUuid?: string;
+  // Used to strip our own name out of "Counterparty/Me" joined names that
+  // some tenants return for 1:1 chats.
+  currentUserName?: string;
   onOpenConversation: (conversation: Conversation) => void;
 };
 
 const PAGE_SIZE = 20;
 
 // Conversation rows have two flavours — a 1:1 chat shows the counterparty's
-// name + avatar, a group shows the conversation name + group logo. Surface
-// the right one based on the conversationType/chatType signal.
+// name + avatar, a group shows the conversation name + group logo. Mirrors
+// the web's getConversationTitle/getAvatarImage: prefer the other member
+// when the type signals a 1:1, OR when there are exactly two members (some
+// tenants don't set conversationType and store the join as "A/B" in name).
+const isDirectChat = (conversation: Conversation): boolean => {
+  if (conversation.conversationType === 'user') return true;
+  if (conversation.chatType === 'private') return true;
+  const pool =
+    conversation.members && conversation.members.length > 0
+      ? conversation.members
+      : conversation.participants;
+  if (pool && pool.length === 2) return true;
+  return false;
+};
+
+const findOtherMember = (
+  conversation: Conversation,
+  currentUserUuid?: string,
+) => {
+  if (conversation.otherUser) return conversation.otherUser;
+  const pool =
+    conversation.members && conversation.members.length > 0
+      ? conversation.members
+      : conversation.participants;
+  return pool?.find(p => p.uuid !== currentUserUuid);
+};
+
+// Some tenants store 1:1 chat names as "Counterparty/CurrentUser" — slash-
+// joined. When we can't find an explicit member, fall back to stripping our
+// own name out of the joined string so the row still shows just the other
+// person.
+const stripOwnFromJoinedName = (
+  joined: string,
+  currentUserName?: string,
+): string => {
+  if (!joined.includes('/')) return joined;
+  const parts = joined.split('/').map(s => s.trim()).filter(Boolean);
+  if (parts.length < 2) return joined;
+  if (currentUserName) {
+    const lower = currentUserName.toLowerCase();
+    const counter = parts.find(p => p.toLowerCase() !== lower);
+    if (counter) return counter;
+  }
+  return parts[0];
+};
+
 const resolveDisplayName = (
   conversation: Conversation,
   currentUserUuid?: string,
+  currentUserName?: string,
 ): string => {
-  if (conversation.name) return conversation.name;
-  const other =
-    conversation.otherUser ||
-    conversation.participants?.find(p => p.uuid !== currentUserUuid);
-  return other?.name || 'Conversation';
+  if (isDirectChat(conversation)) {
+    const other = findOtherMember(conversation, currentUserUuid);
+    if (other?.name) return other.name;
+    if (conversation.name) {
+      return stripOwnFromJoinedName(conversation.name, currentUserName);
+    }
+  }
+  return conversation.name || 'Conversation';
 };
 
 const resolveAvatar = (
   conversation: Conversation,
   currentUserUuid?: string,
 ): string | null => {
-  if (conversation.logo) return conversation.logo;
-  if (conversation.avatar) return conversation.avatar;
-  const other =
-    conversation.otherUser ||
-    conversation.participants?.find(p => p.uuid !== currentUserUuid);
-  return other?.avatar || null;
+  if (isDirectChat(conversation)) {
+    const other = findOtherMember(conversation, currentUserUuid);
+    if (other?.avatar) return other.avatar;
+  }
+  return conversation.logo || conversation.avatar || null;
 };
 
 // Backend returns `lastMessage` as either a plain string (legacy shape) or
@@ -92,6 +142,7 @@ const formatRelative = (raw?: string): string => {
 export function ConversationListScreen({
   token,
   currentUserUuid,
+  currentUserName,
   onOpenConversation,
 }: Props) {
   const {theme, globalSetting} = useContext(TenantContext);
@@ -170,7 +221,7 @@ export function ConversationListScreen({
   const visibleConversations = query.trim()
     ? conversations.filter(c => {
         const haystack = (
-          resolveDisplayName(c, currentUserUuid) +
+          resolveDisplayName(c, currentUserUuid, currentUserName) +
           ' ' +
           lastMessagePreview(c.lastMessage).text
         ).toLowerCase();
@@ -179,7 +230,7 @@ export function ConversationListScreen({
     : conversations;
 
   const renderItem = ({item}: {item: Conversation}) => {
-    const name = resolveDisplayName(item, currentUserUuid);
+    const name = resolveDisplayName(item, currentUserUuid, currentUserName);
     const rawAvatar = resolveAvatar(item, currentUserUuid);
     const avatar = rawAvatar
       ? rawAvatar.startsWith('http')
@@ -206,26 +257,42 @@ export function ConversationListScreen({
         accessibilityRole="button"
         accessibilityLabel={`Open conversation with ${name}`}>
         <View style={styles.avatarWrap}>
+          {/* Initials fallback always renders behind the Image so a broken
+              avatar URL still surfaces something visible instead of an empty
+              circle (e.g. the "ofileima" placeholder we see on web). */}
+          <View
+            style={[
+              styles.avatarFallback,
+              {backgroundColor: `${primaryColor}1f`},
+            ]}>
+            <Text style={[styles.avatarInitials, {color: primaryColor}]}>
+              {initials || '?'}
+            </Text>
+          </View>
           {avatar ? (
-            <Image source={{uri: avatar}} style={styles.avatar} />
-          ) : (
-            <View
-              style={[
-                styles.avatarFallback,
-                {backgroundColor: `${primaryColor}1f`},
-              ]}>
-              <Text style={[styles.avatarInitials, {color: primaryColor}]}>
-                {initials || '?'}
-              </Text>
-            </View>
-          )}
+            <Image
+              source={{uri: avatar}}
+              style={[styles.avatar, styles.avatarOverlay]}
+            />
+          ) : null}
         </View>
         <View style={styles.rowBody}>
           <View style={styles.rowTopLine}>
-            <Text style={styles.rowName} numberOfLines={1}>
+            <Text
+              style={[styles.rowName, unread > 0 && styles.rowNameUnread]}
+              numberOfLines={1}>
               {name}
             </Text>
-            <Text style={styles.rowTime}>{formatRelative(timeRaw)}</Text>
+            <Text
+              style={[
+                styles.rowTime,
+                unread > 0 && [
+                  styles.rowTimeUnread,
+                  {color: primaryColor},
+                ],
+              ]}>
+              {formatRelative(timeRaw)}
+            </Text>
           </View>
           <View style={styles.rowBottomLine}>
             <Text
@@ -280,7 +347,7 @@ export function ConversationListScreen({
 
       <FlatList
         data={visibleConversations}
-        keyExtractor={item => item.uuid}
+        keyExtractor={(item, index) => item.uuid || `idx-${index}`}
         renderItem={renderItem}
         contentContainerStyle={
           visibleConversations.length === 0 ? styles.emptyContent : undefined
@@ -305,14 +372,21 @@ export function ConversationListScreen({
         }
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <Icon
-              name="message-text-outline"
-              size={42}
-              color="#cbd5e1"
-            />
+            <View
+              style={[
+                styles.emptyIconWrap,
+                {backgroundColor: `${primaryColor}1a`},
+              ]}>
+              <Icon
+                name="chat-outline"
+                size={32}
+                color={primaryColor}
+              />
+            </View>
             <Text style={styles.emptyTitle}>No conversations yet</Text>
             <Text style={styles.emptyBody}>
-              Connections you message will show up here.
+              Start chatting with your connections from their profile to see
+              the conversation here.
             </Text>
           </View>
         }
@@ -340,22 +414,21 @@ const styles = StyleSheet.create({
   },
   searchRow: {
     alignItems: 'center',
-    backgroundColor: '#f8fafc',
-    borderColor: '#e2e8f0',
-    borderRadius: 12,
-    borderWidth: 1,
+    backgroundColor: '#f1f5f9',
+    borderRadius: 999,
     flexDirection: 'row',
-    gap: 8,
+    gap: 10,
     marginHorizontal: 16,
-    marginTop: 12,
-    marginBottom: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    marginTop: 8,
+    marginBottom: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
   },
   searchInput: {
     color: '#0f172a',
     flex: 1,
-    fontSize: 15,
+    fontSize: 14,
+    fontWeight: '500',
     padding: 0,
   },
   errorBanner: {
@@ -379,36 +452,42 @@ const styles = StyleSheet.create({
   row: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: 12,
+    gap: 14,
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingVertical: 8,
   },
   avatarWrap: {
-    height: 48,
-    width: 48,
+    height: 42,
+    width: 42,
   },
   avatar: {
-    borderRadius: 24,
-    height: 48,
-    width: 48,
+    borderRadius: 21,
+    height: 42,
+    width: 42,
+  },
+  avatarOverlay: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
   },
   avatarFallback: {
     alignItems: 'center',
-    borderRadius: 24,
-    height: 48,
+    borderRadius: 21,
+    height: 42,
     justifyContent: 'center',
-    width: 48,
+    width: 42,
   },
   avatarInitials: {
-    fontSize: 16,
-    fontWeight: '700',
+    fontSize: 14,
+    fontWeight: '800',
   },
   rowBody: {
     flex: 1,
     gap: 4,
+    justifyContent: 'center',
   },
   rowTopLine: {
-    alignItems: 'baseline',
+    alignItems: 'center',
     flexDirection: 'row',
     gap: 8,
     justifyContent: 'space-between',
@@ -418,10 +497,18 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 15,
     fontWeight: '700',
+    letterSpacing: -0.1,
+  },
+  rowNameUnread: {
+    fontWeight: '800',
   },
   rowTime: {
     color: '#94a3b8',
-    fontSize: 12,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  rowTimeUnread: {
+    fontWeight: '800',
   },
   rowBottomLine: {
     alignItems: 'center',
@@ -432,6 +519,7 @@ const styles = StyleSheet.create({
     color: '#64748b',
     flex: 1,
     fontSize: 13,
+    lineHeight: 18,
   },
   rowPreviewUnread: {
     color: '#0f172a',
@@ -439,20 +527,21 @@ const styles = StyleSheet.create({
   },
   unreadBadge: {
     alignItems: 'center',
-    borderRadius: 10,
-    minWidth: 20,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    borderRadius: 11,
+    height: 22,
+    minWidth: 22,
+    paddingHorizontal: 7,
   },
   unreadText: {
     color: '#ffffff',
     fontSize: 11,
     fontWeight: '800',
+    lineHeight: 22,
   },
   separator: {
     backgroundColor: '#f1f5f9',
     height: 1,
-    marginLeft: 76,
+    marginLeft: 72,
   },
   footerLoading: {
     paddingVertical: 18,
@@ -467,16 +556,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
     paddingVertical: 64,
   },
+  emptyIconWrap: {
+    alignItems: 'center',
+    borderRadius: 32,
+    height: 64,
+    justifyContent: 'center',
+    width: 64,
+  },
   emptyTitle: {
     color: '#0f172a',
     fontSize: 16,
-    fontWeight: '700',
-    marginTop: 12,
+    fontWeight: '800',
+    marginTop: 16,
   },
   emptyBody: {
     color: '#64748b',
     fontSize: 13,
+    lineHeight: 19,
     marginTop: 6,
+    maxWidth: 280,
     textAlign: 'center',
   },
 });

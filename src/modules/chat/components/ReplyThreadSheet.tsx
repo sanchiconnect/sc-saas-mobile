@@ -11,6 +11,9 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import {launchImageLibrary} from 'react-native-image-picker';
+import {pick, types as DocumentPickerTypes} from '@react-native-documents/picker';
+import EmojiPicker from 'rn-emoji-keyboard';
 
 import {Icon} from '../../../core/components/Icon';
 import {chatService} from '../services/chat.service';
@@ -43,7 +46,11 @@ const formatTime = (raw?: string): string => {
 
 const isOwn = (m: Message, currentUserUuid?: string): boolean => {
   if (!currentUserUuid) return false;
-  return m.senderUUID === currentUserUuid || m.sender?.uuid === currentUserUuid;
+  return (
+    m.user?.uuid === currentUserUuid ||
+    m.senderUUID === currentUserUuid ||
+    m.sender?.uuid === currentUserUuid
+  );
 };
 
 export function ReplyThreadSheet({
@@ -61,6 +68,10 @@ export function ReplyThreadSheet({
   const [draft, setDraft] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Mirrors the main composer: spinner on the active attachment icon, and a
+  // toggle for the emoji sheet.
+  const [attachmentUploading, setAttachmentUploading] = useState(false);
+  const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
 
   // Track local optimistic ids so socket echoes don't dupe them.
   const sentReplyIdsRef = useRef<Set<string>>(new Set());
@@ -195,6 +206,95 @@ export function ReplyThreadSheet({
     }
   };
 
+  // Append a freshly-uploaded reply to the visible list. Server returns the
+  // saved message under .data or .data.message; same shape as the main
+  // attachment flow.
+  const appendUploadedReply = (raw: any) => {
+    const sent: Message | undefined =
+      raw?.data?.message || raw?.data || raw?.message || raw;
+    if (sent?.uuid) {
+      sentReplyIdsRef.current.add(sent.uuid);
+      setReplies(prev =>
+        prev.some(r => r.uuid === sent.uuid) ? prev : [...prev, sent],
+      );
+      onReplyPosted?.();
+    }
+  };
+
+  const handleAttachImage = async () => {
+    if (attachmentUploading || !parent?.uuid) return;
+    try {
+      const result = await launchImageLibrary({
+        mediaType: 'photo',
+        selectionLimit: 1,
+        includeBase64: false,
+      });
+      if (result.didCancel) return;
+      if (result.errorCode) {
+        setError(result.errorMessage || 'Could not open image picker.');
+        return;
+      }
+      const asset = result.assets?.[0];
+      if (!asset?.uri) return;
+      if ((asset.fileSize ?? 0) > 10 * 1024 * 1024) {
+        setError('Please choose an image smaller than 10MB.');
+        return;
+      }
+      setAttachmentUploading(true);
+      try {
+        const raw = await chatService.uploadReplyAttachment(
+          token,
+          conversationId,
+          parent.uuid,
+          {
+            uri: asset.uri,
+            name: asset.fileName || `photo-${Date.now()}.jpg`,
+            type: asset.type || 'image/jpeg',
+          },
+        );
+        appendUploadedReply(raw);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Upload failed.');
+      } finally {
+        setAttachmentUploading(false);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not pick image.');
+    }
+  };
+
+  const handleAttachFile = async () => {
+    if (attachmentUploading || !parent?.uuid) return;
+    try {
+      const [picked] = await pick({
+        type: [DocumentPickerTypes.allFiles],
+      });
+      if (!picked?.uri) return;
+      setAttachmentUploading(true);
+      try {
+        const raw = await chatService.uploadReplyAttachment(
+          token,
+          conversationId,
+          parent.uuid,
+          {
+            uri: picked.uri,
+            name: picked.name || `file-${Date.now()}`,
+            type: picked.type || 'application/octet-stream',
+          },
+        );
+        appendUploadedReply(raw);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Upload failed.');
+      } finally {
+        setAttachmentUploading(false);
+      }
+    } catch (err: any) {
+      if (err?.code !== 'DOCUMENT_PICKER_CANCELED') {
+        setError(err instanceof Error ? err.message : 'Could not pick file.');
+      }
+    }
+  };
+
   const renderReply = ({item}: {item: Message}) => {
     const own = isOwn(item, currentUserUuid);
     const time = formatTime(item.createdAt);
@@ -269,7 +369,7 @@ export function ReplyThreadSheet({
           ) : (
             <FlatList
               data={replies}
-              keyExtractor={r => r.uuid}
+              keyExtractor={(r, index) => r.uuid || `idx-${index}`}
               renderItem={renderReply}
               style={styles.repliesList}
               contentContainerStyle={styles.repliesContent}
@@ -305,6 +405,33 @@ export function ReplyThreadSheet({
               styles.composer,
               {paddingBottom: 10 + androidKeyboardLift},
             ]}>
+            <View style={styles.composerActionsRow}>
+              <Pressable
+                onPress={() => setEmojiPickerOpen(true)}
+                disabled={isSending || attachmentUploading}
+                hitSlop={6}
+                style={styles.composerIcon}>
+                <Icon name="emoticon-happy-outline" size={22} color="#64748b" />
+              </Pressable>
+              <Pressable
+                onPress={handleAttachImage}
+                disabled={attachmentUploading || isSending}
+                hitSlop={6}
+                style={styles.composerIcon}>
+                {attachmentUploading ? (
+                  <ActivityIndicator color="#64748b" size="small" />
+                ) : (
+                  <Icon name="image-outline" size={22} color="#64748b" />
+                )}
+              </Pressable>
+              <Pressable
+                onPress={handleAttachFile}
+                disabled={attachmentUploading || isSending}
+                hitSlop={6}
+                style={styles.composerIcon}>
+                <Icon name="paperclip" size={22} color="#64748b" />
+              </Pressable>
+            </View>
             <TextInput
               style={styles.composerInput}
               value={draft}
@@ -331,6 +458,12 @@ export function ReplyThreadSheet({
           </View>
         </View>
       </View>
+
+      <EmojiPicker
+        open={emojiPickerOpen}
+        onClose={() => setEmojiPickerOpen(false)}
+        onEmojiSelected={emoji => setDraft(prev => prev + emoji.emoji)}
+      />
     </Modal>
   );
 }
@@ -478,6 +611,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
     padding: 10,
+  },
+  composerActionsRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 2,
+  },
+  composerIcon: {
+    alignItems: 'center',
+    height: 40,
+    justifyContent: 'center',
+    width: 32,
   },
   composerInput: {
     backgroundColor: '#f8fafc',

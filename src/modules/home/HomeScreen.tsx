@@ -366,7 +366,7 @@ export function HomeScreen({
           <ConversationDetailScreen
             token={session.token}
             conversation={activeConversation}
-            currentUserUuid={session.user.id}
+            currentUserUuid={summary?.userUuid || session.user.uuid || session.user.id}
             currentUserName={session.user.fullName}
             onBack={() => setActiveConversation(null)}
           />
@@ -401,7 +401,8 @@ export function HomeScreen({
         </View>
         <ConversationListScreen
           token={session.token}
-          currentUserUuid={session.user.id}
+          currentUserUuid={summary?.userUuid || session.user.uuid || session.user.id}
+          currentUserName={session.user.fullName}
           onOpenConversation={setActiveConversation}
         />
       </View>
