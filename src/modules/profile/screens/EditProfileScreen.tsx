@@ -1888,12 +1888,20 @@ const styles = StyleSheet.create({
   },
   tabsSection: {
     backgroundColor: '#ffffff',
+    // Match the 16px horizontal padding the form cards below use so the tab
+    // strip's left/right edges line up with the card edges instead of
+    // bleeding to the screen edge.
+    paddingHorizontal: 16,
+    alignSelf: 'stretch',
   },
   tabsRow: {
     flexDirection: 'row',
-    paddingHorizontal: 4,
   },
   tabsStrip: {
+    // Pin the ScrollView's viewport to the parent's width. Without this it
+    // sizes to its content and overflow scroll never engages because there's
+    // nothing overflowing the visible viewport — finger scroll won't fire.
+    width: '100%',
     flexGrow: 0,
   },
   tab: {

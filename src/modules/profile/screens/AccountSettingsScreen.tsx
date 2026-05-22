@@ -1,4 +1,11 @@
-import React, {useCallback, useContext, useEffect, useMemo, useState} from 'react';
+import React, {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -28,7 +35,6 @@ import {availabilityService} from '../services/availability.service';
 import {colors, withAlpha} from '../../../core/theme/colors';
 import {Picker} from './editProfile/Picker';
 import {useToast} from '../../../core/toast/ToastProvider';
-import {FeedbackModal} from '../../feedback/FeedbackWidget';
 
 // Supported country dial codes — mirrors COUNTRY_CODES in the frontend's
 // shared/constants/country-code.ts so the mobile picker offers the same
@@ -55,8 +61,7 @@ type AccountSettingsTabKey =
   | 'personal-information'
   | 'availability-hours'
   | 'membership'
-  | 'email-notifications'
-  | 'platform-updates';
+  | 'email-notifications';
 
 type PersonalInformation = {
   avatarUrl: string | null;
@@ -258,14 +263,8 @@ const buildTabs = (features: TenantFeatures): AccountSettingsTab[] => [
   {
     key: 'email-notifications',
     label: 'Email Notifications',
-    description: 'Control your email alerts after the notification preferences endpoint is added.',
+    description: 'Control which emails we send to your inbox.',
     available: true,
-  },
-  {
-    key: 'platform-updates',
-    label: 'Platform Updates',
-    description: 'Browse release notes and product announcements in a future mobile release.',
-    available: features?.product_updates !== false,
   },
 ];
 
@@ -296,7 +295,6 @@ export function AccountSettingsScreen({
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const [isDeleteModalVisible, setIsDeleteModalVisible] = useState(false);
   const [deleteConfirmationText, setDeleteConfirmationText] = useState('');
-  const [isFeedbackModalVisible, setIsFeedbackModalVisible] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<{
     text: string;
@@ -317,6 +315,8 @@ export function AccountSettingsScreen({
   const [pendingDeleteDateId, setPendingDeleteDateId] = useState<string | null>(
     null,
   );
+  const tabsScrollRef = useRef<ScrollView | null>(null);
+  const tabPositionsRef = useRef<Record<string, number>>({});
   const [newSpecificDate, setNewSpecificDate] = useState<{
     dateLabel: string;
     unavailable: boolean;
@@ -351,6 +351,11 @@ export function AccountSettingsScreen({
   const [isSavingDeactivate, setIsSavingDeactivate] = useState(false);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [isCountryCodePickerOpen, setIsCountryCodePickerOpen] = useState(false);
+  const [promotionalEmailsEnabled, setPromotionalEmailsEnabled] =
+    useState(false);
+  const [allEmailsEnabled, setAllEmailsEnabled] = useState(false);
+  const [isSavingEmailNotifications, setIsSavingEmailNotifications] =
+    useState(false);
 
   const loadProfile = useCallback(async () => {
     setIsLoading(true);
@@ -365,6 +370,12 @@ export function AccountSettingsScreen({
       );
       setPersonalInformation(nextPersonalInformation);
       setInitialPersonalInformation(nextPersonalInformation);
+
+      // Email-notification preferences live on the same user profile object.
+      const root: Record<string, any> =
+        response?.data?.user || response?.data || response?.user || response || {};
+      setPromotionalEmailsEnabled(Boolean(root.promotionalEmailsEnabled));
+      setAllEmailsEnabled(Boolean(root.allEmailsEnabled));
     } catch (error) {
       const message =
         error instanceof Error
@@ -779,28 +790,83 @@ export function AccountSettingsScreen({
     }
   };
 
+  // Mirrors the web's mail-notification-setting save: it PATCHes the profile
+  // with name + designation + the two boolean flags. Sending name/designation
+  // keeps the backend's other validators happy.
+  const handleSaveEmailNotifications = async () => {
+    if (!token) {
+      toast.error('Could not save — sign in again.');
+      return;
+    }
+    setIsSavingEmailNotifications(true);
+    try {
+      await authService.updateUserProfile(token, {
+        name: personalInformation.fullName,
+        designation: personalInformation.designation,
+        allEmailsEnabled,
+        promotionalEmailsEnabled,
+      });
+      toast.success('Email notification settings updated.');
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Failed to update email notification setting.';
+      toast.error(message);
+    } finally {
+      setIsSavingEmailNotifications(false);
+    }
+  };
+
   const renderTabs = () => (
-    <AppCard style={styles.tabsCard} padded={false}>
+    <View style={styles.tabsSection}>
       <ScrollView
+        ref={tabsScrollRef}
         horizontal
         showsHorizontalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        style={styles.tabsStrip}
         contentContainerStyle={styles.tabsRow}>
         {tabs.map(tab => {
           const active = tab.key === activeTab;
+          // "wired" tabs are the ones with a real implementation; placeholders
+          // (locked-section tabs) get the danger dot.
+          const isWired =
+            tab.key === 'personal-information' ||
+            tab.key === 'availability-hours' ||
+            tab.key === 'email-notifications';
           return (
             <Pressable
               key={tab.key}
               accessibilityRole="button"
               accessibilityState={{selected: active}}
-              onPress={() => setActiveTab(tab.key)}
+              onLayout={e => {
+                tabPositionsRef.current[tab.key] = e.nativeEvent.layout.x;
+              }}
+              onPress={() => {
+                setActiveTab(tab.key);
+                const x = tabPositionsRef.current[tab.key] ?? 0;
+                tabsScrollRef.current?.scrollTo({
+                  x: Math.max(0, x - 16),
+                  animated: true,
+                });
+              }}
               style={[
-                styles.tabChip,
-                active && styles.tabChipActive,
-                active && {borderColor: primaryColor},
+                styles.tab,
+                active && {borderBottomColor: primaryColor},
               ]}>
+              <View
+                style={[
+                  styles.tabStatusDot,
+                  {
+                    backgroundColor: isWired ? colors.success : colors.danger,
+                  },
+                ]}
+              />
               <Text
                 style={[
-                  styles.tabChipText,
+                  styles.tabText,
+                  active && styles.tabTextActive,
                   active && {color: primaryColor},
                 ]}>
                 {tab.label}
@@ -809,7 +875,7 @@ export function AccountSettingsScreen({
           );
         })}
       </ScrollView>
-    </AppCard>
+    </View>
   );
 
   const renderReadonlyField = (
@@ -1588,6 +1654,60 @@ export function AccountSettingsScreen({
     );
   };
 
+  const renderEmailNotifications = () => (
+    <AppCard
+      style={styles.emailNotificationsCard}
+      header={
+        <View style={styles.emailNotificationsHeader}>
+          <View
+            style={[
+              styles.emailNotificationsIconWrap,
+              {backgroundColor: withAlpha(primaryColor, 0.12)},
+            ]}>
+            <Icon name="email-outline" size={20} color={primaryColor} />
+          </View>
+          <Text style={styles.cardTitle}>Email Notifications & Actions</Text>
+        </View>
+      }>
+      <View style={styles.sectionDivider} />
+
+      <View style={styles.notificationRow}>
+        <View style={styles.notificationCopy}>
+          <Text style={styles.notificationTitle}>Promotional Emails</Text>
+          <Text style={styles.notificationHint}>
+            Receive email notifications about new opportunities, events,
+            programs &amp; more.
+          </Text>
+        </View>
+        <Pressable
+          accessibilityRole="switch"
+          accessibilityState={{checked: promotionalEmailsEnabled}}
+          onPress={() => setPromotionalEmailsEnabled(prev => !prev)}
+          style={[
+            styles.switchTrack,
+            promotionalEmailsEnabled && {backgroundColor: primaryColor},
+          ]}>
+          <View
+            style={[
+              styles.switchThumb,
+              promotionalEmailsEnabled && styles.switchThumbActive,
+            ]}
+          />
+        </Pressable>
+      </View>
+
+      <View style={styles.formFooter}>
+        <AppButton
+          label="Save"
+          loading={isSavingEmailNotifications}
+          loadingLabel="Saving..."
+          onPress={handleSaveEmailNotifications}
+          style={{backgroundColor: primaryColor}}
+        />
+      </View>
+    </AppCard>
+  );
+
   const renderUnavailableTab = () => {
     const currentTab = tabs.find(tab => tab.key === activeTab);
 
@@ -1628,71 +1748,61 @@ export function AccountSettingsScreen({
 
   return (
     <>
-      <ScrollView
-        style={styles.page}
-        contentContainerStyle={styles.pageContent}
-        keyboardShouldPersistTaps="handled">
-        {/* No RefreshControl: Account Settings is a form, and pull-to-refresh
-            would reload server data over the user's in-progress edits. The
-            "Try again" button on the load-error state covers the recovery
-            case. */}
-        <View style={styles.headerRow}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Back to dashboard"
-            onPress={onBack}
-            style={styles.backButton}>
-            <Icon name="arrow-left" size={20} color="#0f172a" />
-          </Pressable>
+      <View style={styles.page}>
+        {/* Header + tabs stay pinned at the top so the form below can scroll
+            without losing context — mirrors EditProfileScreen's layout. */}
+        <View style={styles.stickyHeader}>
+          <View style={styles.headerRow}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Back to dashboard"
+              onPress={onBack}
+              style={styles.backButton}>
+              <Icon name="arrow-left" size={20} color="#0f172a" />
+            </Pressable>
 
-          <View style={styles.headerCopy}>
-            <Text style={styles.pageTitle}>Account Settings</Text>
-            <Text style={styles.pageSubtitle}>
-              Manage your personal information, preferences, and account
-              controls.
-            </Text>
+            <View style={styles.headerCopy}>
+              <Text style={styles.pageTitle}>Account Settings</Text>
+              <Text style={styles.pageSubtitle}>
+                Manage your personal information, preferences, and account
+                controls.
+              </Text>
+            </View>
           </View>
 
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Leave feedback"
-            onPress={() => setIsFeedbackModalVisible(true)}
-            hitSlop={6}
-            style={styles.feedbackIconButton}>
-            <Icon
-              name="message-text-outline"
-              size={20}
-              color={primaryColor}
-            />
-          </Pressable>
+          {renderTabs()}
         </View>
 
-        {loadError ? (
-          <AppCard style={styles.errorCard}>
-            <Text style={styles.errorTitle}>We could not refresh your profile</Text>
-            <Text style={styles.errorBody}>{loadError}</Text>
-            <AppButton
-              fullWidth={false}
-              label="Try Again"
-              onPress={() => loadProfile()}
-              style={styles.retryButton}
-            />
-          </AppCard>
-        ) : null}
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}>
+          {/* No RefreshControl: Account Settings is a form, and pull-to-refresh
+              would reload server data over the user's in-progress edits. The
+              "Try again" button on the load-error state covers the recovery
+              case. */}
+          {loadError ? (
+            <AppCard style={styles.errorCard}>
+              <Text style={styles.errorTitle}>We could not refresh your profile</Text>
+              <Text style={styles.errorBody}>{loadError}</Text>
+              <AppButton
+                fullWidth={false}
+                label="Try Again"
+                onPress={() => loadProfile()}
+                style={styles.retryButton}
+              />
+            </AppCard>
+          ) : null}
 
-        {renderTabs()}
-
-        {activeTab === 'personal-information'
-          ? renderPersonalInformation()
-          : activeTab === 'availability-hours'
-            ? renderAvailabilityHours()
-            : renderUnavailableTab()}
-      </ScrollView>
-
-      <FeedbackModal
-        visible={isFeedbackModalVisible}
-        onClose={() => setIsFeedbackModalVisible(false)}
-      />
+          {activeTab === 'personal-information'
+            ? renderPersonalInformation()
+            : activeTab === 'availability-hours'
+              ? renderAvailabilityHours()
+              : activeTab === 'email-notifications'
+                ? renderEmailNotifications()
+                : renderUnavailableTab()}
+        </ScrollView>
+      </View>
 
       <Picker
         visible={isCountryCodePickerOpen}
@@ -1873,7 +1983,17 @@ const styles = StyleSheet.create({
     backgroundColor: '#eef2f7',
     flex: 1,
   },
-  pageContent: {
+  stickyHeader: {
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 0,
+    // Subtle separator so the sticky strip reads as distinct from the
+    // scrollable form below, even when content scrolls underneath it.
+    borderBottomColor: '#e2e8f0',
+    borderBottomWidth: 1,
+  },
+  scrollContent: {
     padding: 20,
     paddingBottom: 40,
   },
@@ -1900,7 +2020,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     gap: 12,
-    marginBottom: 20,
+    marginBottom: 14,
   },
   backButton: {
     alignItems: 'center',
@@ -1929,19 +2049,6 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginTop: 3,
   },
-  feedbackIconButton: {
-    alignItems: 'center',
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    elevation: 1,
-    height: 40,
-    justifyContent: 'center',
-    shadowColor: '#0f172a',
-    shadowOffset: {width: 0, height: 1},
-    shadowOpacity: 0.06,
-    shadowRadius: 4,
-    width: 40,
-  },
   feedbackButton: {
     minWidth: 160,
   },
@@ -1964,29 +2071,43 @@ const styles = StyleSheet.create({
   retryButton: {
     marginTop: 16,
   },
-  tabsCard: {
-    marginBottom: 18,
+  tabsSection: {
+    // Constrained to the parent's padding so the scrollable strip aligns
+    // with the card width below — no tab labels get clipped against the
+    // screen edge.
+    alignSelf: 'stretch',
+  },
+  tabsStrip: {
+    // Force the ScrollView to the parent's width — without this it sizes to
+    // its content and overflow scroll never engages because there's nothing
+    // overflowing the visible viewport.
+    width: '100%',
+    flexGrow: 0,
   },
   tabsRow: {
-    gap: 10,
-    padding: 14,
-  },
-  tabChip: {
-    backgroundColor: '#f8fafc',
-    borderColor: '#e2e8f0',
-    borderRadius: 14,
-    borderWidth: 1,
     flexDirection: 'row',
+  },
+  tab: {
+    alignItems: 'center',
+    borderBottomColor: 'transparent',
+    borderBottomWidth: 2,
+    flexDirection: 'row',
+    flexShrink: 0,
     gap: 8,
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     paddingVertical: 12,
   },
-  tabChipActive: {
-    backgroundColor: '#ffffff',
+  tabStatusDot: {
+    borderRadius: 4,
+    height: 8,
+    width: 8,
   },
-  tabChipText: {
-    color: '#475569',
+  tabText: {
+    color: '#64748b',
     fontSize: 14,
+    fontWeight: '600',
+  },
+  tabTextActive: {
     fontWeight: '700',
   },
   desktopColumns: {
@@ -2007,6 +2128,40 @@ const styles = StyleSheet.create({
   },
   availabilityCard: {
     minHeight: 560,
+  },
+  emailNotificationsCard: {},
+  emailNotificationsHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 12,
+  },
+  emailNotificationsIconWrap: {
+    alignItems: 'center',
+    borderRadius: 12,
+    height: 40,
+    justifyContent: 'center',
+    width: 40,
+  },
+  notificationRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 14,
+    paddingVertical: 4,
+  },
+  notificationCopy: {
+    flex: 1,
+    gap: 4,
+  },
+  notificationTitle: {
+    color: '#0f172a',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  notificationHint: {
+    color: '#64748b',
+    fontSize: 12,
+    fontWeight: '500',
+    lineHeight: 18,
   },
   cardTitle: {
     color: '#0f172a',
