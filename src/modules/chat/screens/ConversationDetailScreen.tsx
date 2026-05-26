@@ -12,6 +12,8 @@ import {
   Image,
   Keyboard,
   KeyboardAvoidingView,
+  Linking,
+  Modal,
   Platform,
   Pressable,
   RefreshControl,
@@ -20,6 +22,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import Video from 'react-native-video';
 
 import {Icon} from '../../../core/components/Icon';
 import {colors} from '../../../core/theme/colors';
@@ -29,11 +32,134 @@ import {pick, types as DocumentPickerTypes} from '@react-native-documents/picker
 import EmojiPicker from 'rn-emoji-keyboard';
 
 import {ConfirmModal} from '../../../core/components/ConfirmModal';
+import {MediaViewerModal} from '../components/MediaViewerModal';
 import {ReplyThreadSheet} from '../components/ReplyThreadSheet';
 import {chatService} from '../services/chat.service';
 import {chatSocket} from '../services/chat.socket';
 import type {Conversation, ConversationParticipant, Message} from '../types';
-import {stripHtml} from '../utils';
+import {getAttachmentInfo, isMessageDeleted, stripHtml} from '../utils';
+import type {AttachmentInfo} from '../utils';
+
+// Render the media payload for an attachment message. Images and videos
+// tap-open a full-screen lightbox via `onOpen`; files hand the URL to the
+// OS browser so the user can read/download in whatever app they prefer.
+// `onLongPress` is forwarded onto the inner Pressable so the action sheet
+// (Delete etc.) reveals on long-press even on media bubbles — without this
+// the child Pressable would swallow the long-press and the parent bubble's
+// onLongPress would never fire.
+const renderAttachment = (
+  attachment: AttachmentInfo,
+  own: boolean,
+  primaryColor: string,
+  onOpen: (info: AttachmentInfo) => void,
+  onLongPress?: () => void,
+) => {
+  if (attachment.kind === 'image') {
+    return (
+      <Pressable
+        onPress={() => onOpen(attachment)}
+        onLongPress={onLongPress}
+        delayLongPress={350}
+        style={attachmentStyles.imageWrap}>
+        <Image
+          source={{uri: attachment.url}}
+          style={attachmentStyles.image}
+          resizeMode="cover"
+        />
+      </Pressable>
+    );
+  }
+  if (attachment.kind === 'video') {
+    return (
+      <Pressable
+        onPress={() => onOpen(attachment)}
+        onLongPress={onLongPress}
+        delayLongPress={350}
+        style={attachmentStyles.videoWrap}>
+        <Video
+          source={{uri: attachment.url}}
+          style={attachmentStyles.video}
+          controls={false}
+          paused
+          resizeMode="cover"
+        />
+        <View style={attachmentStyles.videoPlayOverlay} pointerEvents="none">
+          <Icon name="play-circle" size={48} color="#ffffff" />
+        </View>
+      </Pressable>
+    );
+  }
+  // File chip — colors flip so the chip stays legible inside both bubble
+  // variants (own = dark on light surface, other = primary on light).
+  const fg = own ? '#0f172a' : primaryColor;
+  return (
+    <Pressable
+      onPress={() => Linking.openURL(attachment.url).catch(() => {})}
+      onLongPress={onLongPress}
+      delayLongPress={350}
+      style={[
+        attachmentStyles.fileChip,
+        {backgroundColor: own ? '#ffffff' : '#f8fafc'},
+      ]}>
+      <Icon name="file-document-outline" size={20} color={fg} />
+      <Text
+        style={[attachmentStyles.fileChipText, {color: fg}]}
+        numberOfLines={1}>
+        {attachment.fileName}
+      </Text>
+      <Icon name="open-in-new" size={16} color={fg} />
+    </Pressable>
+  );
+};
+
+const attachmentStyles = StyleSheet.create({
+  imageWrap: {
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  image: {
+    backgroundColor: '#e2e8f0',
+    borderRadius: 12,
+    height: 200,
+    width: 220,
+  },
+  videoWrap: {
+    borderRadius: 12,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  video: {
+    backgroundColor: '#000000',
+    borderRadius: 12,
+    height: 200,
+    width: 220,
+  },
+  // Center the play glyph over the paused video poster so users see at a
+  // glance that the bubble is a tappable video preview, not an image.
+  videoPlayOverlay: {
+    alignItems: 'center',
+    bottom: 0,
+    justifyContent: 'center',
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+  },
+  fileChip: {
+    alignItems: 'center',
+    borderRadius: 10,
+    flexDirection: 'row',
+    gap: 8,
+    maxWidth: 240,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  fileChipText: {
+    flexShrink: 1,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+});
 
 type Props = {
   token: string;
@@ -143,8 +269,13 @@ export function ConversationDetailScreen({
   // Active reply target — when set, the ReplyThreadSheet renders for this
   // parent message. Null = no thread open.
   const [replyParent, setReplyParent] = useState<Message | null>(null);
-  // Long-press → ConfirmModal flow for deleting your own messages. Holds the
-  // pending message until the user confirms or cancels.
+  // Long-press → action sheet → ConfirmModal flow for deleting your own
+  // messages. `actionSheetMessage` mirrors the web's hover-reveal: a small
+  // menu appears with the Delete option once the user "hovers" (long-presses)
+  // a bubble. `pendingDeleteMessage` then triggers the confirm step.
+  const [actionSheetMessage, setActionSheetMessage] = useState<Message | null>(
+    null,
+  );
   const [pendingDeleteMessage, setPendingDeleteMessage] =
     useState<Message | null>(null);
   const [isDeletingMessage, setIsDeletingMessage] = useState(false);
@@ -154,6 +285,10 @@ export function ConversationDetailScreen({
   // rn-emoji-keyboard sheet.
   const [attachmentUploading, setAttachmentUploading] = useState(false);
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
+
+  // Lightbox state — tapping an image/video bubble opens the full-screen
+  // viewer with a download action.
+  const [mediaViewer, setMediaViewer] = useState<AttachmentInfo | null>(null);
 
   // Track keyboard visibility to keep the composer flush with the keyboard —
   // adjustResize + flex-end on the FlatList does most of the lift work; we
@@ -327,33 +462,48 @@ export function ConversationDetailScreen({
     }
   };
 
-  // Append an attachment message to the local list after a successful upload.
-  // The backend returns the saved Message under `.data` or `.data.message`
-  // (or, on some installs, the root). Falls back to a temp row if the shape
-  // is unknown so the user still sees their upload reflected immediately.
-  const appendUploadedMessage = (raw: any, file: {name: string; type: string}) => {
-    const sent: Message | undefined =
-      raw?.data?.message || raw?.data || raw?.message || raw;
-    if (sent?.uuid) {
-      sentMessageIdsRef.current.add(sent.uuid);
-      setMessages(prev =>
-        prev.some(m => m.uuid === sent.uuid) ? prev : [...prev, sent],
-      );
-    } else {
-      const tempUuid = `temp_${Date.now()}_${Math.random()
-        .toString(36)
-        .slice(2, 8)}`;
-      setMessages(prev => [
-        ...prev,
-        {
-          uuid: tempUuid,
-          message: file.name,
-          messageType: file.type.startsWith('image/') ? 'image' : 'file',
-          senderUUID: currentUserUuid,
-          createdAt: new Date().toISOString(),
-        },
-      ]);
-    }
+  // Build an optimistic message that renders the picked file's local URI
+  // as its preview — we set `fileUrl` to the device URI so the helper's
+  // local-scheme branch kicks in and the bubble shows the actual image /
+  // video / file chip the moment the user picks, well before the upload
+  // finishes. `refreshAfterUpload` then replaces this row with the
+  // server's canonical message (which carries the presigned URL).
+  const buildOptimisticAttachment = (
+    uri: string,
+    name: string,
+    mimeType: string,
+  ): {temp: Message; tempUuid: string} => {
+    const tempUuid = `temp_${Date.now()}_${Math.random()
+      .toString(36)
+      .slice(2, 8)}`;
+    const messageType: Message['messageType'] = mimeType.startsWith('image/')
+      ? 'image'
+      : mimeType.startsWith('video/')
+        ? 'video'
+        : 'file';
+    return {
+      tempUuid,
+      temp: {
+        uuid: tempUuid,
+        message: name,
+        messageType,
+        fileUrl: uri,
+        senderUUID: currentUserUuid,
+        user: currentUserUuid
+          ? {uuid: currentUserUuid, name: currentUserName}
+          : undefined,
+        createdAt: new Date().toISOString(),
+      },
+    };
+  };
+
+  // Pull page 1 fresh after a successful upload so the canonical message
+  // (with its presigned asset URL) replaces the optimistic local-URI row.
+  // Without this the temp would linger and the bubble would keep pointing
+  // at the device URI instead of the server's copy.
+  const refreshAfterUpload = async () => {
+    await fetchPage(1, 'replace');
+    setCurrentPage(1);
   };
 
   const handleAttachImage = async () => {
@@ -377,18 +527,21 @@ export function ConversationDetailScreen({
         setError('Please choose an image smaller than 10MB.');
         return;
       }
+      const name = asset.fileName || `photo-${Date.now()}.jpg`;
+      const type = asset.type || 'image/jpeg';
+      const {temp, tempUuid} = buildOptimisticAttachment(asset.uri, name, type);
+      setMessages(prev => [...prev, temp]);
       setAttachmentUploading(true);
       try {
-        const raw = await chatService.uploadAttachment(token, conversation.uuid, {
+        await chatService.uploadAttachment(token, conversation.uuid, {
           uri: asset.uri,
-          name: asset.fileName || `photo-${Date.now()}.jpg`,
-          type: asset.type || 'image/jpeg',
+          name,
+          type,
         });
-        appendUploadedMessage(raw, {
-          name: asset.fileName || 'photo.jpg',
-          type: asset.type || 'image/jpeg',
-        });
+        await refreshAfterUpload();
       } catch (err) {
+        // Roll back the optimistic row on failure so the user can retry.
+        setMessages(prev => prev.filter(m => m.uuid !== tempUuid));
         setError(err instanceof Error ? err.message : 'Upload failed.');
       } finally {
         setAttachmentUploading(false);
@@ -405,18 +558,20 @@ export function ConversationDetailScreen({
         type: [DocumentPickerTypes.allFiles],
       });
       if (!picked?.uri) return;
+      const name = picked.name || `file-${Date.now()}`;
+      const type = picked.type || 'application/octet-stream';
+      const {temp, tempUuid} = buildOptimisticAttachment(picked.uri, name, type);
+      setMessages(prev => [...prev, temp]);
       setAttachmentUploading(true);
       try {
-        const raw = await chatService.uploadAttachment(token, conversation.uuid, {
+        await chatService.uploadAttachment(token, conversation.uuid, {
           uri: picked.uri,
-          name: picked.name || `file-${Date.now()}`,
-          type: picked.type || 'application/octet-stream',
+          name,
+          type,
         });
-        appendUploadedMessage(raw, {
-          name: picked.name || 'file',
-          type: picked.type || 'application/octet-stream',
-        });
+        await refreshAfterUpload();
       } catch (err) {
+        setMessages(prev => prev.filter(m => m.uuid !== tempUuid));
         setError(err instanceof Error ? err.message : 'Upload failed.');
       } finally {
         setAttachmentUploading(false);
@@ -487,16 +642,24 @@ export function ConversationDetailScreen({
   const renderMessage = ({item, index}: {item: Message; index: number}) => {
     const own = isOwnMessage(item, currentUserUuid);
     const time = formatTime(item.createdAt);
-    const body = item.isDeleted
+    // Soft-delete flag may arrive under different field names depending on
+    // the code path (local optimistic vs REST refetch) — normalize first.
+    const deleted = isMessageDeleted(item);
+    // Uploaded attachments come back either inlined in `message` (refetch
+    // path) or split between `fileUrl` and `message` (upload-response). Pass
+    // both so freshly-uploaded files render as previews immediately rather
+    // than waiting for a refresh.
+    const attachment = deleted
+      ? null
+      : getAttachmentInfo(item.message, item.messageType, item.fileUrl);
+    const body = deleted
       ? 'Message deleted'
-      : item.messageType === 'image'
-        ? `📷 ${stripHtml(item.message) || 'Photo'}`
-        : item.messageType && item.messageType !== 'text'
-          ? `📎 ${stripHtml(item.message) || 'Attachment'}`
-          : stripHtml(item.message);
+      : attachment
+        ? ''
+        : stripHtml(item.message);
     const replyCount = item.replyCount || 0;
     const canReply =
-      !item.isDeleted && item.uuid && !item.uuid.startsWith('temp_');
+      !deleted && item.uuid && !item.uuid.startsWith('temp_');
 
     // Tighter spacing between consecutive messages from the same sender —
     // the avatar + name strip still renders on every message (matches the
@@ -572,7 +735,7 @@ export function ConversationDetailScreen({
             {senderName}
           </Text>
 
-          {item.isDeleted ? (
+          {deleted ? (
             // Muted "deleted" bubble — matches the web layout: warning icon
             // + italic "This message is deleted" text on a neutral surface,
             // no timestamp inside the bubble.
@@ -588,12 +751,12 @@ export function ConversationDetailScreen({
             </View>
           ) : (
             <Pressable
-              // Long-press own messages to open the delete confirm. Skipped
-              // for received messages and for optimistic temp rows that
-              // haven't been acknowledged by the server yet.
+              // Long-press own messages to reveal the action menu (Delete).
+              // Mirrors the web's hover-to-reveal pattern, adapted to touch.
+              // Skipped for received messages and optimistic temp rows.
               onLongPress={
                 own && item.uuid && !item.uuid.startsWith('temp_')
-                  ? () => setPendingDeleteMessage(item)
+                  ? () => setActionSheetMessage(item)
                   : undefined
               }
               delayLongPress={350}
@@ -602,18 +765,32 @@ export function ConversationDetailScreen({
                 own
                   ? [styles.bubbleOwn, {backgroundColor: primaryColor}]
                   : styles.bubbleOther,
+                attachment ? styles.bubbleMedia : null,
               ]}>
-              <Text
-                style={[
-                  styles.bubbleText,
-                  own ? styles.bubbleTextOwn : styles.bubbleTextOther,
-                ]}>
-                {body}
-              </Text>
+              {attachment ? (
+                renderAttachment(
+                  attachment,
+                  own,
+                  primaryColor,
+                  setMediaViewer,
+                  own && item.uuid && !item.uuid.startsWith('temp_')
+                    ? () => setActionSheetMessage(item)
+                    : undefined,
+                )
+              ) : (
+                <Text
+                  style={[
+                    styles.bubbleText,
+                    own ? styles.bubbleTextOwn : styles.bubbleTextOther,
+                  ]}>
+                  {body}
+                </Text>
+              )}
               <Text
                 style={[
                   styles.bubbleTime,
                   own ? styles.bubbleTimeOwn : styles.bubbleTimeOther,
+                  attachment ? styles.bubbleTimeMedia : null,
                 ]}>
                 {time}
               </Text>
@@ -826,6 +1003,42 @@ export function ConversationDetailScreen({
         onCancel={() => setPendingDeleteMessage(null)}
       />
 
+      <MediaViewerModal
+        attachment={mediaViewer}
+        onClose={() => setMediaViewer(null)}
+      />
+
+      <Modal
+        transparent
+        visible={actionSheetMessage !== null}
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setActionSheetMessage(null)}>
+        <Pressable
+          style={styles.actionSheetBackdrop}
+          onPress={() => setActionSheetMessage(null)}>
+          <Pressable style={styles.actionSheet} onPress={() => {}}>
+            <View style={styles.actionSheetHandle} />
+            <Text style={styles.actionSheetTitle}>Message options</Text>
+            <Pressable
+              style={styles.actionSheetItem}
+              onPress={() => {
+                const target = actionSheetMessage;
+                setActionSheetMessage(null);
+                if (target) setPendingDeleteMessage(target);
+              }}>
+              <Icon name="trash-can-outline" size={20} color="#dc2626" />
+              <Text style={styles.actionSheetItemTextDestructive}>Delete</Text>
+            </Pressable>
+            <Pressable
+              style={styles.actionSheetCancel}
+              onPress={() => setActionSheetMessage(null)}>
+              <Text style={styles.actionSheetCancelText}>Cancel</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
       <ReplyThreadSheet
         visible={replyParent !== null}
         token={token}
@@ -1030,6 +1243,13 @@ const styles = StyleSheet.create({
     // Tail on the left — points toward the counterparty's avatar.
     borderTopLeftRadius: 4,
   },
+  // Media bubbles get tighter padding so the image/video sits flush inside
+  // the rounded surface — text bubbles keep the usual breathing room.
+  bubbleMedia: {
+    paddingBottom: 4,
+    paddingHorizontal: 4,
+    paddingTop: 4,
+  },
   bubbleText: {
     fontSize: 14,
     lineHeight: 19,
@@ -1069,6 +1289,12 @@ const styles = StyleSheet.create({
   },
   bubbleTimeOther: {
     color: '#94a3b8',
+  },
+  // Time row sits below the image/video preview — give it a small inset so
+  // it doesn't crowd against the rounded media corners.
+  bubbleTimeMedia: {
+    marginTop: 4,
+    paddingRight: 4,
   },
   errorBanner: {
     alignItems: 'center',
@@ -1146,5 +1372,62 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginTop: 6,
     textAlign: 'center',
+  },
+  // Long-press action sheet — bottom-anchored card with the Delete option.
+  // Backdrop tap and Cancel both dismiss; tap on Delete forwards to the
+  // existing ConfirmModal so the destructive step still requires explicit
+  // confirmation.
+  actionSheetBackdrop: {
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  actionSheet: {
+    backgroundColor: '#ffffff',
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    paddingBottom: 24,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+  },
+  actionSheetHandle: {
+    alignSelf: 'center',
+    backgroundColor: '#cbd5e1',
+    borderRadius: 2,
+    height: 4,
+    marginBottom: 12,
+    width: 44,
+  },
+  actionSheetTitle: {
+    color: '#64748b',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+    marginBottom: 8,
+    textTransform: 'uppercase',
+  },
+  actionSheetItem: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 12,
+    paddingHorizontal: 4,
+    paddingVertical: 14,
+  },
+  actionSheetItemTextDestructive: {
+    color: '#dc2626',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  actionSheetCancel: {
+    alignItems: 'center',
+    borderTopColor: '#e2e8f0',
+    borderTopWidth: 1,
+    marginTop: 4,
+    paddingVertical: 14,
+  },
+  actionSheetCancelText: {
+    color: '#475569',
+    fontSize: 15,
+    fontWeight: '600',
   },
 });

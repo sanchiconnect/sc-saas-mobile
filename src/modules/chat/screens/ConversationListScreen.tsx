@@ -16,7 +16,8 @@ import {colors} from '../../../core/theme/colors';
 import {TenantContext} from '../../../core/tenant/TenantProvider';
 import {chatService} from '../services/chat.service';
 import type {Conversation, Message} from '../types';
-import {stripHtml} from '../utils';
+import type {AttachmentKind} from '../utils';
+import {getAttachmentInfo, isMessageDeleted, stripHtml} from '../utils';
 
 type Props = {
   token: string;
@@ -102,24 +103,39 @@ const resolveAvatar = (
   return conversation.logo || conversation.avatar || null;
 };
 
+const attachmentLabel = (kind: AttachmentKind): string => {
+  if (kind === 'image') return '📷 Photo';
+  if (kind === 'video') return '🎬 Video';
+  return '📎 Attachment';
+};
+
 // Backend returns `lastMessage` as either a plain string (legacy shape) or
 // the full Message entity (current shape: `{uuid, message, messageType, ...}`).
-// Pull the user-facing preview out without ever rendering an object.
+// Pull the user-facing preview out without ever rendering an object — and
+// when the last message is an uploaded attachment, surface a friendly
+// label ("📷 Photo" / "🎬 Video" / "📎 Attachment") instead of the raw S3
+// URL that the backend stores in the body.
 const lastMessagePreview = (
-  raw: Conversation['lastMessage'],
+  conversation: Conversation,
 ): {text: string; createdAt?: string} => {
+  const raw = conversation.lastMessage;
   if (!raw) return {text: ''};
-  if (typeof raw === 'string') return {text: stripHtml(raw)};
+
+  if (typeof raw === 'string') {
+    // Legacy shape — detect an attachment URL inside the string, otherwise
+    // it's a normal text body.
+    const attachment = getAttachmentInfo(raw, conversation.lastMessageType);
+    if (attachment) return {text: attachmentLabel(attachment.kind)};
+    return {text: stripHtml(raw)};
+  }
+
   const m = raw as Message;
-  if (m.isDeleted) return {text: 'Message deleted', createdAt: m.createdAt};
-  if (m.messageType && m.messageType !== 'text') {
-    const label =
-      m.messageType === 'image'
-        ? '📷 Photo'
-        : m.messageType === 'file'
-          ? '📎 Attachment'
-          : 'New message';
-    return {text: stripHtml(m.message) || label, createdAt: m.createdAt};
+  if (isMessageDeleted(m)) {
+    return {text: 'Message deleted', createdAt: m.createdAt};
+  }
+  const attachment = getAttachmentInfo(m.message, m.messageType, m.fileUrl);
+  if (attachment) {
+    return {text: attachmentLabel(attachment.kind), createdAt: m.createdAt};
   }
   return {text: stripHtml(m.message), createdAt: m.createdAt};
 };
@@ -223,7 +239,7 @@ export function ConversationListScreen({
         const haystack = (
           resolveDisplayName(c, currentUserUuid, currentUserName) +
           ' ' +
-          lastMessagePreview(c.lastMessage).text
+          lastMessagePreview(c).text
         ).toLowerCase();
         return haystack.includes(query.trim().toLowerCase());
       })
@@ -244,9 +260,8 @@ export function ConversationListScreen({
       .slice(0, 2)
       .join('')
       .toUpperCase();
-    const {text: previewText, createdAt: previewCreatedAt} = lastMessagePreview(
-      item.lastMessage,
-    );
+    const {text: previewText, createdAt: previewCreatedAt} =
+      lastMessagePreview(item);
     const preview = previewText || 'No messages yet';
     const timeRaw = item.lastMessageAt || previewCreatedAt;
     const unread = item.unreadCount || 0;

@@ -2,7 +2,9 @@ import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {
   ActivityIndicator,
   FlatList,
+  Image,
   Keyboard,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -11,6 +13,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import Video from 'react-native-video';
 import {launchImageLibrary} from 'react-native-image-picker';
 import {pick, types as DocumentPickerTypes} from '@react-native-documents/picker';
 import EmojiPicker from 'rn-emoji-keyboard';
@@ -19,7 +22,9 @@ import {Icon} from '../../../core/components/Icon';
 import {chatService} from '../services/chat.service';
 import {chatSocket} from '../services/chat.socket';
 import type {Message} from '../types';
-import {stripHtml} from '../utils';
+import {getAttachmentInfo, isMessageDeleted, stripHtml} from '../utils';
+import type {AttachmentInfo} from '../utils';
+import {MediaViewerModal} from './MediaViewerModal';
 
 type Props = {
   visible: boolean;
@@ -53,6 +58,129 @@ const isOwn = (m: Message, currentUserUuid?: string): boolean => {
   );
 };
 
+// Same media renderer pattern as the main chat screen — kept local to the
+// component so the bubble + parent-card variants stay tied to this sheet's
+// theming.
+const renderReplyAttachment = (
+  attachment: AttachmentInfo,
+  own: boolean,
+  primaryColor: string,
+  onOpen: (info: AttachmentInfo) => void,
+) => {
+  if (attachment.kind === 'image') {
+    return (
+      <Pressable
+        onPress={() => onOpen(attachment)}
+        style={replyMediaStyles.imageWrap}>
+        <Image
+          source={{uri: attachment.url}}
+          style={replyMediaStyles.image}
+          resizeMode="cover"
+        />
+      </Pressable>
+    );
+  }
+  if (attachment.kind === 'video') {
+    return (
+      <Pressable
+        onPress={() => onOpen(attachment)}
+        style={replyMediaStyles.videoWrap}>
+        <Video
+          source={{uri: attachment.url}}
+          style={replyMediaStyles.video}
+          controls={false}
+          paused
+          resizeMode="cover"
+        />
+        <View style={replyMediaStyles.videoPlayOverlay} pointerEvents="none">
+          <Icon name="play-circle" size={48} color="#ffffff" />
+        </View>
+      </Pressable>
+    );
+  }
+  const fg = own ? '#0f172a' : primaryColor;
+  return (
+    <Pressable
+      onPress={() => Linking.openURL(attachment.url).catch(() => {})}
+      style={[
+        replyMediaStyles.fileChip,
+        {backgroundColor: own ? '#ffffff' : '#f8fafc'},
+      ]}>
+      <Icon name="file-document-outline" size={20} color={fg} />
+      <Text
+        style={[replyMediaStyles.fileChipText, {color: fg}]}
+        numberOfLines={1}>
+        {attachment.fileName}
+      </Text>
+      <Icon name="open-in-new" size={16} color={fg} />
+    </Pressable>
+  );
+};
+
+const replyMediaStyles = StyleSheet.create({
+  imageWrap: {
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  image: {
+    backgroundColor: '#e2e8f0',
+    borderRadius: 12,
+    height: 200,
+    width: 220,
+  },
+  videoWrap: {
+    borderRadius: 12,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  video: {
+    backgroundColor: '#000000',
+    borderRadius: 12,
+    height: 200,
+    width: 220,
+  },
+  videoPlayOverlay: {
+    alignItems: 'center',
+    bottom: 0,
+    justifyContent: 'center',
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+  },
+  fileChip: {
+    alignItems: 'center',
+    borderRadius: 10,
+    flexDirection: 'row',
+    gap: 8,
+    maxWidth: 240,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  fileChipText: {
+    flexShrink: 1,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+});
+
+// Friendly summary for the "Replying to" parent card when the original
+// message is an attachment — otherwise the URL spills across the card.
+const summarizeParent = (parent: Message): string => {
+  if (isMessageDeleted(parent)) return 'Message deleted';
+  const attachment = getAttachmentInfo(
+    parent.message,
+    parent.messageType,
+    parent.fileUrl,
+  );
+  if (attachment) {
+    if (attachment.kind === 'image') return '📷 Photo';
+    if (attachment.kind === 'video') return '🎬 Video';
+    return `📎 ${attachment.fileName}`;
+  }
+  return stripHtml(parent.message);
+};
+
 export function ReplyThreadSheet({
   visible,
   token,
@@ -72,6 +200,8 @@ export function ReplyThreadSheet({
   // toggle for the emoji sheet.
   const [attachmentUploading, setAttachmentUploading] = useState(false);
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
+  // Lightbox state for image/video replies — same UX as the main thread.
+  const [mediaViewer, setMediaViewer] = useState<AttachmentInfo | null>(null);
 
   // Track local optimistic ids so socket echoes don't dupe them.
   const sentReplyIdsRef = useRef<Set<string>>(new Set());
@@ -206,19 +336,42 @@ export function ReplyThreadSheet({
     }
   };
 
-  // Append a freshly-uploaded reply to the visible list. Server returns the
-  // saved message under .data or .data.message; same shape as the main
-  // attachment flow.
-  const appendUploadedReply = (raw: any) => {
-    const sent: Message | undefined =
-      raw?.data?.message || raw?.data || raw?.message || raw;
-    if (sent?.uuid) {
-      sentReplyIdsRef.current.add(sent.uuid);
-      setReplies(prev =>
-        prev.some(r => r.uuid === sent.uuid) ? prev : [...prev, sent],
-      );
-      onReplyPosted?.();
-    }
+  // Pull the reply list fresh after a successful upload so the canonical
+  // reply (with its presigned asset URL) lands in the thread without the
+  // user having to close and reopen the sheet. Same rationale as the main
+  // thread's refresh-after-upload.
+  const refreshAfterUpload = async () => {
+    await fetchReplies();
+    onReplyPosted?.();
+  };
+
+  // Optimistic reply built from the picked file's local URI — see the main
+  // thread for the rationale. Renders the preview instantly; the
+  // refresh-after-upload step then swaps in the server's canonical reply.
+  const buildOptimisticReply = (
+    uri: string,
+    name: string,
+    mimeType: string,
+  ): {temp: Message; tempUuid: string} => {
+    const tempUuid = `temp_${Date.now()}_${Math.random()
+      .toString(36)
+      .slice(2, 8)}`;
+    const messageType: Message['messageType'] = mimeType.startsWith('image/')
+      ? 'image'
+      : mimeType.startsWith('video/')
+        ? 'video'
+        : 'file';
+    return {
+      tempUuid,
+      temp: {
+        uuid: tempUuid,
+        message: name,
+        messageType,
+        fileUrl: uri,
+        senderUUID: currentUserUuid,
+        createdAt: new Date().toISOString(),
+      },
+    };
   };
 
   const handleAttachImage = async () => {
@@ -240,20 +393,21 @@ export function ReplyThreadSheet({
         setError('Please choose an image smaller than 10MB.');
         return;
       }
+      const name = asset.fileName || `photo-${Date.now()}.jpg`;
+      const type = asset.type || 'image/jpeg';
+      const {temp, tempUuid} = buildOptimisticReply(asset.uri, name, type);
+      setReplies(prev => [...prev, temp]);
       setAttachmentUploading(true);
       try {
-        const raw = await chatService.uploadReplyAttachment(
+        await chatService.uploadReplyAttachment(
           token,
           conversationId,
           parent.uuid,
-          {
-            uri: asset.uri,
-            name: asset.fileName || `photo-${Date.now()}.jpg`,
-            type: asset.type || 'image/jpeg',
-          },
+          {uri: asset.uri, name, type},
         );
-        appendUploadedReply(raw);
+        await refreshAfterUpload();
       } catch (err) {
+        setReplies(prev => prev.filter(r => r.uuid !== tempUuid));
         setError(err instanceof Error ? err.message : 'Upload failed.');
       } finally {
         setAttachmentUploading(false);
@@ -270,20 +424,21 @@ export function ReplyThreadSheet({
         type: [DocumentPickerTypes.allFiles],
       });
       if (!picked?.uri) return;
+      const name = picked.name || `file-${Date.now()}`;
+      const type = picked.type || 'application/octet-stream';
+      const {temp, tempUuid} = buildOptimisticReply(picked.uri, name, type);
+      setReplies(prev => [...prev, temp]);
       setAttachmentUploading(true);
       try {
-        const raw = await chatService.uploadReplyAttachment(
+        await chatService.uploadReplyAttachment(
           token,
           conversationId,
           parent.uuid,
-          {
-            uri: picked.uri,
-            name: picked.name || `file-${Date.now()}`,
-            type: picked.type || 'application/octet-stream',
-          },
+          {uri: picked.uri, name, type},
         );
-        appendUploadedReply(raw);
+        await refreshAfterUpload();
       } catch (err) {
+        setReplies(prev => prev.filter(r => r.uuid !== tempUuid));
         setError(err instanceof Error ? err.message : 'Upload failed.');
       } finally {
         setAttachmentUploading(false);
@@ -298,7 +453,15 @@ export function ReplyThreadSheet({
   const renderReply = ({item}: {item: Message}) => {
     const own = isOwn(item, currentUserUuid);
     const time = formatTime(item.createdAt);
-    const body = item.isDeleted ? 'Message deleted' : stripHtml(item.message);
+    const deleted = isMessageDeleted(item);
+    const attachment = deleted
+      ? null
+      : getAttachmentInfo(item.message, item.messageType, item.fileUrl);
+    const body = deleted
+      ? 'Message deleted'
+      : attachment
+        ? ''
+        : stripHtml(item.message);
     return (
       <View
         style={[
@@ -311,19 +474,30 @@ export function ReplyThreadSheet({
             own
               ? [styles.bubbleOwn, {backgroundColor: primaryColor}]
               : styles.bubbleOther,
+            attachment ? styles.bubbleMedia : null,
           ]}>
-          <Text
-            style={[
-              styles.bubbleText,
-              own ? styles.bubbleTextOwn : styles.bubbleTextOther,
-              item.isDeleted && styles.bubbleTextDeleted,
-            ]}>
-            {body}
-          </Text>
+          {attachment ? (
+            renderReplyAttachment(
+              attachment,
+              own,
+              primaryColor,
+              setMediaViewer,
+            )
+          ) : (
+            <Text
+              style={[
+                styles.bubbleText,
+                own ? styles.bubbleTextOwn : styles.bubbleTextOther,
+                deleted && styles.bubbleTextDeleted,
+              ]}>
+              {body}
+            </Text>
+          )}
           <Text
             style={[
               styles.bubbleTime,
               own ? styles.bubbleTimeOwn : styles.bubbleTimeOther,
+              attachment ? styles.bubbleTimeMedia : null,
             ]}>
             {time}
           </Text>
@@ -334,9 +508,7 @@ export function ReplyThreadSheet({
 
   if (!parent) return null;
 
-  const parentBody = parent.isDeleted
-    ? 'Message deleted'
-    : stripHtml(parent.message);
+  const parentBody = summarizeParent(parent);
 
   return (
     <Modal
@@ -464,6 +636,11 @@ export function ReplyThreadSheet({
         onClose={() => setEmojiPickerOpen(false)}
         onEmojiSelected={emoji => setDraft(prev => prev + emoji.emoji)}
       />
+
+      <MediaViewerModal
+        attachment={mediaViewer}
+        onClose={() => setMediaViewer(null)}
+      />
     </Modal>
   );
 }
@@ -563,6 +740,10 @@ const styles = StyleSheet.create({
     borderColor: '#e2e8f0',
     borderWidth: 1,
   },
+  bubbleMedia: {
+    paddingHorizontal: 4,
+    paddingVertical: 4,
+  },
   bubbleText: {
     fontSize: 14,
     lineHeight: 19,
@@ -587,6 +768,10 @@ const styles = StyleSheet.create({
   },
   bubbleTimeOther: {
     color: '#94a3b8',
+  },
+  bubbleTimeMedia: {
+    marginTop: 4,
+    paddingRight: 4,
   },
   errorBanner: {
     alignItems: 'center',
