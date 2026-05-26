@@ -292,7 +292,11 @@ const buildEditTabs = (
     investorSubtype,
   ).map(tab => ({...tab, status: tabCompletion(tab.key, flags)}));
 
-  const customTabs = forms
+  // Custom forms are appended later via `customForms` (which renders through
+  // CustomFormTab). Keep the legacy computation here for parity, but do not
+  // include it in the returned tab list — otherwise each dynamic form would
+  // appear twice (once as a placeholder, once as the real CustomFormTab).
+  void forms
     .filter(form => form?.status && form?.useFormAs === 'form' && form?.programs === null)
     .map(form => ({
       key: `custom-${form.uuid || slugify(form.formTitle || 'form')}`,
@@ -302,7 +306,7 @@ const buildEditTabs = (
       formUuid: form.uuid,
     }));
 
-  return [...baseTabs, ...customTabs];
+  return baseTabs;
 };
 
 export function EditProfileScreen({
