@@ -266,6 +266,16 @@ export function ConversationDetailScreen({
   // Track messages we just sent locally so the socket echo doesn't dupe them.
   const sentMessageIdsRef = useRef<Set<string>>(new Set());
 
+  // Refs for auto-scrolling to the latest message. `flatListRef` is the
+  // list handle; `initialScrolledRef` flips after the first scroll so the
+  // very first jump is instant (we open at the bottom) but every later
+  // append animates smoothly. `skipNextAutoScrollRef` is flipped right
+  // before a "Load older messages" prepend — without it the content-size
+  // change would yank the view back to the bottom and undo the older-load.
+  const flatListRef = useRef<FlatList<Message>>(null);
+  const initialScrolledRef = useRef(false);
+  const skipNextAutoScrollRef = useRef(false);
+
   // Active reply target — when set, the ReplyThreadSheet renders for this
   // parent message. Null = no thread open.
   const [replyParent, setReplyParent] = useState<Message | null>(null);
@@ -348,6 +358,39 @@ export function ConversationDetailScreen({
     [conversation.uuid, token],
   );
 
+  // Switching conversations resets the auto-scroll state so the next
+  // thread also opens at its latest message (instant, no animation).
+  useEffect(() => {
+    initialScrolledRef.current = false;
+    skipNextAutoScrollRef.current = false;
+  }, [conversation.uuid]);
+
+  // Auto-scroll to the latest message whenever the count grows OR when
+  // the list flips out of its initial loading state. The `isLoading` dep
+  // matters specifically for the *first* conversation opened: the FlatList
+  // is conditionally rendered, so its ref is null while the spinner is up.
+  // If we only watched `messages.length` the effect could fire before the
+  // ref attached, leaving scrollToEnd as a no-op. Re-running when isLoading
+  // flips to false guarantees the ref is live before we scroll. A short
+  // setTimeout lets the layout pass finalize before scrollToEnd computes
+  // its target offset. `skipNextAutoScrollRef` is honored so a "Load older"
+  // prepend doesn't yank the user back to the bottom.
+  useEffect(() => {
+    if (isLoading) return;
+    if (messages.length === 0) return;
+    if (skipNextAutoScrollRef.current) {
+      skipNextAutoScrollRef.current = false;
+      return;
+    }
+    const handle = setTimeout(() => {
+      flatListRef.current?.scrollToEnd({
+        animated: initialScrolledRef.current,
+      });
+      initialScrolledRef.current = true;
+    }, 120);
+    return () => clearTimeout(handle);
+  }, [messages.length, isLoading]);
+
   // Initial fetch + room join.
   useEffect(() => {
     let cancelled = false;
@@ -417,6 +460,10 @@ export function ConversationDetailScreen({
 
   const handleLoadOlder = async () => {
     if (isLoadingMore || currentPage >= totalPages) return;
+    // Tell the auto-scroll watcher to ignore the upcoming content-size
+    // growth — those new rows land at the *top* of the list and we want
+    // the user to stay where they were reading.
+    skipNextAutoScrollRef.current = true;
     setIsLoadingMore(true);
     await fetchPage(currentPage + 1, 'prepend');
     setIsLoadingMore(false);
@@ -877,6 +924,7 @@ export function ConversationDetailScreen({
         </View>
       ) : (
         <FlatList
+          ref={flatListRef}
           data={messages}
           // Fall back to index when a message arrives without a uuid (rare,
           // but observed on some legacy events) — otherwise multiple rows
