@@ -434,11 +434,15 @@ export function HomeScreen({
         />
         <View style={styles.topBar}>
           <Pressable
-            style={styles.iconButton}
-            onPress={() => setIsMenuOpen(true)}
+            style={({pressed}) => [
+              styles.iconButton,
+              pressed && {opacity: 0.5, backgroundColor: '#e2e8f0'},
+            ]}
+            hitSlop={10}
+            onPress={() => setSelectedMenu({section: 'dashboard'})}
             accessibilityRole="button"
-            accessibilityLabel="Open menu">
-            <Icon name="menu" size={24} color="#475569" />
+            accessibilityLabel="Back">
+            <Icon name="arrow-left" size={24} color="#475569" />
           </Pressable>
           <Text style={styles.topBarTitle}>Messages</Text>
         </View>
@@ -470,11 +474,15 @@ export function HomeScreen({
         />
         <View style={styles.topBar}>
           <Pressable
-            style={styles.iconButton}
-            onPress={() => setIsMenuOpen(true)}
+            style={({pressed}) => [
+              styles.iconButton,
+              pressed && {opacity: 0.5, backgroundColor: '#e2e8f0'},
+            ]}
+            hitSlop={10}
+            onPress={() => setSelectedMenu({section: 'dashboard'})}
             accessibilityRole="button"
-            accessibilityLabel="Open menu">
-            <Icon name="menu" size={24} color="#475569" />
+            accessibilityLabel="Back">
+            <Icon name="arrow-left" size={24} color="#475569" />
           </Pressable>
           <Text style={styles.topBarTitle}>Connections</Text>
         </View>
@@ -523,13 +531,23 @@ export function HomeScreen({
 
         <View style={styles.topActions}>
           <Pressable
-            style={styles.iconButton}
+            style={({pressed}) => [
+              styles.iconButton,
+              pressed && {opacity: 0.5, backgroundColor: '#e2e8f0'},
+            ]}
+            hitSlop={10}
+            onPress={() => setSelectedMenu({section: 'chat'})}
             accessibilityRole="button"
             accessibilityLabel="Messages">
             <Icon name="message-text-outline" size={22} color="#475569" />
           </Pressable>
           <Pressable
-            style={styles.iconButton}
+            style={({pressed}) => [
+              styles.iconButton,
+              pressed && {opacity: 0.5, backgroundColor: '#e2e8f0'},
+            ]}
+            hitSlop={10}
+            onPress={() => setSelectedMenu({section: 'connections'})}
             accessibilityRole="button"
             accessibilityLabel="Team">
             <Icon name="account-group-outline" size={22} color="#475569" />
