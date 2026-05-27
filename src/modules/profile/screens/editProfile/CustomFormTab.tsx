@@ -37,6 +37,7 @@ type DynamicFieldType =
   | 'email'
   | 'url'
   | 'date'
+  | 'year'
   | 'phone'
   | 'file'
   | 'select'
@@ -233,6 +234,7 @@ const normaliseType = (raw: string): DynamicFieldType | 'unsupported' => {
   }
   if (t === 'url' || t === 'url-field' || t === 'website-field') return 'url';
   if (t === 'date' || t === 'date-field') return 'date';
+  if (t === 'year' || t === 'year-picker' || t === 'year-field') return 'year';
   if (
     t === 'phone' ||
     t === 'tel' ||
@@ -923,6 +925,25 @@ export const CustomFormTab = forwardRef<CustomFormTabHandle, Props>(function Cus
               placeholder={field.placeholder || 'YYYY-MM-DD'}
               value={String(value || '')}
               onChangeText={setValue}
+            />
+          );
+        }
+
+        if (type === 'year') {
+          // 4-digit numeric input — same pattern Basic Info uses for
+          // "Year of Incorporation". Strips non-digits and clamps to 4 chars.
+          return (
+            <AppTextField
+              key={field.name}
+              label={label}
+              required={required}
+              error={fieldError}
+              placeholder={field.placeholder || 'YYYY'}
+              keyboardType="number-pad"
+              value={String(value || '')}
+              onChangeText={text =>
+                setValue(text.replace(/[^0-9]/g, '').slice(0, 4))
+              }
             />
           );
         }
