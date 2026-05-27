@@ -2099,6 +2099,8 @@ export function EditProfileScreen({
                     label="PREVIOUS"
                     variant="secondary"
                     onPress={handlePrevious}
+                    style={styles.navButton}
+                    labelStyle={styles.navButtonLabel}
                   />
                 </View>
               ) : null}
@@ -2118,6 +2120,8 @@ export function EditProfileScreen({
                     label="NEXT"
                     variant="secondary"
                     onPress={handleNext}
+                    style={styles.navButton}
+                    labelStyle={styles.navButtonLabel}
                   />
                 </View>
               ) : null}
@@ -2368,5 +2372,14 @@ const styles = StyleSheet.create({
   },
   footerSlot: {
     flex: 1,
+  },
+  // PREVIOUS / NEXT buttons: black pill (overrides AppButton's secondary
+  // outline) to match the design.
+  navButton: {
+    backgroundColor: '#0f172a',
+    borderColor: '#0f172a',
+  },
+  navButtonLabel: {
+    color: '#ffffff',
   },
 });
