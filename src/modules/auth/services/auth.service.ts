@@ -1833,18 +1833,6 @@ export const authService = {
     );
   },
 
-  async getAdvisoryBoardByUuid(
-    token: string,
-    uuid: string,
-  ): Promise<ApiResponse> {
-    const baseUrl = await resolveBaseUrl();
-    return requestJson<ApiResponse>(
-      `${ADVISORY_BOARDS_PATH}/${uuid}`,
-      {method: 'GET', headers: getAuthHeader(token)},
-      baseUrl,
-    );
-  },
-
   async updateFounder(
     token: string,
     uuid: string,
@@ -1858,15 +1846,6 @@ export const authService = {
         headers: getAuthHeader(token),
         body: JSON.stringify(payload),
       },
-      baseUrl,
-    );
-  },
-
-  async getFounderByUuid(token: string, uuid: string): Promise<ApiResponse> {
-    const baseUrl = await resolveBaseUrl();
-    return requestJson<ApiResponse>(
-      `${FOUNDERS_PATH}/${uuid}`,
-      {method: 'GET', headers: getAuthHeader(token)},
       baseUrl,
     );
   },
