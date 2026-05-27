@@ -1059,15 +1059,59 @@ export const authService = {
     payload: Record<string, any>,
   ): Promise<ApiResponse> {
     const baseUrl = await resolveBaseUrl();
+    // Backend expects { data: {fieldKey: value, ...}, formUUID }. Callers pass
+    // just the field values; we wrap them here.
     return requestJson<ApiResponse>(
       buildFormSubmissionPath(formUuid),
       {
         method: 'POST',
         headers: getAuthHeader(token),
-        body: JSON.stringify(payload),
+        body: JSON.stringify({data: payload, formUUID: formUuid}),
       },
       baseUrl,
     );
+  },
+
+  // Multipart upload for dynamic-form file/image fields. Returns the stored
+  // S3 path the caller should write into the corresponding field value.
+  async uploadProfileFormFile(
+    token: string,
+    formUuid: string,
+    file: {uri: string; name: string; type: string},
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    const normalizedToken = normalizeTokenValue(token);
+    if (!normalizedToken) {
+      throw new Error('Missing access token.');
+    }
+
+    const formData = new FormData();
+    formData.append('file', {
+      uri: file.uri,
+      name: file.name,
+      type: file.type,
+    } as any);
+
+    const response = await fetch(
+      `${baseUrl}${buildFormSubmissionPath(formUuid)}/upload-file`,
+      {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${normalizedToken}`,
+        },
+        body: formData as any,
+      },
+    );
+    const raw = await response.text();
+    const data = raw ? safeJsonParse(raw) : null;
+    if (!response.ok) {
+      throw new Error(
+        getErrorMessage(data) ||
+          `Form file upload failed (${response.status}).`,
+      );
+    }
+    return data as ApiResponse;
   },
 
   async updateFinancialsInformation(

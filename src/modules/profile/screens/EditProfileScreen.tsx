@@ -19,7 +19,13 @@ import {TenantContext} from '../../../core/tenant/TenantProvider';
 import {authService} from '../../auth/services/auth.service';
 import {BasicInfoForm} from './editProfile/BasicInfoForm';
 import {CorporateEngagementTab} from './editProfile/CorporateEngagementTab';
-import {CustomFormTab, DynamicForm} from './editProfile/CustomFormTab';
+import {
+  CustomFormTab,
+  CustomFormTabHandle,
+  DynamicForm,
+  isFormComplete,
+  normalizeRawField,
+} from './editProfile/CustomFormTab';
 import {Documents} from './editProfile/Documents';
 import {FinancialsForm} from './editProfile/FinancialsForm';
 import {InvestorInvestmentsTab} from './editProfile/InvestorInvestmentsTab';
@@ -319,7 +325,6 @@ const buildEditTabs = (
 export function EditProfileScreen({
   token,
   onBack,
-  onPreview,
 }: EditProfileScreenProps) {
   const {theme, globalSetting, baseUrl} = useContext(TenantContext);
   const primaryColor = theme?.primary || colors.primary;
@@ -339,6 +344,12 @@ export function EditProfileScreen({
     null,
   );
   const [customForms, setCustomForms] = useState<DynamicForm[]>([]);
+  // Tab-dot status per custom form. Seeded from a prefetch of each form's
+  // submission so the dot is accurate before the user opens the tab, and
+  // updated live by each CustomFormTab via onCompletionChange.
+  const [customFormStatuses, setCustomFormStatuses] = useState<
+    Record<string, boolean>
+  >({});
   // Extra picker options used by the per-role secondary tabs. Fetched once
   // per session when the user lands on a non-startup role.
   const [investmentStageOptions, setInvestmentStageOptions] = useState<
@@ -408,6 +419,10 @@ export function EditProfileScreen({
   // diff each sub-resource (business models, pitch, product info, advisors,
   // founders) so we only PATCH endpoints whose data the user actually changed.
   const initialBasicInfoRef = useRef<BasicInfoFormType | null>(null);
+  // Refs keyed by form uuid for each rendered CustomFormTab. Lets the
+  // footer SAVE button drive the active custom form's save() imperatively
+  // so we don't need a separate in-card Save inside each tab.
+  const customFormRefs = useRef<Record<string, CustomFormTabHandle | null>>({});
   // {id, name} lookup for business models + product stages — fetched from
   // /global/custom so we can resolve the form's stored names to the numeric
   // IDs the sub-resource PATCHes require.
@@ -426,82 +441,6 @@ export function EditProfileScreen({
     ipCountry: string | null;
   }>({haveIP: null, ipStatus: null, ipCountry: null});
 
-  // The nested founders/advisoryBoards arrays in /startup-information are
-  // partial — typically missing `designation` and similar fields. Each member
-  // already carries its server uuid, so we hit GET /founders/:uuid and
-  // GET /advisory-boards/:uuid in parallel to hydrate the full record. Rows
-  // without a uuid (added locally, not yet saved) and any 404s are left as-is.
-  const hydrateTeamFromUuidEndpoints = async (
-    base: BasicInfoFormType,
-  ): Promise<BasicInfoFormType> => {
-    const founderUuids = base.leadership
-      .map(m => m.uuid)
-      .filter((u): u is string => Boolean(u));
-    const advisorUuids = base.advisory
-      .map(m => m.uuid)
-      .filter((u): u is string => Boolean(u));
-
-    if (founderUuids.length === 0 && advisorUuids.length === 0) {
-      return base;
-    }
-
-    const [foundersRes, advisorsRes] = await Promise.all([
-      Promise.all(
-        founderUuids.map(uuid =>
-          authService.getFounderByUuid(token, uuid).catch(() => null),
-        ),
-      ),
-      Promise.all(
-        advisorUuids.map(uuid =>
-          authService.getAdvisoryBoardByUuid(token, uuid).catch(() => null),
-        ),
-      ),
-    ]);
-
-    const founderByUuid = new Map<string, any>();
-    foundersRes.forEach((res, i) => {
-      const record = res?.data || res;
-      if (record && typeof record === 'object') {
-        founderByUuid.set(founderUuids[i], record);
-      }
-    });
-    const advisorByUuid = new Map<string, any>();
-    advisorsRes.forEach((res, i) => {
-      const record = res?.data || res;
-      if (record && typeof record === 'object') {
-        advisorByUuid.set(advisorUuids[i], record);
-      }
-    });
-
-    const next: BasicInfoFormType = {
-      ...base,
-      leadership: base.leadership.map(member => {
-        if (!member.uuid) return member;
-        const full = founderByUuid.get(member.uuid);
-        if (!full) return member;
-        return {
-          ...member,
-          name: String(full?.name ?? member.name),
-          linkedinUrl: String(full?.linkedinUrl ?? member.linkedinUrl ?? ''),
-          role: String(full?.role ?? member.role),
-          designation: String(full?.designation ?? member.designation ?? ''),
-        };
-      }),
-      advisory: base.advisory.map(member => {
-        if (!member.uuid) return member;
-        const full = advisorByUuid.get(member.uuid);
-        if (!full) return member;
-        return {
-          ...member,
-          name: String(full?.name ?? member.name),
-          linkedinUrl: String(full?.linkedinUrl ?? member.linkedinUrl ?? ''),
-        };
-      }),
-    };
-
-    return ensureBasicInfoDefaults(next);
-  };
-
   // `silent` skips the full-screen spinner — used after a successful save so
   // we can pick up server-normalized values without flashing the loading view.
   const loadProfile = async ({silent = false}: {silent?: boolean} = {}) => {
@@ -517,12 +456,7 @@ export function EditProfileScreen({
       const extracted = extractProfile(raw, logoBaseUrl);
       const root = raw?.data || raw || null;
       setStartupInfo(root);
-      let normalized = ensureBasicInfoDefaults(extracted.basicInfo);
-      // Hydrate team members from per-uuid endpoints to pick up fields like
-      // `designation` that aren't in the nested arrays.
-      if (!accountType || accountType === 'startup') {
-        normalized = await hydrateTeamFromUuidEndpoints(normalized);
-      }
+      const normalized = ensureBasicInfoDefaults(extracted.basicInfo);
       setBasicInfo(normalized);
       // Capture a snapshot used for per-sub-resource diff detection on save.
       initialBasicInfoRef.current = normalized;
@@ -645,19 +579,77 @@ export function EditProfileScreen({
       .then(res => {
         if (cancelled) return;
         const items = Array.isArray(res?.data) ? res.data : [];
+        // Mirror the web filter for profile forms: only active forms whose
+        // useFormAs === 'form' and aren't scoped to a specific program. Forms
+        // can ship fields under `fields`, `formFields`, or `schema.fields`
+        // depending on backend version — accept any of them.
         const forms: DynamicForm[] = items
-          .map((raw: any) => ({
-            uuid: String(raw?.uuid || raw?.id || ''),
-            formTitle: raw?.formTitle || raw?.title,
-            formCode: raw?.formCode || raw?.code,
-            fields: Array.isArray(raw?.fields) ? raw.fields : [],
-          }))
+          .filter((raw: any) => {
+            if (raw?.status === false) return false;
+            if (raw?.useFormAs && raw.useFormAs !== 'form') return false;
+            if (raw?.programs && Array.isArray(raw.programs) && raw.programs.length > 0) {
+              return false;
+            }
+            return true;
+          })
+          .map((raw: any) => {
+            const rawFields = Array.isArray(raw?.fields)
+              ? raw.fields
+              : Array.isArray(raw?.formFields)
+                ? raw.formFields
+                : Array.isArray(raw?.schema?.fields)
+                  ? raw.schema.fields
+                  : [];
+            // Backend sends section children as JSON strings and uses
+            // `key` as the identifier with `name` as the label — normalize
+            // both into the shape CustomFormTab expects.
+            const fields = rawFields
+              .map((f: any) => normalizeRawField(f))
+              .filter(Boolean);
+            return {
+              uuid: String(raw?.uuid || raw?.id || ''),
+              formTitle: raw?.formTitle || raw?.title,
+              formCode: raw?.formCode || raw?.code,
+              fields,
+            };
+          })
           .filter((f: DynamicForm) => f.uuid && f.fields.length > 0);
         setCustomForms(forms);
+
+        // Prefetch each form's submission so the tab dot reflects real
+        // completion state on first render — without waiting for the user
+        // to open the tab. Independent failures are fine; missing
+        // submissions just mean the dot stays red until they save.
+        Promise.all(
+          forms.map((form: DynamicForm) =>
+            authService
+              .getProfileFormSubmission(token, form.uuid)
+              .then(res => ({form, res}))
+              .catch(() => ({form, res: null})),
+          ),
+        ).then(results => {
+          if (cancelled) return;
+          const next: Record<string, boolean> = {};
+          for (const {form, res} of results) {
+            const submissionRecord =
+              (res as any)?.data && typeof (res as any).data === 'object'
+                ? (res as any).data
+                : (res as any) || {};
+            const fieldValues =
+              submissionRecord?.data &&
+              typeof submissionRecord.data === 'object' &&
+              !Array.isArray(submissionRecord.data)
+                ? submissionRecord.data
+                : submissionRecord;
+            next[form.uuid] = isFormComplete(form.fields, fieldValues || {});
+          }
+          setCustomFormStatuses(next);
+        });
       })
       .catch(() => {
         if (!cancelled) {
           setCustomForms([]);
+          setCustomFormStatuses({});
         }
       });
     return () => {
@@ -868,15 +860,11 @@ export function EditProfileScreen({
     setLoadError(null);
     authService
       .getStartupInformation(token, accountType)
-      .then(async raw => {
+      .then(raw => {
         if (cancelled) return;
         const extracted = extractProfile(raw, logoBaseUrl);
         setStartupInfo(raw?.data || raw || null);
-        let normalized = ensureBasicInfoDefaults(extracted.basicInfo);
-        if (!accountType || accountType === 'startup') {
-          normalized = await hydrateTeamFromUuidEndpoints(normalized);
-          if (cancelled) return;
-        }
+        const normalized = ensureBasicInfoDefaults(extracted.basicInfo);
         setBasicInfo(normalized);
         initialBasicInfoRef.current = normalized;
         setFinancialInfo(extracted.financials);
@@ -1017,7 +1005,9 @@ export function EditProfileScreen({
     ...customForms.map(form => ({
       key: `custom:${form.uuid}`,
       label: form.formTitle || form.formCode || 'Form',
-      status: 'incomplete' as const,
+      status: (customFormStatuses[form.uuid]
+        ? 'complete'
+        : 'incomplete') as 'complete' | 'incomplete',
     })),
   ];
 
@@ -1057,6 +1047,23 @@ export function EditProfileScreen({
     setIsSaving(true);
     setSaveMessage(null);
     try {
+      // Custom (tenant-defined) profile forms expose an imperative save()
+      // via ref. Route the global footer Save there and surface its result
+      // in the same banner the other tabs use.
+      if (activeTab.startsWith('custom:')) {
+        const uuid = activeTab.slice('custom:'.length);
+        const handle = customFormRefs.current[uuid];
+        if (!handle) {
+          setSaveMessage({text: 'Form is not ready yet.', tone: 'error'});
+          return;
+        }
+        const result = await handle.save();
+        setSaveMessage({
+          text: result.message || (result.ok ? 'Saved.' : 'Could not save.'),
+          tone: result.ok ? 'success' : 'error',
+        });
+        return;
+      }
       if (activeTab === 'industry') {
         const otherIndustryList = otherIndustriesActive
           ? otherIndustriesText
@@ -1258,6 +1265,12 @@ export function EditProfileScreen({
     const currentIndex = tabs.findIndex(tab => tab.key === activeTab);
     const next = tabs[currentIndex + 1];
     if (next) setActiveTab(next.key);
+  };
+
+  const handlePrevious = () => {
+    const currentIndex = tabs.findIndex(tab => tab.key === activeTab);
+    const prev = tabs[currentIndex - 1];
+    if (prev) setActiveTab(prev.key);
   };
 
   // Tenant-configurable selection caps. Frontend reads the same two settings
@@ -2017,9 +2030,19 @@ export function EditProfileScreen({
             }
             return (
               <CustomFormTab
+                ref={handle => {
+                  customFormRefs.current[form.uuid] = handle;
+                }}
                 token={token}
                 form={form}
                 primaryColor={primaryColor}
+                onCompletionChange={complete =>
+                  setCustomFormStatuses(prev =>
+                    prev[form.uuid] === complete
+                      ? prev
+                      : {...prev, [form.uuid]: complete},
+                  )
+                }
               />
             );
           })()
@@ -2050,44 +2073,57 @@ export function EditProfileScreen({
       {renderPicker()}
 
       <View style={styles.footer}>
-        {tabs.findIndex(tab => tab.key === activeTab) === tabs.length - 1 ? (
-          <View style={styles.footerSlot}>
-            <AppButton
-              label="PREVIEW"
-              onPress={() => onPreview?.()}
-              disabled={!onPreview}
-            />
-          </View>
-        ) : (
-          <>
-            <View style={styles.footerSlot}>
-              <AppButton
-                label={isSaving ? 'Saving…' : 'SAVE'}
-                disabled={
-                  isSaving ||
-                  // Global Save only handles the startup-flow tabs. Every
-                  // other role's basic-info tab uses RoleBasicInfoTab and the
-                  // per-role secondary tabs (engagement, domain_expertise,
-                  // investment_*, service_provider industry) render their own
-                  // internal Save button.
-                  (accountType ? accountType !== 'startup' : false) ||
-                  (activeTab !== 'basic' &&
-                    activeTab !== 'industry' &&
-                    activeTab !== 'financials')
-                }
-                loading={isSaving}
-                onPress={handleSave}
-              />
-            </View>
-            <View style={styles.footerSlot}>
-              <AppButton
-                label="NEXT STEP"
-                variant="secondary"
-                onPress={handleNext}
-              />
-            </View>
-          </>
-        )}
+        {(() => {
+          const currentIndex = tabs.findIndex(tab => tab.key === activeTab);
+          const isFirst = currentIndex <= 0;
+          const isLast = currentIndex >= tabs.length - 1;
+          // Pitch Deck has its own upload UI (YourPitchDeck + Documents),
+          // not a form to save — hide the global SAVE on that tab entirely.
+          const hideSave = activeTab === 'pitch';
+          // Global Save handles the startup-flow tabs plus any custom
+          // (tenant-defined) form tab. Per-role secondary tabs render
+          // their own internal Save button, so disable the global one
+          // there.
+          const saveDisabled =
+            isSaving ||
+            (accountType ? accountType !== 'startup' : false) ||
+            (activeTab !== 'basic' &&
+              activeTab !== 'industry' &&
+              activeTab !== 'financials' &&
+              !activeTab.startsWith('custom:'));
+          return (
+            <>
+              {!isFirst ? (
+                <View style={styles.footerSlot}>
+                  <AppButton
+                    label="PREVIOUS"
+                    variant="secondary"
+                    onPress={handlePrevious}
+                  />
+                </View>
+              ) : null}
+              {!hideSave ? (
+                <View style={styles.footerSlot}>
+                  <AppButton
+                    label={isSaving ? 'Saving…' : 'SAVE'}
+                    disabled={saveDisabled}
+                    loading={isSaving}
+                    onPress={handleSave}
+                  />
+                </View>
+              ) : null}
+              {!isLast ? (
+                <View style={styles.footerSlot}>
+                  <AppButton
+                    label="NEXT"
+                    variant="secondary"
+                    onPress={handleNext}
+                  />
+                </View>
+              ) : null}
+            </>
+          );
+        })()}
       </View>
     </View>
   );
