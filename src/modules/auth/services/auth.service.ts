@@ -106,6 +106,10 @@ const buildProfileCompletenessPath = (
 const FINANCIALS_INFORMATION_PATH = 'api/v1/startups/financials-information';
 const INDUSTRY_TECHNOLOGY_BUSINESS_PATH =
   'api/v1/startups/industry-technology-business';
+const PITCH_DECK_PATH = 'api/v1/startups/pitch-deck';
+const PRODUCT_INFORMATION_PATH = 'api/v1/startups/product-information';
+const ADVISORY_BOARDS_PATH = 'api/v1/startups/advisory-boards';
+const FOUNDERS_PATH = 'api/v1/startups/founders';
 const DOCUMENT_TYPES_PATH = 'api/v1/public/global/document_types';
 const SUPPORTING_DOCUMENTS_PATH = 'api/v1/startups/supporting-documents';
 const STARTUP_DOCUMENT_SAVE_PATH = 'api/v1/startup/documents';
@@ -1776,6 +1780,93 @@ export const authService = {
         headers: getAuthHeader(token),
         body: JSON.stringify(payload),
       },
+      baseUrl,
+    );
+  },
+
+  async updatePitchDeck(
+    token: string,
+    payload: Record<string, any>,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      PITCH_DECK_PATH,
+      {
+        method: 'PATCH',
+        headers: getAuthHeader(token),
+        body: JSON.stringify(payload),
+      },
+      baseUrl,
+    );
+  },
+
+  async updateProductInformation(
+    token: string,
+    payload: Record<string, any>,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      PRODUCT_INFORMATION_PATH,
+      {
+        method: 'PATCH',
+        headers: getAuthHeader(token),
+        body: JSON.stringify(payload),
+      },
+      baseUrl,
+    );
+  },
+
+  async updateAdvisoryBoard(
+    token: string,
+    uuid: string,
+    payload: Record<string, any>,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      `${ADVISORY_BOARDS_PATH}/${uuid}`,
+      {
+        method: 'PATCH',
+        headers: getAuthHeader(token),
+        body: JSON.stringify(payload),
+      },
+      baseUrl,
+    );
+  },
+
+  async getAdvisoryBoardByUuid(
+    token: string,
+    uuid: string,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      `${ADVISORY_BOARDS_PATH}/${uuid}`,
+      {method: 'GET', headers: getAuthHeader(token)},
+      baseUrl,
+    );
+  },
+
+  async updateFounder(
+    token: string,
+    uuid: string,
+    payload: Record<string, any>,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      `${FOUNDERS_PATH}/${uuid}`,
+      {
+        method: 'PATCH',
+        headers: getAuthHeader(token),
+        body: JSON.stringify(payload),
+      },
+      baseUrl,
+    );
+  },
+
+  async getFounderByUuid(token: string, uuid: string): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      `${FOUNDERS_PATH}/${uuid}`,
+      {method: 'GET', headers: getAuthHeader(token)},
       baseUrl,
     );
   },

@@ -40,7 +40,6 @@ import {
   COUNTRIES,
   Country,
   PRODUCT_STAGES,
-  TEAM_ROLES,
   getCitiesFor,
   getCountryIdByName,
   getStateIdByName,
@@ -197,6 +196,7 @@ const ensureBasicInfoDefaults = (
       ? basicInfo.advisory.filter(Boolean).map(member => ({
           id:
             member?.id || `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          uuid: member?.uuid,
           name: String(member?.name || ''),
           linkedinUrl: String(member?.linkedinUrl || ''),
         }))
@@ -221,7 +221,7 @@ const statesEndpoint = (baseUrl: string) =>
 const citiesEndpoint = (baseUrl: string) =>
   `${baseUrl}api/v1/public/global/cities`;
 const customGlobalEndpoint = (baseUrl: string) =>
-  `${baseUrl}api/v1/public/global/custom/industries,technologies,industries_primary`;
+  `${baseUrl}api/v1/public/global/custom/industries,technologies,industries_primary,business_models,product_stages`;
 
 const readLocationList = (payload: any): LocationOption[] => {
   const list = payload?.data || payload?.results || payload || [];
@@ -235,6 +235,13 @@ const readLocationList = (payload: any): LocationOption[] => {
       name: String(item?.name ?? item?.label ?? '').trim(),
     }))
     .filter(item => Number.isFinite(item.id) && Boolean(item.name));
+};
+
+const arraysEqualUnordered = (a: string[], b: string[]): boolean => {
+  if (a.length !== b.length) return false;
+  const sortedA = [...a].sort();
+  const sortedB = [...b].sort();
+  return sortedA.every((v, i) => v === sortedB[i]);
 };
 
 const slugify = (value: string) =>
@@ -397,9 +404,110 @@ export function EditProfileScreen({
     useState<BasicInfoFormType>(EMPTY_BASIC_INFO);
   const [financialInfo, setFinancialInfo] =
     useState<FinancialsFormType>(EMPTY_FINANCIALS);
+  // Snapshot of basicInfo taken when the profile loads. Used at save time to
+  // diff each sub-resource (business models, pitch, product info, advisors,
+  // founders) so we only PATCH endpoints whose data the user actually changed.
+  const initialBasicInfoRef = useRef<BasicInfoFormType | null>(null);
+  // {id, name} lookup for business models + product stages — fetched from
+  // /global/custom so we can resolve the form's stored names to the numeric
+  // IDs the sub-resource PATCHes require.
+  const [basicBusinessModelOptions, setBasicBusinessModelOptions] = useState<
+    Array<{id: number; name: string}>
+  >([]);
+  const [productStageOptions, setProductStageOptions] = useState<
+    Array<{id: number; name: string}>
+  >([]);
+  // IP fields are not edited in the mobile Basic Info UI — we echo back what
+  // the server returned so the product-information PATCH (which carries the
+  // updated description / productStageId) doesn't blank them out.
+  const initialProductInfoRef = useRef<{
+    haveIP: string | null;
+    ipStatus: string | null;
+    ipCountry: string | null;
+  }>({haveIP: null, ipStatus: null, ipCountry: null});
 
-  const loadProfile = async () => {
-    setIsLoading(true);
+  // The nested founders/advisoryBoards arrays in /startup-information are
+  // partial — typically missing `designation` and similar fields. Each member
+  // already carries its server uuid, so we hit GET /founders/:uuid and
+  // GET /advisory-boards/:uuid in parallel to hydrate the full record. Rows
+  // without a uuid (added locally, not yet saved) and any 404s are left as-is.
+  const hydrateTeamFromUuidEndpoints = async (
+    base: BasicInfoFormType,
+  ): Promise<BasicInfoFormType> => {
+    const founderUuids = base.leadership
+      .map(m => m.uuid)
+      .filter((u): u is string => Boolean(u));
+    const advisorUuids = base.advisory
+      .map(m => m.uuid)
+      .filter((u): u is string => Boolean(u));
+
+    if (founderUuids.length === 0 && advisorUuids.length === 0) {
+      return base;
+    }
+
+    const [foundersRes, advisorsRes] = await Promise.all([
+      Promise.all(
+        founderUuids.map(uuid =>
+          authService.getFounderByUuid(token, uuid).catch(() => null),
+        ),
+      ),
+      Promise.all(
+        advisorUuids.map(uuid =>
+          authService.getAdvisoryBoardByUuid(token, uuid).catch(() => null),
+        ),
+      ),
+    ]);
+
+    const founderByUuid = new Map<string, any>();
+    foundersRes.forEach((res, i) => {
+      const record = res?.data || res;
+      if (record && typeof record === 'object') {
+        founderByUuid.set(founderUuids[i], record);
+      }
+    });
+    const advisorByUuid = new Map<string, any>();
+    advisorsRes.forEach((res, i) => {
+      const record = res?.data || res;
+      if (record && typeof record === 'object') {
+        advisorByUuid.set(advisorUuids[i], record);
+      }
+    });
+
+    const next: BasicInfoFormType = {
+      ...base,
+      leadership: base.leadership.map(member => {
+        if (!member.uuid) return member;
+        const full = founderByUuid.get(member.uuid);
+        if (!full) return member;
+        return {
+          ...member,
+          name: String(full?.name ?? member.name),
+          linkedinUrl: String(full?.linkedinUrl ?? member.linkedinUrl ?? ''),
+          role: String(full?.role ?? member.role),
+          designation: String(full?.designation ?? member.designation ?? ''),
+        };
+      }),
+      advisory: base.advisory.map(member => {
+        if (!member.uuid) return member;
+        const full = advisorByUuid.get(member.uuid);
+        if (!full) return member;
+        return {
+          ...member,
+          name: String(full?.name ?? member.name),
+          linkedinUrl: String(full?.linkedinUrl ?? member.linkedinUrl ?? ''),
+        };
+      }),
+    };
+
+    return ensureBasicInfoDefaults(next);
+  };
+
+  // `silent` skips the full-screen spinner — used after a successful save so
+  // we can pick up server-normalized values without flashing the loading view.
+  const loadProfile = async ({silent = false}: {silent?: boolean} = {}) => {
+    if (!silent) {
+      setIsLoading(true);
+    }
     setLoadError(null);
     try {
       const raw = await authService.getStartupInformation(
@@ -409,7 +517,21 @@ export function EditProfileScreen({
       const extracted = extractProfile(raw, logoBaseUrl);
       const root = raw?.data || raw || null;
       setStartupInfo(root);
-      setBasicInfo(ensureBasicInfoDefaults(extracted.basicInfo));
+      let normalized = ensureBasicInfoDefaults(extracted.basicInfo);
+      // Hydrate team members from per-uuid endpoints to pick up fields like
+      // `designation` that aren't in the nested arrays.
+      if (!accountType || accountType === 'startup') {
+        normalized = await hydrateTeamFromUuidEndpoints(normalized);
+      }
+      setBasicInfo(normalized);
+      // Capture a snapshot used for per-sub-resource diff detection on save.
+      initialBasicInfoRef.current = normalized;
+      const productInfo = root?.productInformation || {};
+      initialProductInfoRef.current = {
+        haveIP: productInfo?.haveIP ?? null,
+        ipStatus: productInfo?.ipStatus ?? null,
+        ipCountry: productInfo?.ipCountry ?? null,
+      };
       setFinancialInfo(extracted.financials);
       setSelectedIndustryIds(
         Array.isArray(root?.startupIndustries)
@@ -445,7 +567,9 @@ export function EditProfileScreen({
           : 'Could not load your profile.',
       );
     } finally {
-      setIsLoading(false);
+      if (!silent) {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -689,12 +813,16 @@ export function EditProfileScreen({
               ? payload.data.industries
               : [],
         );
+        setBasicBusinessModelOptions(toIdName(payload?.data?.business_models));
+        setProductStageOptions(toIdName(payload?.data?.product_stages));
       })
       .catch(() => {
         if (!cancelled) {
           setIndustryOptions([]);
           setTechnologyOptions([]);
           setPrimaryIndustryOptions([]);
+          setBasicBusinessModelOptions([]);
+          setProductStageOptions([]);
         }
       });
 
@@ -740,13 +868,25 @@ export function EditProfileScreen({
     setLoadError(null);
     authService
       .getStartupInformation(token, accountType)
-      .then(raw => {
+      .then(async raw => {
         if (cancelled) return;
         const extracted = extractProfile(raw, logoBaseUrl);
         setStartupInfo(raw?.data || raw || null);
-        setBasicInfo(ensureBasicInfoDefaults(extracted.basicInfo));
+        let normalized = ensureBasicInfoDefaults(extracted.basicInfo);
+        if (!accountType || accountType === 'startup') {
+          normalized = await hydrateTeamFromUuidEndpoints(normalized);
+          if (cancelled) return;
+        }
+        setBasicInfo(normalized);
+        initialBasicInfoRef.current = normalized;
         setFinancialInfo(extracted.financials);
         const root = raw?.data || raw || {};
+        const productInfo = root?.productInformation || {};
+        initialProductInfoRef.current = {
+          haveIP: productInfo?.haveIP ?? null,
+          ipStatus: productInfo?.ipStatus ?? null,
+          ipCountry: productInfo?.ipCountry ?? null,
+        };
         setSelectedIndustryIds(
           Array.isArray(root?.startupIndustries)
             ? root.startupIndustries
@@ -964,11 +1104,140 @@ export function EditProfileScreen({
             : current,
         );
       } else {
+        // Always update the core /startup-information record.
         await authService.updateProfile(
           token,
           buildBasicInfoPayload(basicInfo),
           accountType || undefined,
         );
+
+        // For the startup Basic Info tab, fan out updates to the five
+        // sub-resources only when their data actually changed. Each sub-PATCH
+        // hits a dedicated endpoint and runs in parallel; if any fail we
+        // surface the first error but the core save above is already through.
+        const initial = initialBasicInfoRef.current;
+        if (accountType === 'startup' || !accountType) {
+          const subPatches: Array<Promise<unknown>> = [];
+
+          // 1) Business models — resolve names to ids using the
+          // server-fetched options. Skip names with no match.
+          const businessModelsChanged =
+            !initial ||
+            !arraysEqualUnordered(
+              initial.businessModels,
+              basicInfo.businessModels,
+            );
+          if (businessModelsChanged) {
+            const idByName = new Map<string, number>(
+              basicBusinessModelOptions.map(opt => [opt.name, opt.id]),
+            );
+            const businessModelIds = basicInfo.businessModels
+              .map(name => idByName.get(name))
+              .filter((id): id is number => typeof id === 'number');
+            subPatches.push(
+              authService.updateIndustryTechnologyBusiness(token, {
+                businessModelIds,
+              }),
+            );
+          }
+
+          // 2) Pitch deck — only the elevator pitch lives in the Basic Info
+          // form. PATCH /pitch-deck with just that field.
+          if (initial && initial.elevatorPitch !== basicInfo.elevatorPitch) {
+            subPatches.push(
+              authService.updatePitchDeck(token, {
+                elevatorPitch: basicInfo.elevatorPitch,
+              }),
+            );
+          }
+
+          // 3) Product information — productStage (resolved to id) +
+          // description (companyBrief). IP fields are echoed back from the
+          // server snapshot so this PATCH doesn't blank them out.
+          const productInfoChanged =
+            initial &&
+            (initial.productStage !== basicInfo.productStage ||
+              initial.companyBrief !== basicInfo.companyBrief);
+          if (productInfoChanged) {
+            const stageId = productStageOptions.find(
+              opt => opt.name === basicInfo.productStage,
+            )?.id;
+            subPatches.push(
+              authService.updateProductInformation(token, {
+                productStageId: stageId ?? null,
+                description: basicInfo.companyBrief,
+                haveIP: initialProductInfoRef.current.haveIP,
+                ipStatus: initialProductInfoRef.current.ipStatus,
+                ipCountry: initialProductInfoRef.current.ipCountry,
+              }),
+            );
+          }
+
+          // 4 & 5) Advisors / Founders — PATCH each existing member (has a
+          // server uuid) whose row was edited. Newly-added rows without a
+          // uuid are skipped here; they need a POST endpoint to create.
+          if (initial) {
+            const initialAdvisoryByUuid = new Map(
+              initial.advisory
+                .filter(m => m.uuid)
+                .map(m => [m.uuid as string, m]),
+            );
+            for (const member of basicInfo.advisory) {
+              if (!member.uuid) continue;
+              const prev = initialAdvisoryByUuid.get(member.uuid);
+              if (
+                !prev ||
+                prev.name !== member.name ||
+                prev.linkedinUrl !== member.linkedinUrl
+              ) {
+                subPatches.push(
+                  authService.updateAdvisoryBoard(token, member.uuid, {
+                    uuid: member.uuid,
+                    name: member.name,
+                    linkedinUrl: member.linkedinUrl,
+                  }),
+                );
+              }
+            }
+
+            const initialLeadershipByUuid = new Map(
+              initial.leadership
+                .filter(m => m.uuid)
+                .map(m => [m.uuid as string, m]),
+            );
+            for (const member of basicInfo.leadership) {
+              if (!member.uuid) continue;
+              const prev = initialLeadershipByUuid.get(member.uuid);
+              if (
+                !prev ||
+                prev.name !== member.name ||
+                prev.linkedinUrl !== member.linkedinUrl ||
+                prev.role !== member.role ||
+                prev.designation !== member.designation
+              ) {
+                subPatches.push(
+                  authService.updateFounder(token, member.uuid, {
+                    uuid: member.uuid,
+                    name: member.name,
+                    linkedinUrl: member.linkedinUrl,
+                    role: member.role,
+                    designation: member.designation,
+                  }),
+                );
+              }
+            }
+          }
+
+          if (subPatches.length > 0) {
+            await Promise.all(subPatches);
+          }
+        }
+
+        // Refetch the profile so the form reflects any server-side
+        // normalization (trimmed strings, server-issued IDs/timestamps) and
+        // resets the diff baseline. `silent: true` keeps the loading view
+        // from flashing over the save success message.
+        await loadProfile({silent: true});
       }
 
       setSaveMessage({text: 'Saved successfully.', tone: 'success'});
@@ -1109,15 +1378,34 @@ export function EditProfileScreen({
     if (!picker) return null;
 
     if (typeof picker === 'object' && picker.kind === 'leadershipRole') {
+      // The form stores role as the snake_case enum value (e.g. "co_founder")
+      // because that's what the /founders PATCH expects. The Picker UI is
+      // label-based, so convert at both edges. Prefer the tenant-configured
+      // memberRoles from global settings (same source web uses); fall back
+      // to the hardcoded FOUNDER_ROLES if the tenant didn't ship it.
+      const tenantRoles = Array.isArray(globalSetting?.memberRoles)
+        ? globalSetting!.memberRoles!
+        : [];
+      const roles =
+        tenantRoles.length > 0
+          ? tenantRoles
+          : [
+              {name: 'Founder', value: 'founder'},
+              {name: 'Co-Founder', value: 'co_founder'},
+              {name: 'Executive Leadership', value: 'executive_leadership'},
+            ];
+      const labelByValue = new Map(roles.map(r => [r.value, r.name]));
+      const valueByLabel = new Map(roles.map(r => [r.name, r.value]));
+      const currentValue = basicInfo.leadership[picker.index]?.role || '';
       return (
         <Picker
           visible
           title="Select role"
-          options={TEAM_ROLES}
-          selected={basicInfo.leadership[picker.index]?.role}
+          options={roles.map(r => r.name)}
+          selected={labelByValue.get(currentValue) || currentValue}
           primaryColor={primaryColor}
           onClose={closePicker}
-          onSelect={role => {
+          onSelect={label => {
             const member = basicInfo.leadership[picker.index];
             if (!member) {
               closePicker();
@@ -1125,7 +1413,9 @@ export function EditProfileScreen({
             }
 
             const nextLeadership = basicInfo.leadership.map((entry, index) =>
-              index === picker.index ? {...entry, role} : entry,
+              index === picker.index
+                ? {...entry, role: valueByLabel.get(label) || label}
+                : entry,
             );
             updateBasic('leadership', nextLeadership);
             closePicker();

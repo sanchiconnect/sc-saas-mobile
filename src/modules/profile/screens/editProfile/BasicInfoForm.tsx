@@ -15,6 +15,7 @@ import {colors} from '../../../../core/theme/colors';
 import {TenantContext} from '../../../../core/tenant/TenantProvider';
 import {
   BUSINESS_MODELS,
+  FOUNDER_ROLES,
 } from './options';
 import {
   AdvisoryMember,
@@ -87,6 +88,15 @@ export function BasicInfoForm({
   const cinEnabled = Boolean(features.company_identification_cin);
   const gstEnabled = Boolean(features.company_identification_gst);
   const dpiitEnabled = Boolean(features.company_identification_dpiit);
+  // Map server's snake_case role value to its display label using tenant
+  // settings (web reads the same `memberRoles`). Falls back to the static
+  // FOUNDER_ROLES if the tenant didn't ship the key.
+  const roleLabelLookup = (value: string): string => {
+    const tenantRoles = globalSetting?.memberRoles || [];
+    const fromTenant = tenantRoles.find(r => r.value === value)?.name;
+    if (fromTenant) return fromTenant;
+    return FOUNDER_ROLES.find(r => r.value === value)?.label || value;
+  };
 
   // "What are you looking for from the platform?" — same option list and
   // visibility rules as the frontend startup-information component. Each
@@ -518,7 +528,7 @@ export function BasicInfoForm({
             <DropdownField
               label="Role"
               placeholder="Select role"
-              value={member.role}
+              value={roleLabelLookup(member.role)}
               onPress={() => onOpenLeadershipRole(index)}
             />
             <AppTextField

@@ -28,6 +28,9 @@ type TenantContextType = {
     investorMaxIndustries?: string | number;
     investorMaxInvestabilityMetrics?: string | number;
     CorporateSizes?: Array<{name: string; value: string}>;
+    // Founder/leadership role enum exposed by /tenant settings — drives the
+    // Role dropdown in Edit Profile's Team section. Web reads the same key.
+    memberRoles?: Array<{name: string; value: string}>;
   } | null;
 };
 
@@ -70,6 +73,9 @@ export const TenantProvider = ({children}: Props) => {
           settingsData?.investorMaxInvestabilityMetrics,
         CorporateSizes: Array.isArray(settingsData?.CorporateSizes)
           ? settingsData.CorporateSizes
+          : [],
+        memberRoles: Array.isArray(settingsData?.memberRoles)
+          ? settingsData.memberRoles
           : [],
       });
       setTheme({

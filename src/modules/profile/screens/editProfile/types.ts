@@ -1,5 +1,8 @@
 export type TeamMember = {
   id: string;
+  // Server-issued UUID. Present for members loaded from the server, absent
+  // for rows added locally — used at save time to decide PATCH vs skip.
+  uuid?: string;
   name: string;
   linkedinUrl: string;
   role: string;
@@ -8,6 +11,7 @@ export type TeamMember = {
 
 export type AdvisoryMember = {
   id: string;
+  uuid?: string;
   name: string;
   linkedinUrl: string;
 };

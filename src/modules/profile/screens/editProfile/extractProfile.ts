@@ -84,26 +84,34 @@ const resolveLogoUrl = (
 
 const toLeadership = (raw: any): TeamMember[] => {
   if (!Array.isArray(raw)) return [];
-  return raw.map(item => ({
-    id: asString(item?.id || item?._id) || randomId(),
-    name: asString(pickFirst(item?.name, item?.fullName)),
-    linkedinUrl: asString(
-      pickFirst(item?.linkedinUrl, item?.linkedin, item?.linkedInUrl),
-    ),
-    role: asString(pickFirst(item?.role, item?.type, item?.accountRole)),
-    designation: asString(pickFirst(item?.designation, item?.title)),
-  }));
+  return raw.map(item => {
+    const uuid = asString(item?.uuid);
+    return {
+      id: asString(item?.id || item?._id) || randomId(),
+      uuid: uuid || undefined,
+      name: asString(pickFirst(item?.name, item?.fullName)),
+      linkedinUrl: asString(
+        pickFirst(item?.linkedinUrl, item?.linkedin, item?.linkedInUrl),
+      ),
+      role: asString(pickFirst(item?.role, item?.type, item?.accountRole)),
+      designation: asString(pickFirst(item?.designation, item?.title)),
+    };
+  });
 };
 
 const toAdvisory = (raw: any): AdvisoryMember[] => {
   if (!Array.isArray(raw)) return [];
-  return raw.map(item => ({
-    id: asString(item?.id || item?._id) || randomId(),
-    name: asString(pickFirst(item?.name, item?.fullName)),
-    linkedinUrl: asString(
-      pickFirst(item?.linkedinUrl, item?.linkedin, item?.linkedInUrl),
-    ),
-  }));
+  return raw.map(item => {
+    const uuid = asString(item?.uuid);
+    return {
+      id: asString(item?.id || item?._id) || randomId(),
+      uuid: uuid || undefined,
+      name: asString(pickFirst(item?.name, item?.fullName)),
+      linkedinUrl: asString(
+        pickFirst(item?.linkedinUrl, item?.linkedin, item?.linkedInUrl),
+      ),
+    };
+  });
 };
 
 const toSocial = (root: AnyRecord, social: AnyRecord): SocialLinks => ({

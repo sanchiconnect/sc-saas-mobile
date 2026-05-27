@@ -29,17 +29,26 @@ export const BUSINESS_MODELS = [
   'Subscription',
 ];
 
-export const TEAM_ROLES = [
-  'Founder',
-  'Co-Founder',
-  'CEO',
-  'CTO',
-  'CFO',
-  'CMO',
-  'COO',
-  'Advisor',
-  'Investor',
+// Founder roles match the web Edit Profile dropdown. The form stores the
+// snake_case `value` (server-side enum) and renders the human-readable
+// `label`. Keep this list in sync with the backend's accepted role enum.
+export const FOUNDER_ROLES: ReadonlyArray<{label: string; value: string}> = [
+  {label: 'Founder', value: 'founder'},
+  {label: 'Co-Founder', value: 'co_founder'},
+  {label: 'Executive Leadership', value: 'executive_leadership'},
 ];
+
+export const FOUNDER_ROLE_LABELS = FOUNDER_ROLES.map(r => r.label);
+
+export const getFounderRoleLabel = (value: string): string =>
+  FOUNDER_ROLES.find(r => r.value === value)?.label || '';
+
+export const getFounderRoleValue = (label: string): string =>
+  FOUNDER_ROLES.find(r => r.label === label)?.value || '';
+
+// Legacy alias — kept so any unrelated consumer compiles. Prefer
+// FOUNDER_ROLE_LABELS for new picker call sites.
+export const TEAM_ROLES = FOUNDER_ROLE_LABELS;
 
 export const FUNDING_STAGES = [
   'Bootstrapped',
