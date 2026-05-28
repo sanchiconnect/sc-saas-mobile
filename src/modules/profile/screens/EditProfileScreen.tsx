@@ -758,9 +758,13 @@ export function EditProfileScreen({
         )
           ? mechanismsResponse.data.investment_mechanisms
           : [];
-        const commitments = Array.isArray(commitmentsResponse?.data)
-          ? commitmentsResponse.data
-          : [];
+        // GET /ongoing-commitments returns a bare array (not wrapped in
+        // {data: [...]}). Accept either shape for safety.
+        const commitments = Array.isArray(commitmentsResponse)
+          ? commitmentsResponse
+          : Array.isArray(commitmentsResponse?.data)
+            ? commitmentsResponse.data
+            : [];
 
         setFundingStageOptions(
           fundingStages.filter((item: FinancialOption) => item?.isActive !== false),
@@ -1048,6 +1052,38 @@ export function EditProfileScreen({
     setSaveMessage(null);
   };
 
+  const refreshOngoingCommitments = async () => {
+    if (!accountType) return;
+    try {
+      const res = await authService.getOngoingCommitments(token, accountType);
+      // Endpoint returns a bare array; fall back to {data: [...]} just in case.
+      const list = Array.isArray(res)
+        ? res
+        : Array.isArray(res?.data)
+          ? res.data
+          : [];
+      setOngoingCommitments(list);
+    } catch {
+      // Refresh is best-effort — keep whatever we already have on screen.
+    }
+  };
+
+  const handleSaveCommitment = async (payload: {
+    uuid?: string;
+    investorName: string;
+    amountRaised: string;
+    preMoneyValuation: string;
+    hideInvestorName: boolean;
+  }) => {
+    await authService.saveOngoingCommitment(token, payload);
+    await refreshOngoingCommitments();
+  };
+
+  const handleDeleteCommitment = async (uuid: string) => {
+    await authService.deleteOngoingCommitment(token, uuid);
+    await refreshOngoingCommitments();
+  };
+
   const handleSave = async () => {
     setIsSaving(true);
     setSaveMessage(null);
@@ -1106,18 +1142,19 @@ export function EditProfileScreen({
       } else if (activeTab === 'financials') {
         const payload = buildFinancialsPayload(financialInfo);
         await authService.updateFinancialsInformation(token, payload);
-        setStartupInfo(current =>
-          current
-            ? {
-                ...current,
-                isRaisingFunds: financialInfo.isRaisingFunds,
-                financials: {
-                  ...(current.financials || {}),
-                  ...payload.financials,
-                },
-              }
-            : current,
-        );
+        // Mirror the web flow: after financials PATCH, also flip the
+        // raising-funds master toggle and reload the persisted state so the
+        // form (and any commitments list) refreshes with the server's truth.
+        try {
+          await authService.toggleRaisingFunds(
+            token,
+            financialInfo.isRaisingFunds,
+          );
+        } catch {
+          // Toggle is best-effort — financials PATCH already succeeded.
+        }
+        await loadProfile();
+        await refreshOngoingCommitments();
       } else {
         // Always update the core /startup-information record.
         await authService.updateProfile(
@@ -2023,6 +2060,8 @@ export function EditProfileScreen({
             investmentMechanisms={investmentMechanismOptions}
             ongoingCommitments={ongoingCommitments}
             onChange={updateFinancial}
+            onSaveCommitment={handleSaveCommitment}
+            onDeleteCommitment={handleDeleteCommitment}
           />
         ) : activeTab === 'pitch' ? (
           <View>

@@ -366,6 +366,11 @@ export const extractProfile = (
     tentativeValuation: asString(financialsRoot?.tentativeValuation),
     investmentMechanisms: asIdentifierArray(
       pickFirst(
+        // Backend returns `instrumentIds` as an array of objects
+        // ({id, name, isActive}) on the startup-information GET, but expects
+        // a flat array of numeric ids on the financials PATCH. Read either
+        // shape here so the UI checkboxes light up correctly.
+        financialsRoot?.instrumentIds,
         financialsRoot?.investmentMechanisms,
         financialsRoot?.investmentMechanismOptions,
       ),
@@ -446,23 +451,27 @@ export const buildBasicInfoPayload = (info: BasicInfoForm) => ({
   cinNumber: info.isIncorporated === true ? info.cinNumber || null : null,
 });
 
+const numericOrNull = (value: string): string | null =>
+  value && String(value).trim().length > 0 ? value : null;
+
+// Backend's PATCH /financials-information expects a FLAT body with
+// `instrumentIds` (numeric array) — NOT a nested `financials` object with
+// `investmentMechanisms`. Mirrors the request shape captured from the web.
 export const buildFinancialsPayload = (info: FinancialsForm) => ({
-  isRaisingFunds: info.isRaisingFunds,
-  financials: {
-    fundingStageId: Number(info.fundingStage) || info.fundingStage,
-    targetFundraise: info.targetFundraise,
-    tentativeValuation: info.tentativeValuation,
-    investmentMechanisms: info.investmentMechanisms.map(item =>
-      Number(item) || item,
-    ),
-    totalFundRaised: info.totalFundRaised,
-    pastFunding: info.pastFunding,
-    revenueStage: info.revenueStage,
-    grossRevenues: info.grossRevenues,
-    grossRevenuesQ1: info.grossRevenuesQ1,
-    grossRevenuesQ2: info.grossRevenuesQ2,
-    grossRevenuesQ3: info.grossRevenuesQ3,
-    timeToCommercialize: info.timeToCommercialize,
-    investmentBankerOpportunity: info.investmentBankerOpportunity,
-  },
+  fundingStageId: Number(info.fundingStage) || null,
+  targetFundraise: numericOrNull(info.targetFundraise),
+  tentativeValuation: numericOrNull(info.tentativeValuation),
+  instrumentIds: info.investmentMechanisms
+    .map(item => Number(item))
+    .filter(item => Number.isFinite(item)),
+  totalFundRaised: numericOrNull(info.totalFundRaised),
+  pastFunding: info.pastFunding || null,
+  revenueStage: info.revenueStage || null,
+  grossRevenues: numericOrNull(info.grossRevenues),
+  grossRevenuesQ1: numericOrNull(info.grossRevenuesQ1),
+  grossRevenuesQ2: numericOrNull(info.grossRevenuesQ2),
+  grossRevenuesQ3: numericOrNull(info.grossRevenuesQ3),
+  qoq: null,
+  timeToCommercialize: info.timeToCommercialize || null,
+  investmentBankerOpportunity: info.investmentBankerOpportunity || null,
 });

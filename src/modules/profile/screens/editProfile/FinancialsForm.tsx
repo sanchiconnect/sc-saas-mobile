@@ -1,6 +1,14 @@
-import React from 'react';
-import {Pressable, StyleSheet, Text, View} from 'react-native';
+import React, {useEffect, useMemo, useState} from 'react';
+import {
+  ActivityIndicator,
+  Pressable,
+  StyleSheet,
+  Switch,
+  Text,
+  View,
+} from 'react-native';
 
+import {AppButton} from '../../../../core/components/AppButton';
 import {AppTextField} from '../../../../core/components/AppTextField';
 import {Icon} from '../../../../core/components/Icon';
 import {colors} from '../../../../core/theme/colors';
@@ -16,10 +24,22 @@ type SelectOption = {
   name: string;
 };
 
-type CommitmentItem = {
+export type CommitmentItem = {
   id?: number | string;
+  uuid?: string;
   investorName?: string;
   amount?: string | number;
+  amountRaised?: string | number;
+  preMoneyValuation?: string | number;
+  hideInvestorName?: boolean;
+};
+
+export type CommitmentPayload = {
+  uuid?: string;
+  investorName: string;
+  amountRaised: string;
+  preMoneyValuation: string;
+  hideInvestorName: boolean;
 };
 
 type Props = {
@@ -34,6 +54,36 @@ type Props = {
     key: K,
     value: FinancialsFormType[K],
   ) => void;
+  onSaveCommitment?: (payload: CommitmentPayload) => Promise<void> | void;
+  onDeleteCommitment?: (uuid: string) => Promise<void> | void;
+};
+
+type CommitmentDraft = {
+  // Stable key for the row — server uuid if persisted, else a local temp id.
+  rowKey: string;
+  uuid: string;
+  investorName: string;
+  amountRaised: string;
+  preMoneyValuation: string;
+  hideInvestorName: boolean;
+  saving?: boolean;
+  deleting?: boolean;
+  error?: string | null;
+};
+
+const tempRowKey = () =>
+  `new_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+
+const toDraft = (item: CommitmentItem): CommitmentDraft => {
+  const uuid = String(item?.uuid || item?.id || '');
+  return {
+    rowKey: uuid || tempRowKey(),
+    uuid,
+    investorName: String(item?.investorName || ''),
+    amountRaised: String(item?.amountRaised ?? item?.amount ?? ''),
+    preMoneyValuation: String(item?.preMoneyValuation ?? ''),
+    hideInvestorName: Boolean(item?.hideInvestorName),
+  };
 };
 
 const sanitizeNumericInput = (text: string) =>
@@ -48,7 +98,101 @@ export function FinancialsForm({
   investmentMechanisms = [],
   ongoingCommitments = [],
   onChange,
+  onSaveCommitment,
+  onDeleteCommitment,
 }: Props) {
+  // Local draft state for the commitments section. Seeded from the
+  // server-provided list, plus any rows the user has added via "+ ADD NEW"
+  // that haven't been persisted yet. Re-seeded whenever the server list
+  // changes (e.g. after a successful save refresh) — locally-added drafts
+  // without a uuid are preserved across re-seeds so the user doesn't lose
+  // their typing.
+  const [commitmentDrafts, setCommitmentDrafts] = useState<CommitmentDraft[]>(
+    () => ongoingCommitments.map(toDraft),
+  );
+  const [hasOngoingCommitments, setHasOngoingCommitments] = useState<boolean>(
+    () => ongoingCommitments.length > 0,
+  );
+
+  useEffect(() => {
+    setCommitmentDrafts(prev => {
+      const localOnly = prev.filter(d => !d.uuid);
+      return [...ongoingCommitments.map(toDraft), ...localOnly];
+    });
+    if (ongoingCommitments.length > 0) {
+      setHasOngoingCommitments(true);
+    }
+  }, [ongoingCommitments]);
+
+  const updateDraft = (rowKey: string, patch: Partial<CommitmentDraft>) => {
+    setCommitmentDrafts(prev =>
+      prev.map(d => (d.rowKey === rowKey ? {...d, ...patch} : d)),
+    );
+  };
+
+  const addNewCommitment = () => {
+    setHasOngoingCommitments(true);
+    setCommitmentDrafts(prev => [
+      ...prev,
+      {
+        rowKey: tempRowKey(),
+        uuid: '',
+        investorName: '',
+        amountRaised: '',
+        preMoneyValuation: '',
+        hideInvestorName: false,
+      },
+    ]);
+  };
+
+  const saveCommitment = async (draft: CommitmentDraft) => {
+    if (!onSaveCommitment) return;
+    const investorName = draft.investorName.trim();
+    const amountRaised = draft.amountRaised.trim();
+    const preMoneyValuation = draft.preMoneyValuation.trim();
+    if (!investorName || !amountRaised || !preMoneyValuation) {
+      updateDraft(draft.rowKey, {
+        error: 'Investor name, amount raised and pre money valuation are required.',
+      });
+      return;
+    }
+    updateDraft(draft.rowKey, {saving: true, error: null});
+    try {
+      await onSaveCommitment({
+        uuid: draft.uuid || undefined,
+        investorName,
+        amountRaised,
+        preMoneyValuation,
+        hideInvestorName: draft.hideInvestorName,
+      });
+      updateDraft(draft.rowKey, {saving: false, error: null});
+    } catch (e) {
+      updateDraft(draft.rowKey, {
+        saving: false,
+        error: e instanceof Error ? e.message : 'Could not save commitment.',
+      });
+    }
+  };
+
+  const deleteCommitment = async (draft: CommitmentDraft) => {
+    // Drafts that never saved — drop them locally without an API call.
+    if (!draft.uuid) {
+      setCommitmentDrafts(prev => prev.filter(d => d.rowKey !== draft.rowKey));
+      return;
+    }
+    if (!onDeleteCommitment) return;
+    updateDraft(draft.rowKey, {deleting: true, error: null});
+    try {
+      await onDeleteCommitment(draft.uuid);
+      setCommitmentDrafts(prev => prev.filter(d => d.rowKey !== draft.rowKey));
+    } catch (e) {
+      updateDraft(draft.rowKey, {
+        deleting: false,
+        error: e instanceof Error ? e.message : 'Could not delete commitment.',
+      });
+    }
+  };
+
   const toggleMechanism = (mechanismId: string) => {
     const exists = value.investmentMechanisms.includes(mechanismId);
     onChange(
@@ -175,29 +319,136 @@ export function FinancialsForm({
 
       {value.isRaisingFunds ? (
         <SectionCard primaryColor={primaryColor} heading="Ongoing Commitments">
-          {ongoingCommitments.length > 0 ? (
-            ongoingCommitments.map((commitment, index) => (
-              <View key={String(commitment.id || index)} style={styles.commitmentRow}>
-                <Icon
-                  name="checkbox-marked-circle-outline"
-                  size={18}
-                  color={primaryColor}
-                />
-                <View style={styles.commitmentCopy}>
-                  <Text style={styles.commitmentTitle}>
-                    {commitment.investorName || 'Commitment'}
-                  </Text>
-                  <Text style={styles.commitmentSubtitle}>
-                    {commitment.amount ? `${currency} ${commitment.amount}` : 'Amount not added'}
-                  </Text>
-                </View>
-              </View>
-            ))
-          ) : (
-            <Text style={styles.emptyText}>
-              No ongoing commitments found for the upcoming funding round.
+          <Pressable
+            style={styles.sectionToggleRow}
+            onPress={() => {
+              const next = !hasOngoingCommitments;
+              setHasOngoingCommitments(next);
+              // Turning the section off clears any unsaved local drafts.
+              // Persisted commitments stay on the server until deleted.
+              if (!next) {
+                setCommitmentDrafts(prev => prev.filter(d => d.uuid));
+              }
+            }}>
+            <View
+              style={[
+                styles.sectionCheckbox,
+                hasOngoingCommitments && {
+                  backgroundColor: primaryColor,
+                  borderColor: primaryColor,
+                },
+              ]}>
+              {hasOngoingCommitments ? (
+                <Icon name="check" size={14} color="#ffffff" />
+              ) : null}
+            </View>
+            <Text style={styles.sectionToggleLabel}>
+              Do you have any ongoing commitments for upcoming funding round?
             </Text>
-          )}
+          </Pressable>
+
+          {hasOngoingCommitments ? (
+            <View style={styles.commitmentsList}>
+              {commitmentDrafts.length === 0 ? (
+                <Text style={styles.emptyText}>
+                  No ongoing commitments yet. Tap “+ ADD NEW” to add one.
+                </Text>
+              ) : null}
+
+              {commitmentDrafts.map(draft => (
+                <View key={draft.rowKey} style={styles.commitmentCard}>
+                  <AppTextField
+                    label="Name of the investor"
+                    required
+                    placeholder="Investor name"
+                    value={draft.investorName}
+                    onChangeText={text =>
+                      updateDraft(draft.rowKey, {investorName: text, error: null})
+                    }
+                    containerStyle={styles.field}
+                  />
+                  <AppTextField
+                    label={`Amount raised (in ${currency})`}
+                    required
+                    placeholder="Amount"
+                    keyboardType="decimal-pad"
+                    value={draft.amountRaised}
+                    onChangeText={text =>
+                      updateDraft(draft.rowKey, {
+                        amountRaised: sanitizeNumericInput(text),
+                        error: null,
+                      })
+                    }
+                    containerStyle={styles.field}
+                  />
+                  <AppTextField
+                    label={`Pre money valuation (in ${currency})`}
+                    required
+                    placeholder="Pre money valuation"
+                    keyboardType="decimal-pad"
+                    value={draft.preMoneyValuation}
+                    onChangeText={text =>
+                      updateDraft(draft.rowKey, {
+                        preMoneyValuation: sanitizeNumericInput(text),
+                        error: null,
+                      })
+                    }
+                    containerStyle={styles.field}
+                  />
+
+                  <View style={styles.anonymousRow}>
+                    <Switch
+                      value={draft.hideInvestorName}
+                      onValueChange={next =>
+                        updateDraft(draft.rowKey, {hideInvestorName: next})
+                      }
+                      trackColor={{false: '#cbd5e1', true: `${primaryColor}55`}}
+                      thumbColor={
+                        draft.hideInvestorName ? primaryColor : '#f1f5f9'
+                      }
+                    />
+                    <Text style={styles.anonymousLabel}>Anonymous</Text>
+                    <Icon
+                      name="information-outline"
+                      size={16}
+                      color={primaryColor}
+                    />
+                  </View>
+
+                  {draft.error ? (
+                    <Text style={styles.commitmentError}>{draft.error}</Text>
+                  ) : null}
+
+                  <View style={styles.commitmentActions}>
+                    <View style={styles.commitmentAction}>
+                      <AppButton
+                        label={draft.saving ? 'Saving…' : 'SAVE'}
+                        loading={draft.saving}
+                        disabled={draft.saving || draft.deleting}
+                        onPress={() => saveCommitment(draft)}
+                        style={{backgroundColor: primaryColor}}
+                      />
+                    </View>
+                    <View style={styles.commitmentAction}>
+                      <AppButton
+                        label={draft.deleting ? 'Deleting…' : 'DELETE'}
+                        variant="secondary"
+                        loading={draft.deleting}
+                        disabled={draft.saving || draft.deleting}
+                        onPress={() => deleteCommitment(draft)}
+                      />
+                    </View>
+                  </View>
+                </View>
+              ))}
+
+              <Pressable
+                style={styles.addNewButton}
+                onPress={addNewCommitment}>
+                <Text style={styles.addNewLabel}>+ ADD NEW</Text>
+              </Pressable>
+            </View>
+          ) : null}
         </SectionCard>
       ) : null}
 
@@ -503,5 +754,78 @@ const styles = StyleSheet.create({
     color: '#64748b',
     fontSize: 14,
     lineHeight: 20,
+  },
+  sectionToggleRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 4,
+  },
+  sectionCheckbox: {
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderColor: '#cbd5e1',
+    borderRadius: 4,
+    borderWidth: 1,
+    height: 22,
+    justifyContent: 'center',
+    width: 22,
+  },
+  sectionToggleLabel: {
+    color: '#0f172a',
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  commitmentsList: {
+    gap: 12,
+    marginTop: 12,
+  },
+  commitmentCard: {
+    backgroundColor: '#f8fafc',
+    borderColor: colors.border,
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 14,
+  },
+  anonymousRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 6,
+    marginTop: 4,
+  },
+  anonymousLabel: {
+    color: '#0f172a',
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  commitmentError: {
+    color: colors.danger,
+    fontSize: 13,
+    marginTop: 6,
+  },
+  commitmentActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 10,
+  },
+  commitmentAction: {
+    flex: 1,
+  },
+  addNewButton: {
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: '#e2e8f0',
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  addNewLabel: {
+    color: '#0f172a',
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
 });

@@ -104,6 +104,8 @@ const buildProfileCompletenessPath = (
   return `api/v1/${plural}/profile_completeness`;
 };
 const FINANCIALS_INFORMATION_PATH = 'api/v1/startups/financials-information';
+const RAISING_FUNDS_TOGGLE_PATH = 'api/v1/startups/toggle/raising-funds';
+const ONGOING_COMMITMENTS_PATH = 'api/v1/startups/ongoing-commitments';
 const INDUSTRY_TECHNOLOGY_BUSINESS_PATH =
   'api/v1/startups/industry-technology-business';
 const PITCH_DECK_PATH = 'api/v1/startups/pitch-deck';
@@ -1166,6 +1168,79 @@ export const authService = {
         method: 'PATCH',
         headers: getAuthHeader(token),
         body: JSON.stringify(payload),
+      },
+      baseUrl,
+    );
+  },
+
+  async toggleRaisingFunds(
+    token: string,
+    isRaisingFunds: boolean,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      RAISING_FUNDS_TOGGLE_PATH,
+      {
+        method: 'PATCH',
+        headers: getAuthHeader(token),
+        body: JSON.stringify({isRaisingFunds}),
+      },
+      baseUrl,
+    );
+  },
+
+  async saveOngoingCommitment(
+    token: string,
+    payload: {
+      uuid?: string;
+      investorName: string;
+      amountRaised: string;
+      preMoneyValuation: string;
+      hideInvestorName: boolean;
+    },
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    const isUpdate = Boolean(payload.uuid);
+    // New rows POST to the collection; existing rows PATCH to /{uuid}.
+    const path = isUpdate
+      ? `${ONGOING_COMMITMENTS_PATH}/${payload.uuid}`
+      : ONGOING_COMMITMENTS_PATH;
+    const body = isUpdate
+      ? {
+          uuid: payload.uuid,
+          investorName: payload.investorName,
+          amountRaised: payload.amountRaised,
+          preMoneyValuation: payload.preMoneyValuation,
+          hideInvestorName: payload.hideInvestorName,
+        }
+      : {
+          uuid: '',
+          investorName: payload.investorName,
+          amountRaised: payload.amountRaised,
+          preMoneyValuation: payload.preMoneyValuation,
+          hideInvestorName: payload.hideInvestorName,
+        };
+    return requestJson<ApiResponse>(
+      path,
+      {
+        method: isUpdate ? 'PATCH' : 'POST',
+        headers: getAuthHeader(token),
+        body: JSON.stringify(body),
+      },
+      baseUrl,
+    );
+  },
+
+  async deleteOngoingCommitment(
+    token: string,
+    uuid: string,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      `${ONGOING_COMMITMENTS_PATH}/${uuid}`,
+      {
+        method: 'DELETE',
+        headers: getAuthHeader(token),
       },
       baseUrl,
     );
