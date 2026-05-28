@@ -407,7 +407,9 @@ export function SideMenu({
               selectedMenu={selectedMenu}
             />
           ) : null}
+        </ScrollView>
 
+        <View style={styles.logoutWrap}>
           <Pressable
             style={styles.logoutButton}
             onPress={() =>
@@ -427,7 +429,7 @@ export function SideMenu({
             <Icon name="logout" size={18} color="#ffffff" />
             <Text style={styles.logoutText}>Logout</Text>
           </Pressable>
-        </ScrollView>
+        </View>
       </View>
     </View>
   );
@@ -452,8 +454,16 @@ const styles = StyleSheet.create({
     zIndex: 40,
   },
   drawerContent: {
-    paddingBottom: 32,
+    paddingBottom: 16,
     paddingHorizontal: 14,
+  },
+  logoutWrap: {
+    backgroundColor: '#ffffff',
+    borderTopColor: '#e6e8f0',
+    borderTopWidth: 1,
+    paddingBottom: 20,
+    paddingHorizontal: 14,
+    paddingTop: 12,
   },
   headerRow: {
     alignItems: 'center',
@@ -689,7 +699,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 10,
     justifyContent: 'center',
-    marginTop: 20,
     minHeight: 46,
     paddingHorizontal: 16,
   },
