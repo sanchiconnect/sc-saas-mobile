@@ -2,6 +2,7 @@ import React, {useContext, useState} from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   Linking,
   Pressable,
   StyleSheet,
@@ -32,6 +33,16 @@ type PitchDeck = {
   embedUrl?: string | null;
   pitchType?: string | null;
   sampleDocument?: string | null;
+  // The backend pre-converts the uploaded PDF to JPGs (one per page) on
+  // ingestion. The mobile carousel reads whichever of these arrays the
+  // server returns; the web component does the same. Fields are typed
+  // loosely because the API may ship plain string URLs or wrapped objects.
+  pitchDocumentImages?: unknown;
+  pitchImages?: unknown;
+  documentImages?: unknown;
+  images?: unknown;
+  pdfImages?: unknown;
+  pages?: unknown;
 };
 
 const PITCH_TYPE_UPLOAD = 'upload_pitch';
@@ -73,6 +84,156 @@ const resolveUrl = (
   if (!base) return path;
   return `${base.replace(/\/$/, '')}/${path.replace(/^\//, '')}`;
 };
+
+// Pulls an image URL string out of whatever shape the backend ships — some
+// endpoints return plain strings, others wrap each page as
+// `{url}` / `{path}` / `{src}` / `{image}`. Unrecognized entries are
+// dropped.
+const imageUrlFromEntry = (entry: unknown): string => {
+  if (!entry) return '';
+  if (typeof entry === 'string') return entry;
+  if (typeof entry === 'object') {
+    const obj = entry as Record<string, unknown>;
+    const candidate =
+      obj.url || obj.path || obj.image || obj.src || obj.filePath || obj.fileName;
+    return typeof candidate === 'string' ? candidate : '';
+  }
+  return '';
+};
+
+// Flexible reader for the pre-converted page-image array on `pitchDeck`.
+// The exact field name varies between deployments, so we walk a list of
+// known candidates and return the first non-empty one. Matches the web
+// `app-pitch-document-carousel`'s behavior of consuming the pitchDeck
+// object as-is.
+const getPitchImages = (
+  pitchDeck: PitchDeck | null | undefined,
+  bases: Array<string | null | undefined>,
+): string[] => {
+  if (!pitchDeck) return [];
+  const candidates: unknown[] = [
+    pitchDeck.pitchDocumentImages,
+    pitchDeck.pitchImages,
+    pitchDeck.documentImages,
+    pitchDeck.images,
+    pitchDeck.pdfImages,
+    pitchDeck.pages,
+  ];
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate) && candidate.length > 0) {
+      const urls = candidate
+        .map(imageUrlFromEntry)
+        .filter(Boolean)
+        .map(u => resolveUrl(u, bases));
+      if (urls.length > 0) return urls;
+    }
+  }
+  return [];
+};
+
+// Image-based pitch-deck carousel that mirrors the web `<ngb-carousel>` —
+// the backend pre-renders each PDF page to a JPG on upload, so we just
+// flip through those images instead of rasterizing the PDF on-device.
+// Avoids the CORS / WebView problems the PDF.js approach hit.
+function PdfPagesCarousel({
+  images,
+  primaryColor,
+}: {
+  images: string[];
+  primaryColor: string;
+}) {
+  const [page, setPage] = useState(1);
+  const [loaded, setLoaded] = useState(false);
+  const [errored, setErrored] = useState(false);
+
+  const total = images.length;
+  const safePage = Math.min(Math.max(1, page), Math.max(1, total));
+  const currentUrl = images[safePage - 1];
+
+  // Reset per-image load state whenever the user flips pages so the
+  // spinner appears while the new image is fetching, and `errored`
+  // doesn't leak from a previous page.
+  const goTo = (next: number) => {
+    if (next < 1 || next > total) return;
+    setLoaded(false);
+    setErrored(false);
+    setPage(next);
+  };
+
+  if (total === 0) return null;
+
+  const canPrev = safePage > 1;
+  const canNext = safePage < total;
+
+  return (
+    <View style={styles.previewFrame}>
+      <Image
+        source={{uri: currentUrl}}
+        style={styles.previewImage}
+        resizeMode="contain"
+        onLoadEnd={() => setLoaded(true)}
+        onError={() => {
+          setLoaded(true);
+          setErrored(true);
+        }}
+      />
+
+      {!loaded ? (
+        <View style={styles.previewStatusOverlay} pointerEvents="none">
+          <ActivityIndicator color={primaryColor} />
+          <Text style={styles.previewStatusText}>Loading page {safePage}…</Text>
+        </View>
+      ) : null}
+
+      {errored ? (
+        <View style={styles.previewStatusOverlay} pointerEvents="none">
+          <Icon name="image-broken-variant" size={36} color={primaryColor} />
+          <Text style={styles.previewStatusText}>Couldn't load this page.</Text>
+        </View>
+      ) : null}
+
+      {/* Floating Prev / Next chevrons, same pattern as the web carousel. */}
+      <Pressable
+        onPress={() => goTo(safePage - 1)}
+        disabled={!canPrev}
+        hitSlop={8}
+        style={({pressed}) => [
+          styles.pagerBtn,
+          styles.pagerBtnLeft,
+          !canPrev && styles.pagerBtnDisabled,
+          pressed && canPrev && styles.pressed,
+        ]}>
+        <Icon
+          name="chevron-left"
+          size={24}
+          color={canPrev ? '#0f172a' : '#cbd5e1'}
+        />
+      </Pressable>
+      <Pressable
+        onPress={() => goTo(safePage + 1)}
+        disabled={!canNext}
+        hitSlop={8}
+        style={({pressed}) => [
+          styles.pagerBtn,
+          styles.pagerBtnRight,
+          !canNext && styles.pagerBtnDisabled,
+          pressed && canNext && styles.pressed,
+        ]}>
+        <Icon
+          name="chevron-right"
+          size={24}
+          color={canNext ? '#0f172a' : '#cbd5e1'}
+        />
+      </Pressable>
+
+      <View style={styles.pagerBadge}>
+        <Text style={styles.pagerBadgeText}>
+          {safePage} / {total}
+        </Text>
+      </View>
+    </View>
+  );
+}
 
 function InlineVideoPlayer({
   url,
@@ -147,6 +308,14 @@ export function YourPitchDeck({
   const fileName =
     pitchDeck?.fileName || (rawPitchDocument.split('/').pop() ?? '');
   const fileExt = extOf(fileName || rawPitchDocument);
+  // Resolve the array of pre-converted page-images from whichever field
+  // the backend ships, against the same CDN bases used for pitchDocument.
+  const pitchImages = getPitchImages(pitchDeck, [
+    globalSetting?.imgKitUrl,
+    globalSetting?.assetsImgKitUrl,
+    globalSetting?.s3Url,
+    baseUrl,
+  ]);
   const uploadVideoUrl = pitchDeck?.uploadPitchUrl || '';
   const powerVideoUrl =
     pitchDeck?.powerPitchUrl || pitchDeck?.embedUrl || '';
@@ -369,37 +538,48 @@ export function YourPitchDeck({
         </Text>
 
         {pitchDocument ? (
-          // Uploaded: one consolidated card — large file thumbnail at top,
-          // filename / extension below, and the three actions (View, Download,
-          // Replace) on a single row. Replaces the previous duplicate
-          // file-card + drop-zone + download-row stack.
+          // Uploaded: one consolidated card — PDF page preview (with Prev /
+          // Next pager) for .pdf, a large icon for other formats; filename
+          // below; and the three actions (View, Download, Replace) on a
+          // single row.
           <View
             style={[
               styles.deckCard,
               {borderColor: primaryColor},
             ]}>
-            <View
-              style={[
-                styles.deckThumb,
-                {backgroundColor: `${primaryColor}10`},
-              ]}>
-              <Icon
-                name={iconForExt(fileExt)}
-                size={72}
-                color={primaryColor}
+            {pitchImages.length > 0 ? (
+              <PdfPagesCarousel
+                images={pitchImages}
+                primaryColor={primaryColor}
               />
-              {fileExt ? (
-                <Text style={[styles.deckThumbBadge, {color: primaryColor}]}>
-                  {fileExt.toUpperCase()}
-                </Text>
-              ) : null}
-            </View>
+            ) : (
+              <View
+                style={[
+                  styles.deckThumb,
+                  {backgroundColor: `${primaryColor}10`},
+                ]}>
+                <Icon
+                  name={iconForExt(fileExt)}
+                  size={72}
+                  color={primaryColor}
+                />
+                {fileExt ? (
+                  <Text style={[styles.deckThumbBadge, {color: primaryColor}]}>
+                    {fileExt.toUpperCase()}
+                  </Text>
+                ) : null}
+              </View>
+            )}
 
-            <Text style={styles.deckFileName} numberOfLines={2}>
+            <Text style={[styles.deckFileName, {marginTop: 12}]} numberOfLines={2}>
               {fileName || 'pitch-deck'}
             </Text>
             <Text style={styles.deckFileMeta}>
-              Tap View to open this file in your device's PDF viewer.
+              {pitchImages.length > 1
+                ? 'Use the arrows above to flip through pages.'
+                : pitchImages.length === 1
+                  ? 'Single-page preview above.'
+                  : "Tap View to open this file in your device's viewer."}
             </Text>
 
             <View style={styles.deckActions}>
@@ -1265,5 +1445,93 @@ const styles = StyleSheet.create({
   uploadZoneHint: {
     color: '#64748b',
     fontSize: 12,
+  },
+  // PdfPreview chrome — the WebView container plus the floating pager
+  // buttons and page indicator that overlay it. alignSelf:'stretch' is
+  // essential: the parent deckCard sets alignItems:'center', which would
+  // otherwise collapse this frame to its content's natural width.
+  previewFrame: {
+    alignSelf: 'stretch',
+    backgroundColor: '#f8fafc',
+    borderColor: '#e2e8f0',
+    borderRadius: 12,
+    borderWidth: 1,
+    height: 360,
+    marginTop: 12,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  previewWeb: {
+    backgroundColor: '#f8fafc',
+    flex: 1,
+  },
+  // Each carousel slide is a single Image filling the preview frame; the
+  // image itself contains the rendered page so we let it letterbox via
+  // resizeMode="contain" rather than cropping with cover.
+  previewImage: {
+    backgroundColor: '#f8fafc',
+    height: '100%',
+    width: '100%',
+  },
+  // Absolute overlay so the loading spinner / error message sits on top of
+  // the Image rather than getting laid out below it (and clipped by
+  // overflow:hidden on the frame).
+  previewStatusOverlay: {
+    alignItems: 'center',
+    bottom: 0,
+    gap: 10,
+    justifyContent: 'center',
+    left: 0,
+    paddingHorizontal: 24,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+  },
+  previewStatusText: {
+    color: '#475569',
+    fontSize: 13,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  pagerBtn: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    borderRadius: 999,
+    elevation: 3,
+    height: 40,
+    justifyContent: 'center',
+    position: 'absolute',
+    shadowColor: '#0f172a',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.18,
+    shadowRadius: 6,
+    top: '50%',
+    transform: [{translateY: -20}],
+    width: 40,
+  },
+  pagerBtnLeft: {
+    left: 8,
+  },
+  pagerBtnRight: {
+    right: 8,
+  },
+  pagerBtnDisabled: {
+    backgroundColor: 'rgba(255,255,255,0.5)',
+    elevation: 0,
+    shadowOpacity: 0,
+  },
+  pagerBadge: {
+    backgroundColor: 'rgba(15,23,42,0.78)',
+    borderRadius: 999,
+    bottom: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    position: 'absolute',
+    right: 10,
+  },
+  pagerBadgeText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '700',
   },
 });

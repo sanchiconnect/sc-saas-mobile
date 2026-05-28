@@ -1024,6 +1024,25 @@ export function EditProfileScreen({
     }
   }, [activeTab, tabs]);
 
+  // Keep the active tab visible in the horizontal tab strip. The onLayout
+  // handler on each tab Pressable populates tabPositionsRef; on any
+  // activeTab change (tap, Next/Previous, programmatic) we scroll the
+  // strip so the active pill is in view. Without this, users on later
+  // tabs (Pitch / Financials) couldn't tell which tab was active because
+  // the strip stayed pinned at the start.
+  useEffect(() => {
+    const x = tabPositionsRef.current[activeTab];
+    if (typeof x !== 'number') return;
+    // Slight delay lets layout settle after activeTab-driven re-render.
+    const id = setTimeout(() => {
+      tabsScrollRef.current?.scrollTo({
+        x: Math.max(0, x - 16),
+        animated: true,
+      });
+    }, 0);
+    return () => clearTimeout(id);
+  }, [activeTab]);
+
   // Profile completion comes from the backend's profile_completeness endpoint
   // so this screen matches the Dashboard's number exactly. The local
   // calculateProfileCompletion fallback applies only before the backend value
