@@ -16,6 +16,7 @@ import {AppButton} from '../../../core/components/AppButton';
 import {Icon} from '../../../core/components/Icon';
 import {colors} from '../../../core/theme/colors';
 import {TenantContext} from '../../../core/tenant/TenantProvider';
+import {useToast} from '../../../core/toast/ToastProvider';
 import {authService} from '../../auth/services/auth.service';
 import {BasicInfoForm} from './editProfile/BasicInfoForm';
 import {CorporateEngagementTab} from './editProfile/CorporateEngagementTab';
@@ -332,6 +333,7 @@ export function EditProfileScreen({
   onProfileUpdated,
 }: EditProfileScreenProps) {
   const {theme, globalSetting, baseUrl} = useContext(TenantContext);
+  const toast = useToast();
   const primaryColor = theme?.primary || colors.primary;
   const logoBaseUrl =
     globalSetting?.imgKitUrl || globalSetting?.assetsImgKitUrl;
@@ -385,10 +387,6 @@ export function EditProfileScreen({
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [saveMessage, setSaveMessage] = useState<{
-    text: string;
-    tone: 'success' | 'error';
-  } | null>(null);
   const [picker, setPicker] = useState<PickerKind | null>(null);
   const [countryOptions, setCountryOptions] = useState<Country[]>(COUNTRIES);
   const [stateOptions, setStateOptions] = useState<LocationOption[]>([]);
@@ -1041,7 +1039,6 @@ export function EditProfileScreen({
     setBasicInfo(current =>
       ensureBasicInfoDefaults({...current, [key]: value}),
     );
-    setSaveMessage(null);
   };
 
   const updateFinancial = <K extends keyof FinancialsFormType>(
@@ -1049,7 +1046,48 @@ export function EditProfileScreen({
     value: FinancialsFormType[K],
   ) => {
     setFinancialInfo(current => ({...current, [key]: value}));
-    setSaveMessage(null);
+  };
+
+  // Required-field validator for the active tab. Drives the SAVE button's
+  // disabled state so users can't submit an incomplete form. Only enforces
+  // tabs whose Save we own (basic/industry/financials); custom forms manage
+  // their own completeness via [[customFormStatuses]].
+  const isActiveTabValid = () => {
+    if (activeTab === 'basic') {
+      if (accountType && accountType !== 'startup') return true;
+      if (!basicInfo.companyName?.trim()) return false;
+      if (!basicInfo.companySize) return false;
+      if (basicInfo.isIncorporated === null) return false;
+      if (
+        basicInfo.isIncorporated === true &&
+        (!basicInfo.incorporationYear ||
+          basicInfo.incorporationYear.length !== 4)
+      ) {
+        return false;
+      }
+      if (!basicInfo.country) return false;
+      if (!basicInfo.productStage) return false;
+      if (!basicInfo.leadership.some(member => member.name?.trim())) {
+        return false;
+      }
+      return true;
+    }
+    if (activeTab === 'industry') {
+      if (accountType && accountType !== 'startup') return true;
+      if (selectedIndustryIds.length === 0) return false;
+      if (selectedTechnologyIds.length === 0) return false;
+      return true;
+    }
+    if (activeTab === 'financials') {
+      if (
+        !financialInfo.fundingStage &&
+        !financialInfo.targetFundraise?.trim()
+      ) {
+        return false;
+      }
+      return true;
+    }
+    return true;
   };
 
   const refreshOngoingCommitments = async () => {
@@ -1085,26 +1123,28 @@ export function EditProfileScreen({
   };
 
   const handleSave = async () => {
+    if (!isActiveTabValid()) {
+      toast.error('Please fill all required fields.');
+      return;
+    }
     setIsSaving(true);
-    setSaveMessage(null);
     try {
       // Custom (tenant-defined) profile forms expose an imperative save()
       // via ref. Route the global footer Save there and surface its result
-      // in the same banner the other tabs use.
+      // through the global toast.
       if (activeTab.startsWith('custom:')) {
         const uuid = activeTab.slice('custom:'.length);
         const handle = customFormRefs.current[uuid];
         if (!handle) {
-          setSaveMessage({text: 'Form is not ready yet.', tone: 'error'});
+          toast.error('Form is not ready yet.');
           return;
         }
         const result = await handle.save();
-        setSaveMessage({
-          text: result.message || (result.ok ? 'Saved.' : 'Could not save.'),
-          tone: result.ok ? 'success' : 'error',
-        });
         if (result.ok) {
+          toast.success(result.message || 'Saved.');
           onProfileUpdated?.();
+        } else {
+          toast.error(result.message || 'Could not save.');
         }
         return;
       }
@@ -1292,7 +1332,7 @@ export function EditProfileScreen({
         await loadProfile({silent: true});
       }
 
-      setSaveMessage({text: 'Saved successfully.', tone: 'success'});
+      toast.success('Saved successfully.');
       // Refresh the parent's dashboard widgets (profile-completion ring,
       // stat tiles) so they reflect the new state without waiting for the
       // user to navigate back.
@@ -1315,13 +1355,11 @@ export function EditProfileScreen({
           });
       }
     } catch (error) {
-      setSaveMessage({
-        text:
-          error instanceof Error
-            ? error.message
-            : 'Could not save your changes.',
-        tone: 'error',
-      });
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : 'Could not save your changes.',
+      );
     } finally {
       setIsSaving(false);
     }
@@ -1774,8 +1812,10 @@ export function EditProfileScreen({
         contentContainerStyle={styles.content}
         alwaysBounceVertical={false}
         bounces={false}
-        decelerationRate={0.75}
-        disableIntervalMomentum
+        // Default deceleration is "normal" (~0.998 iOS / ~0.985 Android), which
+        // feels too slow on a long form. "fast" gives a snappier coast that
+        // matches user expectation for a scrollable settings page.
+        decelerationRate="fast"
         overScrollMode="never"
         keyboardShouldPersistTaps="handled">
         {activeTab === 'basic' ? (
@@ -1836,19 +1876,14 @@ export function EditProfileScreen({
                     payload,
                     accountType || undefined,
                   );
-                  setSaveMessage({
-                    text: 'Profile updated.',
-                    tone: 'success',
-                  });
+                  toast.success('Profile updated.');
                   onProfileUpdated?.();
                 } catch (error) {
-                  setSaveMessage({
-                    text:
-                      error instanceof Error
-                        ? error.message
-                        : 'Could not save your profile.',
-                    tone: 'error',
-                  });
+                  toast.error(
+                    error instanceof Error
+                      ? error.message
+                      : 'Could not save your profile.',
+                  );
                 } finally {
                   setIsSaving(false);
                 }
@@ -2164,18 +2199,6 @@ export function EditProfileScreen({
             </Text>
           </View>
         )}
-
-        {saveMessage ? (
-          <Text
-            style={[
-              styles.saveMessage,
-              saveMessage.tone === 'success'
-                ? styles.saveMessageSuccess
-                : styles.saveMessageError,
-            ]}>
-            {saveMessage.text}
-          </Text>
-        ) : null}
       </ScrollView>
 
       {renderPicker()}
@@ -2206,7 +2229,10 @@ export function EditProfileScreen({
             // For custom forms: block save until every required field is
             // filled. The status is tracked by CustomFormTab's
             // onCompletionChange callback.
-            (isCustomTab && !customFormStatuses[activeCustomUuid]);
+            (isCustomTab && !customFormStatuses[activeCustomUuid]) ||
+            // For built-in tabs: block save until the tab's own required
+            // fields are filled (companyName/companySize/country/...).
+            (!isCustomTab && !isActiveTabValid());
           return (
             <>
               {!isFirst ? (
@@ -2227,6 +2253,7 @@ export function EditProfileScreen({
                     disabled={saveDisabled}
                     loading={isSaving}
                     onPress={handleSave}
+                    labelStyle={styles.actionButtonLabel}
                   />
                 </View>
               ) : null}
@@ -2467,17 +2494,6 @@ const styles = StyleSheet.create({
     marginTop: 6,
     textAlign: 'center',
   },
-  saveMessage: {
-    fontSize: 13,
-    marginTop: 14,
-    textAlign: 'center',
-  },
-  saveMessageSuccess: {
-    color: colors.success,
-  },
-  saveMessageError: {
-    color: colors.danger,
-  },
   footer: {
     backgroundColor: '#ffffff',
     borderTopColor: '#e2e8f0',
@@ -2497,5 +2513,13 @@ const styles = StyleSheet.create({
   },
   navButtonLabel: {
     color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  // Smaller, tighter label for the global action button (SAVE) so it sits
+  // comfortably alongside PREVIOUS / NEXT in the footer row.
+  actionButtonLabel: {
+    fontSize: 12,
+    fontWeight: '700',
   },
 });

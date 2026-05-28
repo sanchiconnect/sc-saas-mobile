@@ -238,12 +238,16 @@ export function BasicInfoForm({
 
         <DropdownField
           label="Company size"
+          required
           placeholder="Choose a team size"
           value={value.companySize}
           onPress={onOpenCompanySize}
         />
 
-        <Text style={styles.fieldLabel}>Is your startup incorporated?</Text>
+        <Text style={styles.fieldLabel}>
+          Is your startup incorporated?
+          <Text style={styles.required}> *</Text>
+        </Text>
         <View style={styles.yesNoRow}>
           <YesNoButton
             label="Yes"
@@ -425,7 +429,9 @@ export function BasicInfoForm({
           />
         </View>
 
-        <Subheading style={styles.spacedSubheading}>Product Stage *</Subheading>
+        <Subheading style={styles.spacedSubheading}>
+          Product Stage<Text style={styles.required}> *</Text>
+        </Subheading>
         <DropdownField
           placeholder="Choose product stage"
           value={value.productStage}
