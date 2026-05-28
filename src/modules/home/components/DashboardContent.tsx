@@ -44,6 +44,7 @@ type DashboardContentProps = {
   stats: DashboardStat[];
   profileCompletion: number;
   onEditProfile?: () => void;
+  onStatPress?: (statKey: string) => void;
   // Phase J — recommended widgets. Driven by the role-specific `*/dashboard`
   // payload + tenant flags. When fields are missing the sections silently
   // collapse, so we can pass everything through without runtime branches.
@@ -69,6 +70,7 @@ export function DashboardContent({
   stats,
   profileCompletion,
   onEditProfile,
+  onStatPress,
   accountType,
   roleDashboard,
   tenantUsers,
@@ -231,7 +233,12 @@ export function DashboardContent({
 
       <View style={styles.statsGrid}>
         {stats.map(item => (
-          <View key={item.key} style={styles.statCard}>
+          <Pressable
+            key={item.key}
+            style={styles.statCard}
+            onPress={() => onStatPress?.(item.key)}
+            accessibilityRole="button"
+            accessibilityLabel={item.title}>
             <View style={styles.statHeader}>
               <Text
                 style={[
@@ -255,7 +262,7 @@ export function DashboardContent({
               </View>
             </View>
             <Text style={styles.statTitle}>{item.title}</Text>
-          </View>
+          </Pressable>
         ))}
       </View>
 
