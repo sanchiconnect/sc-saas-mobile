@@ -2,6 +2,8 @@ import React, {useContext, useEffect, useRef, useState} from 'react';
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -1719,7 +1721,9 @@ export function EditProfileScreen({
   }
 
   return (
-    <View style={styles.page}>
+    <KeyboardAvoidingView
+      style={styles.page}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <View style={styles.headerBlock}>
         <View style={styles.header}>
           <Pressable
@@ -2272,7 +2276,7 @@ export function EditProfileScreen({
           );
         })()}
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
