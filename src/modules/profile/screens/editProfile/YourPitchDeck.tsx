@@ -22,6 +22,7 @@ import {authService} from '../../../auth/services/auth.service';
 import {Icon} from '../../../../core/components/Icon';
 import {colors} from '../../../../core/theme/colors';
 import {TenantContext} from '../../../../core/tenant/TenantProvider';
+import {useToast} from '../../../../core/toast/ToastProvider';
 
 type PitchDeck = {
   elevatorPitch?: string | null;
@@ -296,6 +297,7 @@ export function YourPitchDeck({
   onUploaded,
 }: Props) {
   const {baseUrl, globalSetting} = useContext(TenantContext);
+  const toast = useToast();
   const rawPitchDocument = pitchDeck?.pitchDocument || '';
   // Resolve to an absolute URL so OS-level openers (browser, download)
   // always receive a fetchable address — server may return a relative path.
@@ -331,10 +333,6 @@ export function YourPitchDeck({
   const [defaultPitchType, setDefaultPitchType] = useState<string | null>(
     pitchDeck?.pitchType || null,
   );
-  const [message, setMessage] = useState<{
-    text: string;
-    tone: 'success' | 'error';
-  } | null>(null);
 
   const handleModeSwitch = async (mode: 'create' | 'upload') => {
     if (videoMode === mode || busyKind !== null) {
@@ -428,18 +426,16 @@ export function YourPitchDeck({
   };
 
   const handleUpload = async (kind: UploadKind) => {
-    setMessage(null);
     setBusyKind(kind);
 
     try {
       if (kind === 'videoCreate') {
         const opened = await openPowerPitchConnect();
-        setMessage({
-          text: opened
+        toast.success(
+          opened
             ? 'Opening PowerPitch.ai to create your video.'
             : 'PowerPitch is set as your video mode.',
-          tone: 'success',
-        });
+        );
         onUploaded?.();
         return;
       }
@@ -469,10 +465,9 @@ export function YourPitchDeck({
         );
       }
 
-      setMessage({
-        text: kind === 'deck' ? 'Pitch deck uploaded.' : 'Video pitch uploaded.',
-        tone: 'success',
-      });
+      toast.success(
+        kind === 'deck' ? 'Pitch deck uploaded.' : 'Video pitch uploaded.',
+      );
       onUploaded?.();
     } catch (error) {
       const errorMessage =
@@ -487,7 +482,7 @@ export function YourPitchDeck({
           'The native picker needs an app rebuild. Please restart the app and try again.',
         );
       } else {
-        setMessage({text: errorMessage, tone: 'error'});
+        toast.error(errorMessage);
       }
     } finally {
       setBusyKind(null);
@@ -805,17 +800,6 @@ export function YourPitchDeck({
         </View>
       </View>
 
-      {message ? (
-        <Text
-          style={[
-            styles.message,
-            message.tone === 'success'
-              ? styles.messageSuccess
-              : styles.messageError,
-          ]}>
-          {message.text}
-        </Text>
-      ) : null}
     </View>
   );
 }

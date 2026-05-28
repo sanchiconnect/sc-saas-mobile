@@ -18,6 +18,7 @@ import {
 import {authService} from '../../../auth/services/auth.service';
 import {Icon} from '../../../../core/components/Icon';
 import {colors} from '../../../../core/theme/colors';
+import {useToast} from '../../../../core/toast/ToastProvider';
 
 type DocumentType = {
   id?: string | number;
@@ -131,10 +132,7 @@ export function Documents({token, primaryColor, onUploaded}: Props) {
 
   const rowKey = (item: SupportingDocument) =>
     item.uuid || `type:${item.documentType || ''}`;
-  const [message, setMessage] = useState<{
-    text: string;
-    tone: 'success' | 'error';
-  } | null>(null);
+  const toast = useToast();
 
   const documentTypeMap = useMemo(() => {
     const nextMap = new Map<string, DocumentType>();
@@ -155,7 +153,6 @@ export function Documents({token, primaryColor, onUploaded}: Props) {
 
   const loadAll = async () => {
     setIsLoading(true);
-    setMessage(null);
     try {
       const nextBaseUrl = await authService.getApiBaseUrl();
       const typesResponse = await authService.getDocumentTypes();
@@ -164,13 +161,11 @@ export function Documents({token, primaryColor, onUploaded}: Props) {
       setDocumentTypes(nextTypes);
       await loadDocuments(nextTypes);
     } catch (error) {
-      setMessage({
-        text:
-          error instanceof Error
-            ? error.message
-            : 'Could not load documents.',
-        tone: 'error',
-      });
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : 'Could not load documents.',
+      );
     } finally {
       setIsLoading(false);
     }
@@ -214,14 +209,9 @@ export function Documents({token, primaryColor, onUploaded}: Props) {
     const documentTypeId = String(typeInfo?.id || '');
 
     if (!documentTypeId) {
-      setMessage({
-        text: 'Document type is missing for this item.',
-        tone: 'error',
-      });
+      toast.error('Document type is missing for this item.');
       return;
     }
-
-    setMessage(null);
 
     let picked:
       | {uri: string; name?: string | null; type?: string | null; size?: number | null}
@@ -236,30 +226,22 @@ export function Documents({token, primaryColor, onUploaded}: Props) {
       if (isErrorWithCode(error) && error.code === errorCodes.OPERATION_CANCELED) {
         return;
       }
-      setMessage({
-        text:
-          error instanceof Error
-            ? error.message
-            : 'Could not open the file picker.',
-        tone: 'error',
-      });
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : 'Could not open the file picker.',
+      );
       return;
     }
 
     if (!picked?.uri) {
-      setMessage({
-        text: 'No file was selected.',
-        tone: 'error',
-      });
+      toast.error('No file was selected.');
       return;
     }
 
     const sizeInMB = (picked.size || 0) / (1024 * 1024);
     if (sizeInMB > MAX_FILE_SIZE_MB) {
-      setMessage({
-        text: `File size should be less than ${MAX_FILE_SIZE_MB} MB`,
-        tone: 'error',
-      });
+      toast.error(`File size should be less than ${MAX_FILE_SIZE_MB} MB`);
       return;
     }
 
@@ -290,21 +272,17 @@ export function Documents({token, primaryColor, onUploaded}: Props) {
       }
 
       await loadDocuments();
-      setMessage({
-        text:
-          response?.message ||
+      toast.success(
+        response?.message ||
           (item.uuid ? 'Document updated.' : 'Document saved.'),
-        tone: 'success',
-      });
+      );
       onUploaded?.(response);
     } catch (error) {
-      setMessage({
-        text:
-          error instanceof Error
-            ? error.message
-            : 'Could not save the document.',
-        tone: 'error',
-      });
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : 'Could not save the document.',
+      );
     } finally {
       setUploadingKey(null);
     }
@@ -325,26 +303,20 @@ export function Documents({token, primaryColor, onUploaded}: Props) {
           style: 'destructive',
           onPress: async () => {
             setDeletingUuid(item.uuid || '');
-            setMessage(null);
             try {
               const response = await authService.deleteStartupDocument(
                 token,
                 item.uuid || '',
               );
               await loadDocuments();
-              setMessage({
-                text: response?.message || 'Document deleted.',
-                tone: 'success',
-              });
+              toast.success(response?.message || 'Document deleted.');
               onUploaded?.(response);
             } catch (error) {
-              setMessage({
-                text:
-                  error instanceof Error
-                    ? error.message
-                    : 'Could not delete the document.',
-                tone: 'error',
-              });
+              toast.error(
+                error instanceof Error
+                  ? error.message
+                  : 'Could not delete the document.',
+              );
             } finally {
               setDeletingUuid(null);
             }
@@ -509,17 +481,6 @@ export function Documents({token, primaryColor, onUploaded}: Props) {
         </View>
       )}
 
-      {message ? (
-        <Text
-          style={[
-            styles.message,
-            message.tone === 'success'
-              ? styles.messageSuccess
-              : styles.messageError,
-          ]}>
-          {message.text}
-        </Text>
-      ) : null}
     </View>
   );
 }
