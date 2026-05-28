@@ -643,6 +643,13 @@ export function HomeScreen({
               onEditProfile={() =>
                 setSelectedMenu({section: 'edit-profile'})
               }
+              onStatPress={statKey => {
+                if (statKey === 'connect-requests') {
+                  setSelectedMenu({section: 'connections'});
+                } else if (statKey === 'unread-messages') {
+                  setSelectedMenu({section: 'chat'});
+                }
+              }}
               primaryColor={primaryColor}
               profileCompletion={summary?.profileCompletion ?? 0}
               searchText={searchText}
