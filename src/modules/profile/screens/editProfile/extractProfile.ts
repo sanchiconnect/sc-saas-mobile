@@ -218,11 +218,16 @@ export const extractProfile = (
         root?.companySize,
       ),
     ),
+    // Despite its name, the backend's `isNotRegistered` flag is used like an
+    // `isIncorporated` boolean — when the user picks "Yes" it ships `true`,
+    // when "No" it ships `false`. So we read it as-is (no negation). When
+    // neither field is present we leave it null so the Yes/No row shows
+    // nothing selected.
     isIncorporated:
       typeof incorporatedRaw === 'boolean'
         ? incorporatedRaw
-        : root?.isNotRegistered === false
-          ? true
+        : typeof root?.isNotRegistered === 'boolean'
+          ? root.isNotRegistered
           : null,
     incorporationYear: asString(
       pickFirst(
@@ -412,13 +417,22 @@ export const extractProfile = (
 
 export const buildBasicInfoPayload = (info: BasicInfoForm) => ({
   companyName: info.companyName,
-  yearOfIncorporation: info.incorporationYear,
+  // When the user marks "Not incorporated", the field is hidden in the UI
+  // and `incorporationYear` is cleared. Backend still requires a numeric
+  // year, so fall back to the current year in that case — mirrors the web.
+  yearOfIncorporation:
+    info.isIncorporated === false
+      ? String(new Date().getFullYear())
+      : info.incorporationYear,
   registeredCountryId: info.countryId,
   registeredStateId: info.stateId,
   registeredCityId: info.cityId,
   companySize: info.companySize,
   displayWebsite: info.social.website,
-  isNotRegistered: info.isIncorporated === false,
+  // Backend's `isNotRegistered` actually tracks "is incorporated" — Yes → true,
+  // No → false. Same misleading name on the server; we mirror exactly what
+  // the user picked, not the literal English of the field name.
+  isNotRegistered: info.isIncorporated === true,
   servicesLookingFor: info.servicesLookingFor,
   linkedinUrl: info.social.linkedin,
   twitterUrl: info.social.twitter,

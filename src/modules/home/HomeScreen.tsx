@@ -166,6 +166,15 @@ export function HomeScreen({
     logoBaseUrl && logoPath
       ? `${logoBaseUrl.replace(/\/$/, '')}/${logoPath.replace(/^\//, '')}`
       : null;
+  // Resolve the user's avatar against the tenant imgKit URL. Already-absolute
+  // values (http(s)://) pass through unchanged.
+  const avatarPath = summary?.avatar;
+  const userAvatarUrl =
+    avatarPath && /^https?:\/\//i.test(avatarPath)
+      ? avatarPath
+      : avatarPath && logoBaseUrl
+        ? `${logoBaseUrl.replace(/\/$/, '')}/${avatarPath.replace(/^\//, '')}`
+        : undefined;
   const userFirstName = session.user.fullName.split(' ')[0] || 'User';
   const primaryColor = theme?.primary || '#0b0aa3';
 
@@ -268,6 +277,7 @@ export function HomeScreen({
           accountType={summary?.accountType}
           unreadMessagesCount={unreadMessagesCount}
           pendingConnectionsCount={pendingConnectionsCount}
+          avatarUrl={userAvatarUrl}
         />
 
         <EditProfileScreen
@@ -300,6 +310,7 @@ export function HomeScreen({
           accountType={summary?.accountType}
           unreadMessagesCount={unreadMessagesCount}
           pendingConnectionsCount={pendingConnectionsCount}
+          avatarUrl={userAvatarUrl}
         />
 
         <ProfileScreen
@@ -328,6 +339,7 @@ export function HomeScreen({
           accountType={summary?.accountType}
           unreadMessagesCount={unreadMessagesCount}
           pendingConnectionsCount={pendingConnectionsCount}
+          avatarUrl={userAvatarUrl}
         />
 
         <ProgramsScreen
@@ -366,6 +378,7 @@ export function HomeScreen({
           accountType={summary?.accountType}
           unreadMessagesCount={unreadMessagesCount}
           pendingConnectionsCount={pendingConnectionsCount}
+          avatarUrl={userAvatarUrl}
         />
 
         <TicketsScreen
@@ -392,6 +405,7 @@ export function HomeScreen({
           accountType={summary?.accountType}
           unreadMessagesCount={unreadMessagesCount}
           pendingConnectionsCount={pendingConnectionsCount}
+          avatarUrl={userAvatarUrl}
         />
 
         <AccountSettingsScreen
@@ -437,6 +451,7 @@ export function HomeScreen({
           accountType={summary?.accountType}
           unreadMessagesCount={unreadMessagesCount}
           pendingConnectionsCount={pendingConnectionsCount}
+          avatarUrl={userAvatarUrl}
         />
         <View style={styles.topBar}>
           <Pressable
@@ -473,6 +488,7 @@ export function HomeScreen({
           accountType={summary?.accountType}
           unreadMessagesCount={unreadMessagesCount}
           pendingConnectionsCount={pendingConnectionsCount}
+          avatarUrl={userAvatarUrl}
         />
         <View style={styles.topBar}>
           <Pressable
@@ -508,6 +524,7 @@ export function HomeScreen({
         primaryColor={primaryColor}
         selectedMenu={selectedMenu}
         session={session}
+        avatarUrl={userAvatarUrl}
       />
 
       <View style={styles.topBar}>

@@ -148,6 +148,15 @@ export const dashboardService = {
       userUuid: profileData?.uuid ? String(profileData.uuid) : undefined,
       investorType,
       profileCompletion,
+      // Profile response may carry the avatar under several keys depending
+      // on version. First non-empty string wins.
+      avatar:
+        (typeof profileData?.avatar === 'string' && profileData.avatar) ||
+        (typeof profileData?.profileImage === 'string' &&
+          profileData.profileImage) ||
+        (typeof profileData?.profilePicture === 'string' &&
+          profileData.profilePicture) ||
+        undefined,
       stats: buildStatsFor(accountType, counts),
       roleDashboard: dashboardRes?.data || dashboardRes || undefined,
       // `show_dashboard` is a tenant feature flag, but the completeness

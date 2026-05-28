@@ -1114,6 +1114,47 @@ export const authService = {
     return data as ApiResponse;
   },
 
+  // Multipart upload for the startup logo. Returns the stored S3 path the
+  // caller writes into the basic-info form's `companyLogo` / `logoUrl`.
+  async uploadStartupLogo(
+    token: string,
+    file: {uri: string; name: string; type: string},
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    const normalizedToken = normalizeTokenValue(token);
+    if (!normalizedToken) {
+      throw new Error('Missing access token.');
+    }
+
+    const formData = new FormData();
+    formData.append('file', {
+      uri: file.uri,
+      name: file.name,
+      type: file.type,
+    } as any);
+
+    const response = await fetch(
+      `${baseUrl}api/v1/startups/upload/logo`,
+      {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${normalizedToken}`,
+        },
+        body: formData as any,
+      },
+    );
+    const raw = await response.text();
+    const data = raw ? safeJsonParse(raw) : null;
+    if (!response.ok) {
+      throw new Error(
+        getErrorMessage(data) ||
+          `Logo upload failed (${response.status}).`,
+      );
+    }
+    return data as ApiResponse;
+  },
+
   async updateFinancialsInformation(
     token: string,
     payload: Record<string, any>,

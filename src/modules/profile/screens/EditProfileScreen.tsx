@@ -1390,7 +1390,46 @@ export function EditProfileScreen({
         return;
       }
 
+      // Optimistic local preview while the upload runs — the field flips to
+      // the server-stored path once the response lands.
       updateBasic('logoUrl', asset.uri);
+      try {
+        const mime = asset.type || 'image/png';
+        const extFromMime = mime.split('/')[1] || 'png';
+        const res = await authService.uploadStartupLogo(token, {
+          uri: asset.uri,
+          name: asset.fileName || `logo-${Date.now()}.${extFromMime}`,
+          type: mime,
+        });
+        // Backend returns the stored path under varying keys depending on
+        // version. Grab the first non-empty string we find.
+        const record =
+          (res as any)?.data && typeof (res as any).data === 'object'
+            ? (res as any).data
+            : (res as any) || {};
+        const storedPath =
+          (typeof record === 'string' && record) ||
+          (typeof record.logo === 'string' && record.logo) ||
+          (typeof record.logoUrl === 'string' && record.logoUrl) ||
+          (typeof record.path === 'string' && record.path) ||
+          (typeof record.filePath === 'string' && record.filePath) ||
+          (typeof record.url === 'string' && record.url) ||
+          (typeof record.avatar === 'string' && record.avatar) ||
+          '';
+        if (storedPath) {
+          updateBasic('logoUrl', storedPath);
+        }
+      } catch (uploadErr) {
+        Alert.alert(
+          'Logo upload failed',
+          uploadErr instanceof Error
+            ? uploadErr.message
+            : 'Could not upload the logo. Please try again.',
+        );
+        // Revert the optimistic preview so the user knows the upload didn't
+        // persist.
+        updateBasic('logoUrl', null);
+      }
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Could not select the image.';

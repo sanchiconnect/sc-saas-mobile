@@ -46,6 +46,9 @@ type SideMenuProps = {
   // services so we don't double-fetch from inside the drawer.
   unreadMessagesCount?: number;
   pendingConnectionsCount?: number;
+  // Resolved avatar URL for the signed-in user (full URL, ready for
+  // <Image source={{uri}} />). Falls back to two-letter initials when empty.
+  avatarUrl?: string;
 };
 
 type ExpandableSectionProps = {
@@ -203,6 +206,7 @@ export function SideMenu({
   accountType,
   unreadMessagesCount,
   pendingConnectionsCount,
+  avatarUrl,
 }: SideMenuProps) {
   if (!isVisible) {
     return null;
@@ -271,9 +275,17 @@ export function SideMenu({
             accessibilityLabel="Open my profile"
             style={styles.profileRow}>
             <View style={styles.avatarWrap}>
-              <Text style={styles.avatarText}>
-                {session.user.fullName.slice(0, 2).toUpperCase()}
-              </Text>
+              {avatarUrl ? (
+                <Image
+                  source={{uri: avatarUrl}}
+                  style={styles.avatarImage}
+                  resizeMode="cover"
+                />
+              ) : (
+                <Text style={styles.avatarText}>
+                  {session.user.fullName.slice(0, 2).toUpperCase()}
+                </Text>
+              )}
               <View style={styles.onlineDot} />
             </View>
 
@@ -502,6 +514,11 @@ const styles = StyleSheet.create({
     color: '#475569',
     fontSize: 18,
     fontWeight: '800',
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 16,
   },
   onlineDot: {
     backgroundColor: '#16a34a',

@@ -72,6 +72,10 @@ export type DashboardSummary = {
   approvalStatus?: string;
   // Role-keyed `canToggleStatus` from the completeness response.
   canToggleStatus?: boolean;
+  // Raw avatar value from /users/profile (typically a relative S3 path like
+  // `users/abc/xyz.png`, or already-absolute). Consumers resolve it against
+  // the tenant's imgKitUrl when they render the image.
+  avatar?: string;
 };
 
 export type EditProfileTab = {
