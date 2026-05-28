@@ -2084,13 +2084,21 @@ export function EditProfileScreen({
           // (tenant-defined) form tab. Per-role secondary tabs render
           // their own internal Save button, so disable the global one
           // there.
+          const isCustomTab = activeTab.startsWith('custom:');
+          const activeCustomUuid = isCustomTab
+            ? activeTab.slice('custom:'.length)
+            : '';
           const saveDisabled =
             isSaving ||
             (accountType ? accountType !== 'startup' : false) ||
             (activeTab !== 'basic' &&
               activeTab !== 'industry' &&
               activeTab !== 'financials' &&
-              !activeTab.startsWith('custom:'));
+              !isCustomTab) ||
+            // For custom forms: block save until every required field is
+            // filled. The status is tracked by CustomFormTab's
+            // onCompletionChange callback.
+            (isCustomTab && !customFormStatuses[activeCustomUuid]);
           return (
             <>
               {!isFirst ? (
