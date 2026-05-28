@@ -1,6 +1,7 @@
 import React, {useCallback, useContext, useEffect, useState} from 'react';
 import {
   ActivityIndicator,
+  BackHandler,
   Image,
   Pressable,
   RefreshControl,
@@ -112,6 +113,34 @@ export function HomeScreen({
   useEffect(() => {
     if (isMenuOpen) refreshDrawerCounts();
   }, [isMenuOpen, refreshDrawerCounts]);
+
+  // Hardware back walks the user one step back through the in-app navigation
+  // instead of exiting the app. Order matters: sidebar first, then chat
+  // detail → list, then any sub-section → dashboard. On the dashboard with
+  // nothing open we return false so the OS handles it (exits the app).
+  useEffect(() => {
+    const onBackPress = () => {
+      if (isMenuOpen) {
+        setIsMenuOpen(false);
+        return true;
+      }
+      if (selectedMenu.section === 'chat' && activeConversation) {
+        setActiveConversation(null);
+        return true;
+      }
+      if (selectedMenu.section !== 'dashboard') {
+        setSelectedMenu({section: 'dashboard'});
+        return true;
+      }
+      return false;
+    };
+
+    const subscription = BackHandler.addEventListener(
+      'hardwareBackPress',
+      onBackPress,
+    );
+    return () => subscription.remove();
+  }, [isMenuOpen, selectedMenu.section, activeConversation]);
 
   const {globalSetting, theme} = useContext(TenantContext);
 
