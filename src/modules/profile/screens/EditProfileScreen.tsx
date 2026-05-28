@@ -1214,7 +1214,10 @@ export function EditProfileScreen({
         } catch {
           // Toggle is best-effort — financials PATCH already succeeded.
         }
-        await loadProfile();
+        // Silent reload — non-silent flips isLoading and replaces the form
+        // with the centered spinner, which unmounts the ScrollView and
+        // resets scroll position + active tab.
+        await loadProfile({silent: true});
         await refreshOngoingCommitments();
       } else {
         // Always update the core /startup-information record.
@@ -1865,7 +1868,7 @@ export function EditProfileScreen({
               primaryColor={primaryColor}
               isSaving={isSaving}
               token={token}
-              onLogoUploaded={() => loadProfile()}
+              onLogoUploaded={() => loadProfile({silent: true})}
               industryOptions={industryOptions}
               dropdownData={{
                 organization_types: organizationTypeOptions,
@@ -2127,12 +2130,16 @@ export function EditProfileScreen({
               primaryColor={primaryColor}
               pitchDeck={startupInfo?.pitchDeck}
               token={token}
-              onUploaded={() => loadProfile()}
+              // Silent reload — keeps the ScrollView mounted so the user
+              // stays in the same scroll position and active tab. The pitch
+              // deck preview / file card props simply update in place from
+              // the new startupInfo.
+              onUploaded={() => loadProfile({silent: true})}
             />
             <Documents
               token={token}
               primaryColor={primaryColor}
-              onUploaded={() => loadProfile()}
+              onUploaded={() => loadProfile({silent: true})}
             />
           </View>
         ) : activeTab === 'investment_details' ||
