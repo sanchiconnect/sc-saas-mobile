@@ -2,13 +2,22 @@ apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 
-// react-native-config: reads the env file specified by the ENVFILE env var
-// at build time (defaults to ".env" — which we don't ship). Each tenant has
-// its own npm script that sets ENVFILE explicitly:
-//   npm run android:isba          → ENVFILE=.env.isba.development
-//   npm run android:isba:release  → ENVFILE=.env.isba.production
+// react-native-config: picks an env file in this order of precedence:
+//   1. $ENVFILE env var (set by the per-tenant npm scripts in package.json)
+//   2. envConfigFiles map below — matched against the current build variant,
+//      so bare `./gradlew installIsbaDebug` or `npx react-native run-android`
+//      also work without exporting ENVFILE manually.
 // Add a new tenant by creating .env.<tenant>.<env> files, copying the `isba`
-// productFlavor below, and adding matching npm scripts.
+// productFlavor below, adding matching npm scripts, AND adding entries here.
+project.ext.envConfigFiles = [
+    isbaDebug:   ".env.isba.development",
+    isbaRelease: ".env.isba.production",
+    // Fallback keys for bare RN CLI invocations that don't pass --mode (the
+    // task name is then just `installDebug`, captured as flavor "debug").
+    // Safe while there is exactly one tenant flavor.
+    debug:       ".env.isba.development",
+    release:     ".env.isba.production",
+]
 apply from: project(':react-native-config').projectDir.getPath() + "/dotenv.gradle"
 
 project.ext.vectoricons = [
@@ -147,5 +156,28 @@ dependencies {
         implementation("com.facebook.react:hermes-android")
     } else {
         implementation jscFlavor
+    }
+}
+
+// While there is exactly one tenant productFlavor, alias the bare task names
+// (installDebug, assembleRelease, ...) to the tenant-specific tasks so that
+// `npx react-native run-android` works without `--mode=<flavor>Debug`. The
+// guard removes the aliases automatically once a second tenant is added, at
+// which point bare names are genuinely ambiguous and callers must pass --mode.
+afterEvaluate {
+    def tenantFlavors = android.productFlavors.findAll { it.dimension == 'tenant' }
+    if (tenantFlavors.size() == 1) {
+        def flavorName = tenantFlavors[0].name.capitalize()
+        ['Debug', 'Release'].each { buildType ->
+            ['install', 'assemble', 'bundle'].each { prefix ->
+                def aliasName = "${prefix}${buildType}"
+                def realName = "${prefix}${flavorName}${buildType}"
+                if (tasks.findByName(realName) && tasks.findByName(aliasName) == null) {
+                    tasks.register(aliasName) {
+                        dependsOn realName
+                    }
+                }
+            }
+        }
     }
 }
