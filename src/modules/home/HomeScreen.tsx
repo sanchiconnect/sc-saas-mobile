@@ -274,6 +274,12 @@ export function HomeScreen({
           token={session.token}
           onBack={() => setSelectedMenu({section: 'dashboard'})}
           onPreview={() => setSelectedMenu({section: 'profile'})}
+          // Refresh the dashboard summary (profile-completion ring + stats)
+          // immediately after each save, so the ring shows the new % without
+          // the user having to navigate away and back.
+          onProfileUpdated={() => {
+            loadSummary(session.token).catch(() => {});
+          }}
         />
       </View>
     );

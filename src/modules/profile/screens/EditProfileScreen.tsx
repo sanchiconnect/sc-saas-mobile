@@ -69,6 +69,10 @@ type EditProfileScreenProps = {
   token: string;
   onBack: () => void;
   onPreview?: () => void;
+  // Fired after every successful save (basic info / industry / financials /
+  // custom form). Parent uses it to refresh dashboard widgets like the
+  // profile-completion ring so they reflect the new state immediately.
+  onProfileUpdated?: () => void;
 };
 
 type PickerKind =
@@ -325,6 +329,7 @@ const buildEditTabs = (
 export function EditProfileScreen({
   token,
   onBack,
+  onProfileUpdated,
 }: EditProfileScreenProps) {
   const {theme, globalSetting, baseUrl} = useContext(TenantContext);
   const primaryColor = theme?.primary || colors.primary;
@@ -1062,6 +1067,9 @@ export function EditProfileScreen({
           text: result.message || (result.ok ? 'Saved.' : 'Could not save.'),
           tone: result.ok ? 'success' : 'error',
         });
+        if (result.ok) {
+          onProfileUpdated?.();
+        }
         return;
       }
       if (activeTab === 'industry') {
@@ -1248,6 +1256,27 @@ export function EditProfileScreen({
       }
 
       setSaveMessage({text: 'Saved successfully.', tone: 'success'});
+      // Refresh the parent's dashboard widgets (profile-completion ring,
+      // stat tiles) so they reflect the new state without waiting for the
+      // user to navigate back.
+      onProfileUpdated?.();
+      // Also pull the backend's own profile_completeness number now so the
+      // header ring on this screen updates immediately.
+      if (accountType) {
+        authService
+          .getProfileCompletion(token, accountType, investorSubtype)
+          .then(res => {
+            const raw = (res?.data?.percentage ?? res?.percentage) as
+              | number
+              | string
+              | undefined;
+            const num = Number(raw);
+            if (Number.isFinite(num)) setBackendCompletion(num);
+          })
+          .catch(() => {
+            /* leave the existing value in place if the refresh fails */
+          });
+      }
     } catch (error) {
       setSaveMessage({
         text:
@@ -1735,6 +1764,7 @@ export function EditProfileScreen({
                     text: 'Profile updated.',
                     tone: 'success',
                   });
+                  onProfileUpdated?.();
                 } catch (error) {
                   setSaveMessage({
                     text:
