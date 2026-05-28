@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useContext, useState} from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -10,7 +10,6 @@ import {
 } from 'react-native';
 import {launchImageLibrary} from 'react-native-image-picker';
 import Video from 'react-native-video';
-import {WebView} from 'react-native-webview';
 import {
   pick,
   types,
@@ -21,6 +20,7 @@ import {
 import {authService} from '../../../auth/services/auth.service';
 import {Icon} from '../../../../core/components/Icon';
 import {colors} from '../../../../core/theme/colors';
+import {TenantContext} from '../../../../core/tenant/TenantProvider';
 
 type PitchDeck = {
   elevatorPitch?: string | null;
@@ -47,44 +47,32 @@ const isDirectVideoUrl = (url?: string | null) => {
   return /\.(mp4|m4v|mov|webm|mkv)(\?|#|$)/i.test(url);
 };
 
-function PdfPreview({
-  url,
-  primaryColor,
-}: {
-  url: string;
-  primaryColor: string;
-}) {
-  const [hasError, setHasError] = useState(false);
-  const viewerUrl = `https://docs.google.com/gview?embedded=true&url=${encodeURIComponent(url)}`;
+const extOf = (path: string): string => {
+  const match = /\.([a-z0-9]+)(?:\?|#|$)/i.exec(path);
+  return match ? match[1].toLowerCase() : '';
+};
 
-  if (hasError) {
-    return (
-      <View style={styles.pdfFallback}>
-        <Icon name="file-pdf-box" size={56} color={primaryColor} />
-        <Text style={styles.pdfFallbackText}>
-          Inline preview unavailable. Tap to open in full screen.
-        </Text>
-      </View>
-    );
-  }
+const iconForExt = (ext: string): string => {
+  if (ext === 'pdf') return 'file-pdf-box';
+  if (ext === 'ppt' || ext === 'pptx') return 'file-powerpoint-box';
+  if (ext === 'doc' || ext === 'docx') return 'file-word-box';
+  return 'file-document-outline';
+};
 
-  return (
-    <View style={styles.pdfWrap}>
-      <WebView
-        source={{uri: viewerUrl}}
-        style={styles.pdfWebView}
-        startInLoadingState
-        renderLoading={() => (
-          <View style={styles.pdfLoading}>
-            <ActivityIndicator color={primaryColor} />
-          </View>
-        )}
-        onError={() => setHasError(true)}
-        onHttpError={() => setHasError(true)}
-      />
-    </View>
-  );
-}
+// Resolve a (possibly relative) server path against the tenant's CDN / API
+// origin so external openers (browser, download) always receive an absolute
+// URL. Falls back through the most-specific origin first (imgKit → s3 →
+// baseUrl) so production paths land on the CDN they were uploaded to.
+const resolveUrl = (
+  path: string,
+  bases: Array<string | null | undefined>,
+): string => {
+  if (!path) return '';
+  if (/^https?:\/\//i.test(path)) return path;
+  const base = bases.find(b => typeof b === 'string' && b.length > 0);
+  if (!base) return path;
+  return `${base.replace(/\/$/, '')}/${path.replace(/^\//, '')}`;
+};
 
 function InlineVideoPlayer({
   url,
@@ -146,15 +134,25 @@ export function YourPitchDeck({
   token,
   onUploaded,
 }: Props) {
-  const elevatorPitch = pitchDeck?.elevatorPitch || '';
-  const pitchDocument = pitchDeck?.pitchDocument || '';
-  const fileName = pitchDeck?.fileName || '';
+  const {baseUrl, globalSetting} = useContext(TenantContext);
+  const rawPitchDocument = pitchDeck?.pitchDocument || '';
+  // Resolve to an absolute URL so OS-level openers (browser, download)
+  // always receive a fetchable address — server may return a relative path.
+  const pitchDocument = resolveUrl(rawPitchDocument, [
+    globalSetting?.imgKitUrl,
+    globalSetting?.assetsImgKitUrl,
+    globalSetting?.s3Url,
+    baseUrl,
+  ]);
+  const fileName =
+    pitchDeck?.fileName || (rawPitchDocument.split('/').pop() ?? '');
+  const fileExt = extOf(fileName || rawPitchDocument);
   const uploadVideoUrl = pitchDeck?.uploadPitchUrl || '';
   const powerVideoUrl =
     pitchDeck?.powerPitchUrl || pitchDeck?.embedUrl || '';
 
   const hasContent = Boolean(
-    elevatorPitch || pitchDocument || uploadVideoUrl || powerVideoUrl,
+    pitchDocument || uploadVideoUrl || powerVideoUrl,
   );
 
   const [busyKind, setBusyKind] = useState<UploadKind | null>(null);
@@ -327,55 +325,6 @@ export function YourPitchDeck({
     }
   };
 
-  const renderAction = (
-    kind: UploadKind,
-    label: string,
-    iconName: string,
-    variant: 'primary' | 'secondary',
-  ) => {
-    const isBusy = busyKind === kind;
-    const isDisabled = busyKind !== null && !isBusy;
-    const isPrimary = variant === 'primary';
-    return (
-      <Pressable
-        key={kind}
-        onPress={() => handleUpload(kind)}
-        disabled={isDisabled || isBusy}
-        style={({pressed}) => [
-          styles.actionButton,
-          isPrimary
-            ? {backgroundColor: primaryColor}
-            : {
-                backgroundColor: '#ffffff',
-                borderColor: primaryColor,
-                borderWidth: 1,
-              },
-          pressed && styles.pressed,
-          (isDisabled || isBusy) && styles.disabled,
-        ]}>
-        {isBusy ? (
-          <ActivityIndicator
-            color={isPrimary ? '#ffffff' : primaryColor}
-            size="small"
-          />
-        ) : (
-          <Icon
-            name={iconName}
-            size={16}
-            color={isPrimary ? '#ffffff' : primaryColor}
-          />
-        )}
-        <Text
-          style={[
-            styles.actionLabel,
-            {color: isPrimary ? '#ffffff' : primaryColor},
-          ]}>
-          {label}
-        </Text>
-      </Pressable>
-    );
-  };
-
   return (
     <View style={styles.card}>
       <View style={styles.headerRow}>
@@ -384,13 +333,6 @@ export function YourPitchDeck({
         </View>
         <Text style={styles.title}>Your pitch deck</Text>
       </View>
-
-      {elevatorPitch ? (
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>Elevator pitch</Text>
-          <Text style={styles.pitchText}>“{elevatorPitch}”</Text>
-        </View>
-      ) : null}
 
       {!hasContent ? (
         <View style={styles.emptyState}>
@@ -427,98 +369,119 @@ export function YourPitchDeck({
         </Text>
 
         {pitchDocument ? (
+          // Uploaded: one consolidated card — large file thumbnail at top,
+          // filename / extension below, and the three actions (View, Download,
+          // Replace) on a single row. Replaces the previous duplicate
+          // file-card + drop-zone + download-row stack.
           <View
             style={[
-              styles.previewBox,
-              {borderColor: primaryColor, padding: 8},
-            ]}>
-            <PdfPreview url={pitchDocument} primaryColor={primaryColor} />
-            <Pressable
-              onPress={() => openLink(pitchDocument)}
-              style={styles.previewOpenLink}>
-              <Icon name="open-in-new" size={14} color={primaryColor} />
-              <Text style={[styles.previewOpenLinkText, {color: primaryColor}]}>
-                Open in full screen
-              </Text>
-            </Pressable>
-          </View>
-        ) : (
-          <View
-            style={[
-              styles.previewBox,
-              styles.previewBoxEmpty,
+              styles.deckCard,
               {borderColor: primaryColor},
             ]}>
-            <View style={styles.previewContent}>
-              <Icon name="file-upload-outline" size={48} color="#94a3b8" />
-              <Text style={styles.previewEmptyTitle}>
-                No pitch deck uploaded yet
-              </Text>
-              <Text style={styles.previewEmptyHint}>
-                Use the upload box below to add one.
-              </Text>
+            <View
+              style={[
+                styles.deckThumb,
+                {backgroundColor: `${primaryColor}10`},
+              ]}>
+              <Icon
+                name={iconForExt(fileExt)}
+                size={72}
+                color={primaryColor}
+              />
+              {fileExt ? (
+                <Text style={[styles.deckThumbBadge, {color: primaryColor}]}>
+                  {fileExt.toUpperCase()}
+                </Text>
+              ) : null}
+            </View>
+
+            <Text style={styles.deckFileName} numberOfLines={2}>
+              {fileName || 'pitch-deck'}
+            </Text>
+            <Text style={styles.deckFileMeta}>
+              Tap View to open this file in your device's PDF viewer.
+            </Text>
+
+            <View style={styles.deckActions}>
+              <Pressable
+                onPress={() => openLink(pitchDocument)}
+                style={({pressed}) => [
+                  styles.deckActionBtn,
+                  styles.deckActionOutline,
+                  {borderColor: primaryColor},
+                  pressed && styles.pressed,
+                ]}>
+                <Icon name="open-in-new" size={16} color={primaryColor} />
+                <Text style={[styles.deckActionText, {color: primaryColor}]}>
+                  View
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => openLink(pitchDocument)}
+                style={({pressed}) => [
+                  styles.deckActionBtn,
+                  {backgroundColor: primaryColor},
+                  pressed && styles.pressed,
+                ]}>
+                <Icon name="download" size={16} color="#ffffff" />
+                <Text style={[styles.deckActionText, {color: '#ffffff'}]}>
+                  Download
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => handleUpload('deck')}
+                disabled={busyKind !== null}
+                style={({pressed}) => [
+                  styles.deckActionBtn,
+                  styles.deckActionGhost,
+                  pressed && styles.pressed,
+                  busyKind !== null && styles.disabled,
+                ]}>
+                {busyKind === 'deck' ? (
+                  <ActivityIndicator color="#475569" size="small" />
+                ) : (
+                  <>
+                    <Icon name="pencil-outline" size={16} color="#475569" />
+                    <Text
+                      style={[styles.deckActionText, {color: '#475569'}]}>
+                      Replace
+                    </Text>
+                  </>
+                )}
+              </Pressable>
             </View>
           </View>
-        )}
-
-        <View style={styles.dropZoneRow}>
+        ) : (
+          // Empty state: single tappable upload zone (no duplicate Edit
+          // button beside it). Tap anywhere on this card to open the picker.
           <Pressable
             onPress={() => handleUpload('deck')}
             disabled={busyKind !== null}
             style={({pressed}) => [
-              styles.dropZone,
+              styles.uploadZone,
+              {borderColor: primaryColor},
               pressed && styles.pressed,
               busyKind === 'deck' && styles.disabled,
             ]}>
-            <Text style={styles.dropZoneTitle}>
-              Tap to select a file to upload.
-            </Text>
-            <Text style={styles.dropZoneHint}>
-              Accepted formats: ppt, pptx, pdf
-            </Text>
-          </Pressable>
-          <Pressable
-            onPress={() => handleUpload('deck')}
-            disabled={busyKind !== null}
-            style={({pressed}) => [
-              styles.editButton,
-              pressed && styles.pressed,
-              busyKind !== null && styles.disabled,
-            ]}>
             {busyKind === 'deck' ? (
-              <ActivityIndicator color="#475569" size="small" />
+              <ActivityIndicator color={primaryColor} size="large" />
             ) : (
               <>
                 <Icon
-                  name={pitchDocument ? 'pencil-outline' : 'upload'}
-                  size={16}
-                  color="#475569"
+                  name="cloud-upload-outline"
+                  size={42}
+                  color={primaryColor}
                 />
-                <Text style={styles.editButtonText}>
-                  {pitchDocument ? 'Edit' : 'Upload'}
+                <Text style={styles.uploadZoneTitle}>
+                  Tap to upload your pitch deck
+                </Text>
+                <Text style={styles.uploadZoneHint}>
+                  Accepted formats: ppt, pptx, pdf · Max 50 MB
                 </Text>
               </>
             )}
           </Pressable>
-        </View>
-
-        {pitchDocument ? (
-          <View style={styles.fileRow}>
-            <Text style={styles.fileRowName} numberOfLines={1}>
-              {fileName || 'pitch-deck.pdf'}
-            </Text>
-            <Pressable
-              onPress={() => openLink(pitchDocument)}
-              style={({pressed}) => [
-                styles.downloadButton,
-                {backgroundColor: primaryColor},
-                pressed && styles.pressed,
-              ]}>
-              <Icon name="download" size={14} color="#ffffff" />
-              <Text style={styles.downloadButtonText}>DOWNLOAD</Text>
-            </Pressable>
-          </View>
-        ) : null}
+        )}
       </View>
 
       <View style={styles.subSection}>
@@ -1152,5 +1115,155 @@ const styles = StyleSheet.create({
   },
   messageError: {
     color: colors.danger,
+  },
+  fileCard: {
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderRadius: 14,
+    borderWidth: 1.5,
+    flexDirection: 'row',
+    gap: 14,
+    marginTop: 12,
+    padding: 14,
+  },
+  fileIconWrap: {
+    alignItems: 'center',
+    borderRadius: 12,
+    height: 64,
+    justifyContent: 'center',
+    width: 64,
+  },
+  fileMeta: {
+    flex: 1,
+    gap: 4,
+  },
+  fileCardName: {
+    color: '#0f172a',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  fileCardExt: {
+    color: '#64748b',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  fileCardActions: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
+  },
+  fileCardViewBtn: {
+    alignItems: 'center',
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  fileCardViewText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  fileCardDownloadBtn: {
+    alignItems: 'center',
+    borderRadius: 8,
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  fileCardDownloadText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+  },
+  // Consolidated pitch-deck card: large thumbnail + filename + 3 actions.
+  // Replaces the previous file-card + drop-zone + file-row stack.
+  deckCard: {
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderRadius: 14,
+    borderWidth: 1.5,
+    marginTop: 12,
+    padding: 18,
+  },
+  deckThumb: {
+    alignItems: 'center',
+    borderRadius: 14,
+    height: 160,
+    justifyContent: 'center',
+    marginBottom: 14,
+    width: '100%',
+  },
+  deckThumbBadge: {
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 1,
+    marginTop: 6,
+  },
+  deckFileName: {
+    color: '#0f172a',
+    fontSize: 15,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  deckFileMeta: {
+    color: '#64748b',
+    fontSize: 12,
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  deckActions: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 14,
+    width: '100%',
+  },
+  deckActionBtn: {
+    alignItems: 'center',
+    borderRadius: 10,
+    flex: 1,
+    flexDirection: 'row',
+    gap: 6,
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+  },
+  deckActionOutline: {
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+  },
+  deckActionGhost: {
+    backgroundColor: '#f1f5f9',
+  },
+  deckActionText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  // Single-tap upload zone shown when no file exists.
+  uploadZone: {
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    borderRadius: 14,
+    borderStyle: 'dashed',
+    borderWidth: 1.5,
+    gap: 8,
+    marginTop: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 32,
+  },
+  uploadZoneTitle: {
+    color: '#0f172a',
+    fontSize: 15,
+    fontWeight: '700',
+    marginTop: 4,
+  },
+  uploadZoneHint: {
+    color: '#64748b',
+    fontSize: 12,
   },
 });
