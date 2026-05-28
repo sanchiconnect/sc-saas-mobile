@@ -459,6 +459,7 @@ export function HomeScreen({
             currentUserUuid={summary?.userUuid || session.user.uuid || session.user.id}
             currentUserName={session.user.fullName}
             onBack={() => setActiveConversation(null)}
+            onUnreadCountChanged={refreshDrawerCounts}
           />
         </View>
       );
@@ -592,6 +593,13 @@ export function HomeScreen({
             accessibilityRole="button"
             accessibilityLabel="Messages">
             <Icon name="message-text-outline" size={22} color="#475569" />
+            {unreadMessagesCount > 0 ? (
+              <View style={styles.topActionBadge}>
+                <Text style={styles.topActionBadgeText}>
+                  {unreadMessagesCount > 99 ? '99+' : unreadMessagesCount}
+                </Text>
+              </View>
+            ) : null}
           </Pressable>
           <Pressable
             style={({pressed}) => [
@@ -603,6 +611,15 @@ export function HomeScreen({
             accessibilityRole="button"
             accessibilityLabel="Team">
             <Icon name="account-group-outline" size={22} color="#475569" />
+            {pendingConnectionsCount > 0 ? (
+              <View style={styles.topActionBadge}>
+                <Text style={styles.topActionBadgeText}>
+                  {pendingConnectionsCount > 99
+                    ? '99+'
+                    : pendingConnectionsCount}
+                </Text>
+              </View>
+            ) : null}
           </Pressable>
         </View>
       </View>
@@ -733,7 +750,27 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     height: 40,
     justifyContent: 'center',
+    position: 'relative',
     width: 40,
+  },
+  topActionBadge: {
+    alignItems: 'center',
+    backgroundColor: '#ef4444',
+    borderColor: '#ffffff',
+    borderRadius: 9,
+    borderWidth: 1.5,
+    height: 18,
+    justifyContent: 'center',
+    minWidth: 18,
+    paddingHorizontal: 4,
+    position: 'absolute',
+    right: 2,
+    top: 2,
+  },
+  topActionBadgeText: {
+    color: '#ffffff',
+    fontSize: 10,
+    fontWeight: '800',
   },
   topActions: {
     alignItems: 'center',

@@ -310,10 +310,12 @@ export function SideMenu({
               }}>
               <View style={styles.quickIconWrap}>
                 <Icon name="message-text-outline" size={18} color="#475569" />
-                {unreadMessagesCount && unreadMessagesCount > 0 ? (
+                {(unreadMessagesCount ?? 0) > 0 ? (
                   <View style={styles.quickBadge}>
                     <Text style={styles.quickBadgeText}>
-                      {unreadMessagesCount > 99 ? '99+' : unreadMessagesCount}
+                      {(unreadMessagesCount ?? 0) > 99
+                        ? '99+'
+                        : unreadMessagesCount}
                     </Text>
                   </View>
                 ) : null}
@@ -329,10 +331,10 @@ export function SideMenu({
               }}>
               <View style={styles.quickIconWrap}>
                 <Icon name="account-group-outline" size={18} color="#475569" />
-                {pendingConnectionsCount && pendingConnectionsCount > 0 ? (
+                {(pendingConnectionsCount ?? 0) > 0 ? (
                   <View style={styles.quickBadge}>
                     <Text style={styles.quickBadgeText}>
-                      {pendingConnectionsCount > 99
+                      {(pendingConnectionsCount ?? 0) > 99
                         ? '99+'
                         : pendingConnectionsCount}
                     </Text>
@@ -592,9 +594,17 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   // Icon + red count chip stacked together so the badge floats top-right
-  // of the icon like a typical notification dot.
+  // of the icon like a typical notification dot. Explicit size on the wrap
+  // gives the absolute-positioned badge a bigger box to live in — without
+  // it, the badge has to extend with negative right/top values and Android's
+  // Pressable ripple clipping would hide it.
   quickIconWrap: {
+    alignItems: 'flex-start',
+    height: 26,
+    justifyContent: 'center',
+    paddingTop: 4,
     position: 'relative',
+    width: 30,
   },
   quickBadge: {
     alignItems: 'center',
@@ -607,8 +617,8 @@ const styles = StyleSheet.create({
     minWidth: 18,
     paddingHorizontal: 4,
     position: 'absolute',
-    right: -10,
-    top: -8,
+    right: 0,
+    top: 0,
   },
   quickBadgeText: {
     color: '#ffffff',

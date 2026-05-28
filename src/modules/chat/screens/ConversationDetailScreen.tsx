@@ -169,6 +169,10 @@ type Props = {
   // sender header matches the web design.
   currentUserName?: string;
   onBack: () => void;
+  // Fired after a batch of /mark-read PATCHes settle so the parent can
+  // re-hit /notifications/count and drop the drawer's unread badge
+  // without waiting for the user to navigate back.
+  onUnreadCountChanged?: () => void;
 };
 
 const formatTime = (raw?: string): string => {
@@ -247,6 +251,7 @@ export function ConversationDetailScreen({
   currentUserUuid,
   currentUserName,
   onBack,
+  onUnreadCountChanged,
 }: Props) {
   const {theme, globalSetting} = useContext(TenantContext);
   const primaryColor = theme?.primary || colors.primary;
@@ -265,6 +270,11 @@ export function ConversationDetailScreen({
 
   // Track messages we just sent locally so the socket echo doesn't dupe them.
   const sentMessageIdsRef = useRef<Set<string>>(new Set());
+
+  // Track message uuids we've already PATCHed to /mark-read so opening the
+  // screen doesn't fire the same call twice (effect re-runs on socket
+  // appends). Reset whenever the open conversation changes.
+  const markedReadRef = useRef<Set<string>>(new Set());
 
   // Refs for auto-scrolling to the latest message. `flatListRef` is the
   // list handle; `initialScrolledRef` flips after the first scroll so the
@@ -363,7 +373,56 @@ export function ConversationDetailScreen({
   useEffect(() => {
     initialScrolledRef.current = false;
     skipNextAutoScrollRef.current = false;
+    markedReadRef.current = new Set();
   }, [conversation.uuid]);
+
+  // Mark every unread message-from-others as read so the conversation
+  // list's unread count drops. Runs after the initial fetch and again
+  // whenever socket pushes new messages while the screen is open.
+  // `markedReadRef` dedupes so each message UUID is PATCHed at most once
+  // per mount, and we optimistically flip `isRead` locally so the same
+  // entry isn't reconsidered on the next render.
+  useEffect(() => {
+    if (messages.length === 0) return;
+    const targets = messages.filter(
+      m =>
+        m.uuid &&
+        !m.isRead &&
+        !m.isDeleted &&
+        !isOwnMessage(m, currentUserUuid) &&
+        !markedReadRef.current.has(m.uuid),
+    );
+    if (targets.length === 0) return;
+    targets.forEach(m => markedReadRef.current.add(m.uuid));
+    const targetIds = new Set(targets.map(m => m.uuid));
+    setMessages(prev =>
+      prev.map(m => (targetIds.has(m.uuid) ? {...m, isRead: true} : m)),
+    );
+    // Fire each PATCH in parallel, then refresh the drawer's unread badge
+    // once after the whole batch settles — one /notifications/count hit
+    // per batch instead of per message.
+    Promise.allSettled(
+      targets.map(m =>
+        chatService
+          .markMessageRead(token, conversation.uuid, m.uuid)
+          .catch(err => {
+            // Best-effort — drop the dedupe entry so a future render can
+            // retry if the user still has the screen open.
+            markedReadRef.current.delete(m.uuid);
+            throw err;
+          }),
+      ),
+    ).then(results => {
+      const anyOk = results.some(r => r.status === 'fulfilled');
+      if (anyOk) onUnreadCountChanged?.();
+    });
+  }, [
+    messages,
+    conversation.uuid,
+    token,
+    currentUserUuid,
+    onUnreadCountChanged,
+  ]);
 
   // Auto-scroll to the latest message whenever the count grows OR when
   // the list flips out of its initial loading state. The `isLoading` dep

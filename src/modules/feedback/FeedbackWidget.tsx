@@ -48,7 +48,12 @@ export function FeedbackWidget() {
         accessibilityRole="button"
         onPress={() => setVisible(true)}
         style={[styles.fab, {backgroundColor: primaryColor}]}>
-        <Icon name="message-draw" size={28} color="#ffffff" />
+        <View style={styles.fabIconStack}>
+          <Icon name="thumb-up" size={26} color="#ffffff" />
+          <View style={styles.fabIconBadge}>
+            <Icon name="message-star" size={16} color="#ffffff" />
+          </View>
+        </View>
       </Pressable>
 
       <FeedbackModal visible={visible} onClose={() => setVisible(false)} />
@@ -235,10 +240,22 @@ export function FeedbackModal({visible, onClose}: FeedbackModalProps) {
 }
 
 const styles = StyleSheet.create({
+  fabIconStack: {
+    alignItems: 'center',
+    height: 32,
+    justifyContent: 'center',
+    position: 'relative',
+    width: 32,
+  },
+  fabIconBadge: {
+    position: 'absolute',
+    right: -8,
+    top: -6,
+  },
   fab: {
     alignItems: 'center',
     borderRadius: 28,
-    bottom: 32,
+    bottom: 96,
     elevation: 8,
     height: 56,
     justifyContent: 'center',
