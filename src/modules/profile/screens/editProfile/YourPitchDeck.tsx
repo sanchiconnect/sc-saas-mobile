@@ -352,14 +352,39 @@ export function YourPitchDeck({
   };
 
   const pickDeckFile = async () => {
+    // Restrict the system picker to deck-friendly types up front so users
+    // see only those files in the chooser. We pass MIME types explicitly
+    // because Android's SAF honors them more reliably than the named
+    // `types.pdf` / `types.ppt` constants, and iOS treats them as UTIs.
+    const ALLOWED_MIME_TYPES = [
+      'application/pdf',
+      'application/vnd.ms-powerpoint',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    ];
+    const ALLOWED_EXTENSIONS = ['pdf', 'ppt', 'pptx'];
+
     try {
       const results = await pick({
-        type: [types.allFiles],
+        type: ALLOWED_MIME_TYPES,
         allowMultiSelection: false,
       });
       const picked = results?.[0];
       if (!picked?.uri) {
         throw new Error('No file was selected.');
+      }
+      // Defense in depth: some Android pickers (especially third-party file
+      // explorers like Files by Google) ignore the type filter and return
+      // any file with `application/octet-stream`. Fall back to extension
+      // check so we don't upload e.g. an image or zip as a "pitch deck".
+      const mime = String(picked.type || '').toLowerCase();
+      const name = String(picked.name || '').toLowerCase();
+      const ext = (name.split('.').pop() || '').replace(/[^a-z0-9]/g, '');
+      const mimeOk = ALLOWED_MIME_TYPES.includes(mime);
+      const extOk = ALLOWED_EXTENSIONS.includes(ext);
+      if (!mimeOk && !extOk) {
+        throw new Error(
+          'Only PDF, PPT, or PPTX files are accepted for the pitch deck.',
+        );
       }
       const sizeInMB = (picked.size || 0) / (1024 * 1024);
       if (sizeInMB > MAX_FILE_SIZE_MB) {

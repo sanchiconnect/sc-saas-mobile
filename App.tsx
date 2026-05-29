@@ -1,7 +1,6 @@
 import React, {useEffect, useState} from 'react';
 import {BackHandler, StatusBar, StyleSheet, useColorScheme} from 'react-native';
 import {SafeAreaProvider, SafeAreaView} from 'react-native-safe-area-context';
-import {KeyboardProvider} from 'react-native-keyboard-controller';
 
 import {FeedbackWidget} from './src/modules/feedback/FeedbackWidget';
 import {HomeScreen} from './src/modules/home/HomeScreen';
@@ -136,7 +135,6 @@ function App() {
   return (
     <TenantProvider>
       <SafeAreaProvider>
-        <KeyboardProvider>
         <ToastProvider>
         <SafeAreaView
           style={[
@@ -168,7 +166,6 @@ function App() {
           {shouldShowFeedback ? <FeedbackWidget /> : null}
         </SafeAreaView>
         </ToastProvider>
-        </KeyboardProvider>
       </SafeAreaProvider>
     </TenantProvider>
   );
