@@ -1091,6 +1091,13 @@ export function EditProfileScreen({
       }
       if (!basicInfo.country) return false;
       if (!basicInfo.productStage) return false;
+      // New requireds: Elevator pitch, Company Brief, at least one
+      // Business Model. Kept inline with the existing required gates so
+      // the SAVE button stays disabled until every red-asterisk field
+      // is populated.
+      if (!basicInfo.elevatorPitch?.trim()) return false;
+      if (!basicInfo.companyBrief?.trim()) return false;
+      if (basicInfo.businessModels.length === 0) return false;
       if (!basicInfo.leadership.some(member => member.name?.trim())) {
         return false;
       }
@@ -1098,6 +1105,9 @@ export function EditProfileScreen({
     }
     if (activeTab === 'industry') {
       if (accountType && accountType !== 'startup') return true;
+      // At least one Industry Domain AND at least one Technology Domain
+      // must be selected before save — matches the red asterisks on
+      // those headings.
       if (selectedIndustryIds.length === 0) return false;
       if (selectedTechnologyIds.length === 0) return false;
       return true;
@@ -1992,7 +2002,10 @@ export function EditProfileScreen({
             ) : null}
 
             <View style={styles.domainSection}>
-              <Text style={styles.domainHeading}>Choose Industry Domains</Text>
+              <Text style={styles.domainHeading}>
+                Choose Industry Domains
+                <Text style={styles.domainHeadingRequired}> *</Text>
+              </Text>
               <Text style={styles.domainHint}>
                 Select maximum {maxIndustries} options
               </Text>
@@ -2032,7 +2045,10 @@ export function EditProfileScreen({
             </View>
 
             <View style={styles.domainSection}>
-              <Text style={styles.domainHeading}>Choose Technology Domains</Text>
+              <Text style={styles.domainHeading}>
+                Choose Technology Domains
+                <Text style={styles.domainHeadingRequired}> *</Text>
+              </Text>
               <Text style={styles.domainHint}>
                 Select maximum {maxTechnologies} options
               </Text>
@@ -2477,6 +2493,13 @@ const styles = StyleSheet.create({
   },
   domainHeading: {
     color: '#0f172a',
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  // Inline red asterisk shown next to the Industry / Technology domain
+  // headings to mark them as required. Same hue as the form danger color.
+  domainHeadingRequired: {
+    color: colors.danger,
     fontSize: 17,
     fontWeight: '700',
   },

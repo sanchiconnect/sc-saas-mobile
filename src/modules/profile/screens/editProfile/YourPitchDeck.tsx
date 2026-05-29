@@ -1,4 +1,4 @@
-import React, {useContext, useState} from 'react';
+import React, {useContext, useEffect, useRef, useState} from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -13,7 +13,6 @@ import {launchImageLibrary} from 'react-native-image-picker';
 import Video from 'react-native-video';
 import {
   pick,
-  types,
   isErrorWithCode,
   errorCodes,
 } from '@react-native-documents/picker';
@@ -333,6 +332,70 @@ export function YourPitchDeck({
   const [defaultPitchType, setDefaultPitchType] = useState<string | null>(
     pitchDeck?.pitchType || null,
   );
+  // Polling state for the post-upload PDF→JPG conversion. The backend
+  // converts the freshly-uploaded deck to page images asynchronously, so
+  // the immediate post-upload reload often lands before
+  // `pitchDocumentImages` is populated — which is why users were seeing
+  // the file-card fallback instead of the carousel until they manually
+  // refreshed. We poll `onUploaded` a few times so the carousel mounts
+  // the moment the images land.
+  const pollingRef = useRef(false);
+  const pollAttemptsRef = useRef(0);
+  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Toggled true while the conversion poll is in flight so the UI can
+  // surface a "Generating preview…" hint over the file-card fallback.
+  const [waitingForImages, setWaitingForImages] = useState(false);
+
+  // Stop polling as soon as the parent re-renders us with a pitchDeck that
+  // includes the page images. Also stop if the component unmounts.
+  useEffect(() => {
+    if (pollingRef.current && pitchImages.length > 0) {
+      pollingRef.current = false;
+      pollAttemptsRef.current = 0;
+      if (pollTimerRef.current) {
+        clearTimeout(pollTimerRef.current);
+        pollTimerRef.current = null;
+      }
+      setWaitingForImages(false);
+    }
+  }, [pitchImages.length]);
+
+  useEffect(() => {
+    return () => {
+      pollingRef.current = false;
+      if (pollTimerRef.current) {
+        clearTimeout(pollTimerRef.current);
+        pollTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  // Trigger up to 8 silent profile reloads (~6s total at 750ms each) so the
+  // carousel can replace the file-card fallback as soon as the backend
+  // finishes converting PDF pages to JPGs. Cancelled the instant
+  // pitchImages becomes non-empty via the effect above.
+  const startPollingForImages = () => {
+    pollingRef.current = true;
+    pollAttemptsRef.current = 0;
+    setWaitingForImages(true);
+    const POLL_INTERVAL_MS = 750;
+    const MAX_ATTEMPTS = 8;
+
+    const tick = () => {
+      if (!pollingRef.current) return;
+      if (pollAttemptsRef.current >= MAX_ATTEMPTS) {
+        pollingRef.current = false;
+        setWaitingForImages(false);
+        return;
+      }
+      pollAttemptsRef.current += 1;
+      pollTimerRef.current = setTimeout(() => {
+        onUploaded?.();
+        tick();
+      }, POLL_INTERVAL_MS);
+    };
+    tick();
+  };
 
   const handleModeSwitch = async (mode: 'create' | 'upload') => {
     if (videoMode === mode || busyKind !== null) {
@@ -494,6 +557,13 @@ export function YourPitchDeck({
         kind === 'deck' ? 'Pitch deck uploaded.' : 'Video pitch uploaded.',
       );
       onUploaded?.();
+      // For deck uploads, also kick off the conversion poll so the
+      // carousel can replace the file-card fallback the instant the
+      // backend finishes converting the PDF pages to JPGs (no manual
+      // refresh needed).
+      if (kind === 'deck') {
+        startPollingForImages();
+      }
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : 'Upload failed.';
@@ -599,7 +669,9 @@ export function YourPitchDeck({
                 ? 'Use the arrows above to flip through pages.'
                 : pitchImages.length === 1
                   ? 'Single-page preview above.'
-                  : "Tap View to open this file in your device's viewer."}
+                  : waitingForImages
+                    ? 'Generating page preview…'
+                    : "Tap View to open this file in your device's viewer."}
             </Text>
 
             <View style={styles.deckActions}>

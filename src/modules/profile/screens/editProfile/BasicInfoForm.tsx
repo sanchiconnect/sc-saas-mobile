@@ -390,7 +390,8 @@ export function BasicInfoForm({
         />
 
         <Subheading style={styles.spacedSubheading}>
-          Elevator pitch <Text style={styles.subheadingHint}>(max 300 chars)</Text>
+          Elevator pitch<Text style={styles.required}> *</Text>{' '}
+          <Text style={styles.subheadingHint}>(max 300 chars)</Text>
         </Subheading>
         <View style={styles.field}>
           <AppTextField
@@ -416,7 +417,9 @@ export function BasicInfoForm({
           </Text>
         </View>
 
-        <Subheading style={styles.spacedSubheading}>Company Brief</Subheading>
+        <Subheading style={styles.spacedSubheading}>
+          Company Brief<Text style={styles.required}> *</Text>
+        </Subheading>
         <View style={styles.field}>
           <AppTextField
             placeholder="Tell investors more about your company"
@@ -438,7 +441,9 @@ export function BasicInfoForm({
           onPress={onOpenProductStage}
         />
 
-        <Subheading style={styles.spacedSubheading}>Business Models</Subheading>
+        <Subheading style={styles.spacedSubheading}>
+          Business Models<Text style={styles.required}> *</Text>
+        </Subheading>
         <View style={styles.chipsWrap}>
           {BUSINESS_MODELS.map(model => {
             const isActive = value.businessModels.includes(model);
