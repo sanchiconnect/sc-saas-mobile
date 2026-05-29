@@ -1,10 +1,7 @@
 import React, {useContext, useEffect, useRef, useState} from 'react';
 import {
   Image,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -13,6 +10,7 @@ import {
 
 import {AppButton} from '../../../core/components/AppButton';
 import {AppCard} from '../../../core/components/AppCard';
+import {FormScrollView} from '../../../core/components/FormScrollView';
 import {TenantContext} from '../../../core/tenant/TenantProvider';
 import {useToast} from '../../../core/toast/ToastProvider';
 import {radii, shadows, spacing, typography} from '../../../core/theme/colors';
@@ -121,12 +119,9 @@ export function OtpScreen({
   };
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      style={styles.page}>
-      <ScrollView
-        contentContainerStyle={styles.scroll}
-        keyboardShouldPersistTaps="handled">
+    <FormScrollView
+      style={styles.page}
+      contentContainerStyle={styles.scroll}>
         <AppCard>
           <View style={styles.container}>
             {logoUri ? (
@@ -210,8 +205,7 @@ export function OtpScreen({
             </Pressable>
           </View>
         </AppCard>
-      </ScrollView>
-    </KeyboardAvoidingView>
+    </FormScrollView>
   );
 }
 

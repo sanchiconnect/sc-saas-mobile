@@ -27,6 +27,7 @@ import {TenantContext} from '../../../core/tenant/TenantProvider';
 import {AppButton} from '../../../core/components/AppButton';
 import {AppCard} from '../../../core/components/AppCard';
 import {AppTextField} from '../../../core/components/AppTextField';
+import {FormScrollView} from '../../../core/components/FormScrollView';
 import {CalendarPicker} from '../../../core/components/CalendarPicker';
 import {ConfirmModal} from '../../../core/components/ConfirmModal';
 import {Icon} from '../../../core/components/Icon';
@@ -1773,9 +1774,8 @@ export function AccountSettingsScreen({
           {renderTabs()}
         </View>
 
-        <ScrollView
+        <FormScrollView
           contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}>
           {/* No RefreshControl: Account Settings is a form, and pull-to-refresh
               would reload server data over the user's in-progress edits. The
@@ -1801,7 +1801,7 @@ export function AccountSettingsScreen({
               : activeTab === 'email-notifications'
                 ? renderEmailNotifications()
                 : renderUnavailableTab()}
-        </ScrollView>
+        </FormScrollView>
       </View>
 
       <Picker

@@ -1,10 +1,7 @@
 import React, {useContext, useEffect, useRef} from 'react';
 import {
   Image,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -13,6 +10,7 @@ import {
 import {AppButton} from '../../../core/components/AppButton';
 import {AppCard} from '../../../core/components/AppCard';
 import {AppTextField} from '../../../core/components/AppTextField';
+import {FormScrollView} from '../../../core/components/FormScrollView';
 import {TenantContext} from '../../../core/tenant/TenantProvider';
 import {useToast} from '../../../core/toast/ToastProvider';
 import {spacing, typography} from '../../../core/theme/colors';
@@ -85,13 +83,10 @@ export function AuthForm({
   }, [message, messageTone, toast]);
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      style={styles.page}>
-      <ScrollView
-        contentContainerStyle={styles.scroll}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}>
+    <FormScrollView
+      style={styles.page}
+      contentContainerStyle={styles.scroll}
+      showsVerticalScrollIndicator={false}>
         <AppCard>
           <View style={styles.card}>
             {logoUri ? (
@@ -147,8 +142,7 @@ export function AuthForm({
             </Pressable>
           </View>
         </AppCard>
-      </ScrollView>
-    </KeyboardAvoidingView>
+    </FormScrollView>
   );
 }
 

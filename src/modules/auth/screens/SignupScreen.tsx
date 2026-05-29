@@ -1,11 +1,8 @@
 import React, {useContext, useEffect, useMemo, useRef, useState} from 'react';
 import {
   Image,
-  KeyboardAvoidingView,
   Linking,
-  Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -15,6 +12,7 @@ import {TenantContext} from '../../../core/tenant/TenantProvider';
 import {AppButton} from '../../../core/components/AppButton';
 import {AppCard} from '../../../core/components/AppCard';
 import {AppTextField} from '../../../core/components/AppTextField';
+import {FormScrollView} from '../../../core/components/FormScrollView';
 import {Icon} from '../../../core/components/Icon';
 import {useToast} from '../../../core/toast/ToastProvider';
 import {
@@ -253,13 +251,10 @@ export function SignupScreen({
   };
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      style={styles.page}>
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}>
+    <FormScrollView
+      style={styles.page}
+      contentContainerStyle={styles.scrollContent}
+      showsVerticalScrollIndicator={false}>
         <AppCard>
           <View style={styles.card}>
             {logoUri ? (
@@ -448,8 +443,7 @@ export function SignupScreen({
             </Pressable>
           </View>
         </AppCard>
-      </ScrollView>
-    </KeyboardAvoidingView>
+    </FormScrollView>
   );
 }
 

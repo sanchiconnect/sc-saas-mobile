@@ -2,8 +2,6 @@ import React, {useContext, useEffect, useRef, useState} from 'react';
 import {
   ActivityIndicator,
   Alert,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -15,6 +13,7 @@ import {
 import {launchImageLibrary} from 'react-native-image-picker';
 
 import {AppButton} from '../../../core/components/AppButton';
+import {FormScrollView} from '../../../core/components/FormScrollView';
 import {Icon} from '../../../core/components/Icon';
 import {colors} from '../../../core/theme/colors';
 import {TenantContext} from '../../../core/tenant/TenantProvider';
@@ -1771,9 +1770,7 @@ export function EditProfileScreen({
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.page}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+    <View style={styles.page}>
       <View style={styles.headerBlock}>
         <View style={styles.header}>
           <Pressable
@@ -1862,7 +1859,7 @@ export function EditProfileScreen({
         </View>
       </View>
 
-      <ScrollView
+      <FormScrollView
         contentContainerStyle={styles.content}
         alwaysBounceVertical={false}
         bounces={false}
@@ -1870,8 +1867,7 @@ export function EditProfileScreen({
         // feels too slow on a long form. "fast" gives a snappier coast that
         // matches user expectation for a scrollable settings page.
         decelerationRate="fast"
-        overScrollMode="never"
-        keyboardShouldPersistTaps="handled">
+        overScrollMode="never">
         {activeTab === 'basic' ? (
           accountType === 'startup' || !accountType ? (
             <BasicInfoForm
@@ -2257,7 +2253,7 @@ export function EditProfileScreen({
             </Text>
           </View>
         )}
-      </ScrollView>
+      </FormScrollView>
 
       {renderPicker()}
 
@@ -2330,7 +2326,7 @@ export function EditProfileScreen({
           );
         })()}
       </View>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
