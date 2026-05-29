@@ -19,6 +19,7 @@ import {authService} from '../../../auth/services/auth.service';
 import {Icon} from '../../../../core/components/Icon';
 import {colors} from '../../../../core/theme/colors';
 import {useToast} from '../../../../core/toast/ToastProvider';
+import {FilePreviewModal} from '../../components/FilePreviewModal';
 
 type DocumentType = {
   id?: string | number;
@@ -129,6 +130,14 @@ export function Documents({token, primaryColor, onUploaded}: Props) {
   const [isLoading, setIsLoading] = useState(true);
   const [uploadingKey, setUploadingKey] = useState<string | null>(null);
   const [deletingUuid, setDeletingUuid] = useState<string | null>(null);
+  // Drives the in-app file preview modal. Both Download buttons (per-row
+  // download icon AND Download Sample) open this modal instead of going
+  // straight to Linking.openURL, so users see the file inside the app
+  // first and land back on this list once the download starts.
+  const [previewFile, setPreviewFile] = useState<{
+    url: string;
+    displayName?: string;
+  } | null>(null);
 
   const rowKey = (item: SupportingDocument) =>
     item.uuid || `type:${item.documentType || ''}`;
@@ -396,10 +405,10 @@ export function Documents({token, primaryColor, onUploaded}: Props) {
                       {typeInfo?.sampleDocument ? (
                         <Pressable
                           onPress={() =>
-                            openLink(
-                              resolveDocumentUrl(typeInfo.sampleDocument),
-                              'Could not open the sample document.',
-                            )
+                            setPreviewFile({
+                              url: resolveDocumentUrl(typeInfo.sampleDocument),
+                              displayName: `Sample ${item.documentType || 'document'}`,
+                            })
                           }>
                           <Text style={[styles.sampleLink, {color: primaryColor}]}>
                             Download Sample
@@ -444,7 +453,11 @@ export function Documents({token, primaryColor, onUploaded}: Props) {
                         ]}
                         disabled={isRowDisabled}
                         onPress={() =>
-                          openLink(fileUrl, 'Could not open the uploaded file.')
+                          setPreviewFile({
+                            url: fileUrl,
+                            displayName:
+                              item.documentType || item.name || 'Document',
+                          })
                         }>
                         <Icon name="download" size={16} color="#475569" />
                       </Pressable>
@@ -481,6 +494,11 @@ export function Documents({token, primaryColor, onUploaded}: Props) {
         </View>
       )}
 
+      <FilePreviewModal
+        file={previewFile}
+        primaryColor={primaryColor}
+        onClose={() => setPreviewFile(null)}
+      />
     </View>
   );
 }

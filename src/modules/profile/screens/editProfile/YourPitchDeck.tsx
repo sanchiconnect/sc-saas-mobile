@@ -22,6 +22,7 @@ import {Icon} from '../../../../core/components/Icon';
 import {colors} from '../../../../core/theme/colors';
 import {TenantContext} from '../../../../core/tenant/TenantProvider';
 import {useToast} from '../../../../core/toast/ToastProvider';
+import {FilePreviewModal} from '../../components/FilePreviewModal';
 
 type PitchDeck = {
   elevatorPitch?: string | null;
@@ -332,6 +333,15 @@ export function YourPitchDeck({
   const [defaultPitchType, setDefaultPitchType] = useState<string | null>(
     pitchDeck?.pitchType || null,
   );
+  // Drives the in-app file preview modal. The Download buttons open it
+  // instead of going straight to Linking.openURL, so users see the
+  // contents inside the app first, then tap Download in the modal which
+  // closes back to this screen — no Chrome tab left behind.
+  const [previewFile, setPreviewFile] = useState<{
+    url: string;
+    displayName?: string;
+    images?: string[];
+  } | null>(null);
   // Polling state for the post-upload PDF→JPG conversion. The backend
   // converts the freshly-uploaded deck to page images asynchronously, so
   // the immediate post-upload reload often lands before
@@ -610,7 +620,12 @@ export function YourPitchDeck({
           </Text>
           {pitchDeck?.sampleDocument ? (
             <Pressable
-              onPress={() => openLink(pitchDeck.sampleDocument)}
+              onPress={() =>
+                setPreviewFile({
+                  url: pitchDeck.sampleDocument || '',
+                  displayName: 'Sample pitch deck',
+                })
+              }
               style={({pressed}) => [
                 styles.sampleButton,
                 {borderColor: primaryColor},
@@ -689,7 +704,13 @@ export function YourPitchDeck({
                 </Text>
               </Pressable>
               <Pressable
-                onPress={() => openLink(pitchDocument)}
+                onPress={() =>
+                  setPreviewFile({
+                    url: pitchDocument,
+                    displayName: fileName,
+                    images: pitchImages,
+                  })
+                }
                 style={({pressed}) => [
                   styles.deckActionBtn,
                   {backgroundColor: primaryColor},
@@ -897,6 +918,11 @@ export function YourPitchDeck({
         </View>
       </View>
 
+      <FilePreviewModal
+        file={previewFile}
+        primaryColor={primaryColor}
+        onClose={() => setPreviewFile(null)}
+      />
     </View>
   );
 }
