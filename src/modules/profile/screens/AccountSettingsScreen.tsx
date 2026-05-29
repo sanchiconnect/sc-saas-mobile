@@ -317,6 +317,9 @@ export function AccountSettingsScreen({
     null,
   );
   const tabsScrollRef = useRef<ScrollView | null>(null);
+  // Vertical content ScrollView — reset to the top on every tab change so each
+  // tab opens at its start instead of the previous tab's scroll offset.
+  const contentScrollRef = useRef<ScrollView | null>(null);
   const tabPositionsRef = useRef<Record<string, number>>({});
   const [newSpecificDate, setNewSpecificDate] = useState<{
     dateLabel: string;
@@ -421,6 +424,16 @@ export function AccountSettingsScreen({
       setActiveTab('personal-information');
     }
   }, [activeTab, tabs]);
+
+  // Open each tab scrolled to the top, not at the previous tab's offset.
+  useEffect(() => {
+    contentScrollRef.current?.scrollTo({y: 0, animated: false});
+    const id = setTimeout(
+      () => contentScrollRef.current?.scrollTo({y: 0, animated: false}),
+      0,
+    );
+    return () => clearTimeout(id);
+  }, [activeTab]);
 
   // Success messages auto-dismiss after 3s so they don't linger; errors stay
   // visible until the user retries or edits the form (so they have time to
@@ -1775,6 +1788,7 @@ export function AccountSettingsScreen({
         </View>
 
         <FormScrollView
+          ref={contentScrollRef}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}>
           {/* No RefreshControl: Account Settings is a form, and pull-to-refresh

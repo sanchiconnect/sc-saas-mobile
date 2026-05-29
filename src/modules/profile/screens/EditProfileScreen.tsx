@@ -341,6 +341,10 @@ export function EditProfileScreen({
 
   const [activeTab, setActiveTab] = useState<string>('basic');
   const tabsScrollRef = useRef<ScrollView | null>(null);
+  // The vertical content ScrollView. Reset to the top whenever the active tab
+  // changes (Save & Next, Previous, or tapping a tab) so every page opens at
+  // its beginning instead of inheriting the previous page's scroll offset.
+  const contentScrollRef = useRef<ScrollView | null>(null);
   // Captured x-offset of each pill, populated by each Pressable's onLayout.
   // Used to scroll the tapped tab into view precisely (no width heuristics).
   const tabPositionsRef = useRef<Record<string, number>>({});
@@ -1036,14 +1040,22 @@ export function EditProfileScreen({
   // tabs (Pitch / Financials) couldn't tell which tab was active because
   // the strip stayed pinned at the start.
   useEffect(() => {
+    // Open every page at the top, not at the previous tab's scroll offset.
+    // Done both synchronously and after a tick: the tick re-asserts y:0 once
+    // the swapped tab content has laid out (a long previous tab can otherwise
+    // leave the new, shorter one scrolled down).
+    contentScrollRef.current?.scrollTo({y: 0, animated: false});
+
     const x = tabPositionsRef.current[activeTab];
-    if (typeof x !== 'number') return;
-    // Slight delay lets layout settle after activeTab-driven re-render.
     const id = setTimeout(() => {
-      tabsScrollRef.current?.scrollTo({
-        x: Math.max(0, x - 16),
-        animated: true,
-      });
+      contentScrollRef.current?.scrollTo({y: 0, animated: false});
+      // Slight delay lets layout settle after activeTab-driven re-render.
+      if (typeof x === 'number') {
+        tabsScrollRef.current?.scrollTo({
+          x: Math.max(0, x - 16),
+          animated: true,
+        });
+      }
     }, 0);
     return () => clearTimeout(id);
   }, [activeTab]);
@@ -1113,11 +1125,14 @@ export function EditProfileScreen({
       return true;
     }
     if (activeTab === 'financials') {
-      if (
-        !financialInfo.fundingStage &&
-        !financialInfo.targetFundraise?.trim()
-      ) {
-        return false;
+      // Required regardless of other answers.
+      if (!financialInfo.fundingStage) return false;
+      if (!financialInfo.revenueStage) return false;
+      // Target fundraise + tentative valuation are only shown — and only
+      // required — when the user says they are raising funds.
+      if (financialInfo.isRaisingFunds) {
+        if (!financialInfo.targetFundraise?.trim()) return false;
+        if (!financialInfo.tentativeValuation?.trim()) return false;
       }
       return true;
     }
@@ -1870,6 +1885,7 @@ export function EditProfileScreen({
       </View>
 
       <FormScrollView
+        ref={contentScrollRef}
         contentContainerStyle={styles.content}
         alwaysBounceVertical={false}
         bounces={false}
