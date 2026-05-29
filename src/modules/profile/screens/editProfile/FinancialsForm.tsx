@@ -156,6 +156,7 @@ export function FinancialsForm({
       });
       return;
     }
+    const isNew = !draft.uuid;
     updateDraft(draft.rowKey, {saving: true, error: null});
     try {
       await onSaveCommitment({
@@ -165,7 +166,18 @@ export function FinancialsForm({
         preMoneyValuation,
         hideInvestorName: draft.hideInvestorName,
       });
-      updateDraft(draft.rowKey, {saving: false, error: null});
+      if (isNew) {
+        // The parent's refresh re-seeds this commitment as a server-backed
+        // draft (with the new uuid). If we keep this local draft around it
+        // appears as a duplicate row alongside the new server entry —
+        // because the re-seed effect preserves uuid-less drafts. Drop it
+        // here so only the canonical server row remains.
+        setCommitmentDrafts(prev =>
+          prev.filter(d => d.rowKey !== draft.rowKey),
+        );
+      } else {
+        updateDraft(draft.rowKey, {saving: false, error: null});
+      }
     } catch (e) {
       updateDraft(draft.rowKey, {
         saving: false,

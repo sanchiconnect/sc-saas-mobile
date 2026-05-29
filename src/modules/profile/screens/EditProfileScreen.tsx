@@ -830,7 +830,11 @@ export function EditProfileScreen({
     return () => {
       cancelled = true;
     };
-  }, []);
+    // baseUrl must be in deps — it arrives asynchronously from TenantContext,
+    // and without re-running the effect the productStageOptions /
+    // businessModelOptions stay empty. That breaks the productStageId lookup
+    // at save time (sends null, which clears the field server-side).
+  }, [baseUrl]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1278,14 +1282,21 @@ export function EditProfileScreen({
             const stageId = productStageOptions.find(
               opt => opt.name === basicInfo.productStage,
             )?.id;
+            // Defensive: if the server options haven't loaded yet OR the
+            // selected name doesn't map to a known id (legacy data), skip
+            // sending productStageId entirely so we don't accidentally
+            // wipe the field. The description still goes through.
+            const payload: Record<string, unknown> = {
+              description: basicInfo.companyBrief,
+              haveIP: initialProductInfoRef.current.haveIP,
+              ipStatus: initialProductInfoRef.current.ipStatus,
+              ipCountry: initialProductInfoRef.current.ipCountry,
+            };
+            if (stageId != null) {
+              payload.productStageId = stageId;
+            }
             subPatches.push(
-              authService.updateProductInformation(token, {
-                productStageId: stageId ?? null,
-                description: basicInfo.companyBrief,
-                haveIP: initialProductInfoRef.current.haveIP,
-                ipStatus: initialProductInfoRef.current.ipStatus,
-                ipCountry: initialProductInfoRef.current.ipCountry,
-              }),
+              authService.updateProductInformation(token, payload),
             );
           }
 
@@ -1336,7 +1347,13 @@ export function EditProfileScreen({
                     uuid: member.uuid,
                     name: member.name,
                     linkedinUrl: member.linkedinUrl,
+                    // Send both `role` and `accountRole` — the extractor
+                    // reads either, and different deployments store this
+                    // under one name or the other. Belt-and-suspenders
+                    // ensures the update lands on whichever the server
+                    // actually persists.
                     role: member.role,
+                    accountRole: member.role,
                     designation: member.designation,
                   }),
                 );
@@ -1707,7 +1724,18 @@ export function EditProfileScreen({
       <Picker
         visible
         title="Product stage"
-        options={PRODUCT_STAGES}
+        // Prefer the server-driven options so the selected name exactly
+        // matches an entry in productStageOptions at save time. The
+        // productStageId lookup is `find(opt => opt.name === selection)`;
+        // if the user picked a static-list name like "MVP" but the server
+        // only knows "MVP or POC", the lookup returned undefined and the
+        // PATCH cleared the field. Falling back to the static list only
+        // while the server response is still loading.
+        options={
+          productStageOptions.length > 0
+            ? productStageOptions.map(opt => opt.name)
+            : PRODUCT_STAGES
+        }
         selected={basicInfo.productStage}
         primaryColor={primaryColor}
         onClose={closePicker}
