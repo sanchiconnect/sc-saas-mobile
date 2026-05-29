@@ -13,6 +13,10 @@ import {
 
 import {authService} from '../../auth/services/auth.service';
 import {Icon} from '../../../core/components/Icon';
+import {
+  PdfPagesCarousel,
+  usePitchImages,
+} from '../components/PdfPagesCarousel';
 
 type ProfileScreenProps = {
   token: string;
@@ -115,6 +119,14 @@ type StartupInfo = {
     powerPitchUrl?: string | null;
     embedUrl?: string | null;
     fileName?: string | null;
+    // Pre-converted PDF page images for inline preview. Backend may use any
+    // of these field names; PdfPagesCarousel picks the first populated array.
+    pitchDocumentImages?: unknown;
+    pitchImages?: unknown;
+    documentImages?: unknown;
+    images?: unknown;
+    pdfImages?: unknown;
+    pages?: unknown;
   } | null;
   founders?: Founder[];
   advisoryBoards?: AdvisoryBoardMember[];
@@ -650,6 +662,10 @@ export function ProfileScreen({
   const targetFundraise = formatCurrencyINR(info?.financials?.targetFundraise);
   const valuation = formatCurrencyINR(info?.financials?.tentativeValuation);
   const totalFundRaised = formatCurrencyINR(info?.financials?.totalFundRaised);
+  // Pre-rendered PDF page images for the inline preview. Resolved against
+  // the tenant's CDN bases inside the hook so we don't need TenantContext
+  // here too.
+  const pitchImages = usePitchImages(info?.pitchDeck);
   const elevatorPitch = info?.pitchDeck?.elevatorPitch || '';
 
   const expertiseItems = isCorporateProfile
@@ -1255,16 +1271,48 @@ export function ProfileScreen({
         </SectionBlock>
       ) : null}
 
-      {info?.pitchDeck?.pitchDocument ? (
+      {info?.pitchDeck?.pitchDocument || pitchImages.length > 0 ? (
         <SectionBlock title="Pitch Deck" primaryColor={primaryColor}>
-          <Pressable
-            onPress={() => openLink(info.pitchDeck?.pitchDocument)}
-            style={[styles.linkButton, {borderColor: primaryColor}]}>
-            <Icon name="file-document-outline" size={18} color={primaryColor} />
-            <Text style={[styles.linkButtonText, {color: primaryColor}]}>
-              {info.pitchDeck.fileName || 'Open pitch deck'}
-            </Text>
-          </Pressable>
+          {/* Header row: section title is provided by SectionBlock above;
+              the "Full Screen" pill on the right mirrors the web layout
+              and just hands the source PDF to the OS PDF viewer. */}
+          {info?.pitchDeck?.pitchDocument ? (
+            <View style={styles.pitchActionRow}>
+              <Pressable
+                onPress={() => openLink(info.pitchDeck?.pitchDocument)}
+                style={({pressed}) => [
+                  styles.fullScreenPill,
+                  {borderColor: primaryColor},
+                  pressed && {opacity: 0.85},
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Open pitch deck full screen">
+                <Icon name="fullscreen" size={14} color={primaryColor} />
+                <Text style={[styles.fullScreenPillText, {color: primaryColor}]}>
+                  Full Screen
+                </Text>
+              </Pressable>
+            </View>
+          ) : null}
+
+          {pitchImages.length > 0 ? (
+            <PdfPagesCarousel
+              images={pitchImages}
+              primaryColor={primaryColor}
+              height={480}
+            />
+          ) : info?.pitchDeck?.pitchDocument ? (
+            // Backend hasn't finished page conversion yet — fall back to
+            // the open-externally button so users can still view the file.
+            <Pressable
+              onPress={() => openLink(info.pitchDeck?.pitchDocument)}
+              style={[styles.linkButton, {borderColor: primaryColor}]}>
+              <Icon name="file-document-outline" size={18} color={primaryColor} />
+              <Text style={[styles.linkButtonText, {color: primaryColor}]}>
+                {info.pitchDeck.fileName || 'Open pitch deck'}
+              </Text>
+            </Pressable>
+          ) : null}
         </SectionBlock>
       ) : null}
 
@@ -1693,6 +1741,27 @@ const styles = StyleSheet.create({
   },
   linkButtonText: {
     fontSize: 13,
+    fontWeight: '700',
+  },
+  // Right-aligned action row above the pitch-deck carousel, matching the
+  // web layout's "Full Screen" pill in the top-right of the preview card.
+  pitchActionRow: {
+    alignItems: 'flex-end',
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+  },
+  fullScreenPill: {
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  fullScreenPillText: {
+    fontSize: 12,
     fontWeight: '700',
   },
   lastUpdated: {
