@@ -13,6 +13,15 @@ import {
 
 import {authService} from '../../auth/services/auth.service';
 import {Icon} from '../../../core/components/Icon';
+import {
+  PdfPagesCarousel,
+  usePitchImages,
+} from '../components/PdfPagesCarousel';
+import {CustomFormView} from '../components/CustomFormView';
+import {
+  normalizeRawField,
+  type DynamicForm,
+} from './editProfile/CustomFormTab';
 
 type ProfileScreenProps = {
   token: string;
@@ -115,6 +124,14 @@ type StartupInfo = {
     powerPitchUrl?: string | null;
     embedUrl?: string | null;
     fileName?: string | null;
+    // Pre-converted PDF page images for inline preview. Backend may use any
+    // of these field names; PdfPagesCarousel picks the first populated array.
+    pitchDocumentImages?: unknown;
+    pitchImages?: unknown;
+    documentImages?: unknown;
+    images?: unknown;
+    pdfImages?: unknown;
+    pages?: unknown;
   } | null;
   founders?: Founder[];
   advisoryBoards?: AdvisoryBoardMember[];
@@ -248,6 +265,12 @@ export function ProfileScreen({
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // Tenant-defined custom profile forms (the "Program Office" etc. tabs
+  // from the edit flow) shown read-only on the public profile, paired
+  // with their submitted field values.
+  const [customForms, setCustomForms] = useState<
+    Array<{form: DynamicForm; values: Record<string, any>}>
+  >([]);
 
   const loadProfile = useCallback(
     async (mode: 'initial' | 'refresh' = 'initial') => {
@@ -612,6 +635,91 @@ export function ProfileScreen({
     void loadProfile('initial');
   }, [loadProfile]);
 
+  // Fetch tenant-defined custom profile forms + each form's submission so
+  // we can render them inline (read-only) at the bottom of the profile.
+  // Account type is needed to scope the form list to the user's role.
+  useEffect(() => {
+    const accountType = userBasic?.accountType;
+    if (!accountType) {
+      setCustomForms([]);
+      return;
+    }
+    let cancelled = false;
+    authService
+      .listProfileForms(token, accountType)
+      .then(async res => {
+        if (cancelled) return;
+        const items = Array.isArray(res?.data) ? res.data : [];
+        // Same active/profile-only filter the edit flow applies.
+        const forms: DynamicForm[] = items
+          .filter((raw: any) => {
+            if (raw?.status === false) return false;
+            if (raw?.useFormAs && raw.useFormAs !== 'form') return false;
+            if (
+              raw?.programs &&
+              Array.isArray(raw.programs) &&
+              raw.programs.length > 0
+            ) {
+              return false;
+            }
+            return true;
+          })
+          .map((raw: any) => {
+            const rawFields = Array.isArray(raw?.fields)
+              ? raw.fields
+              : Array.isArray(raw?.formFields)
+                ? raw.formFields
+                : Array.isArray(raw?.schema?.fields)
+                  ? raw.schema.fields
+                  : [];
+            const fields = rawFields
+              .map((f: any) => normalizeRawField(f))
+              .filter(Boolean);
+            return {
+              uuid: String(raw?.uuid || raw?.id || ''),
+              formTitle: raw?.formTitle || raw?.title,
+              formCode: raw?.formCode || raw?.code,
+              fields,
+            };
+          })
+          .filter((f: DynamicForm) => f.uuid && f.fields.length > 0);
+
+        // Fetch each form's submission in parallel. Failed lookups just
+        // mean the form renders with empty values rather than aborting.
+        const submissions = await Promise.all(
+          forms.map(form =>
+            authService
+              .getProfileFormSubmission(token, form.uuid)
+              .then(sres => {
+                const record =
+                  (sres as any)?.data && typeof (sres as any).data === 'object'
+                    ? (sres as any).data
+                    : (sres as any) || {};
+                const values =
+                  record?.data &&
+                  typeof record.data === 'object' &&
+                  !Array.isArray(record.data)
+                    ? record.data
+                    : record;
+                return values || {};
+              })
+              .catch(() => ({})),
+          ),
+        );
+
+        if (cancelled) return;
+        setCustomForms(
+          forms.map((form, i) => ({form, values: submissions[i] || {}})),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setCustomForms([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token, userBasic?.accountType]);
+
   if (isLoading) {
     return (
       <View style={styles.centered}>
@@ -650,6 +758,10 @@ export function ProfileScreen({
   const targetFundraise = formatCurrencyINR(info?.financials?.targetFundraise);
   const valuation = formatCurrencyINR(info?.financials?.tentativeValuation);
   const totalFundRaised = formatCurrencyINR(info?.financials?.totalFundRaised);
+  // Pre-rendered PDF page images for the inline preview. Resolved against
+  // the tenant's CDN bases inside the hook so we don't need TenantContext
+  // here too.
+  const pitchImages = usePitchImages(info?.pitchDeck);
   const elevatorPitch = info?.pitchDeck?.elevatorPitch || '';
 
   const expertiseItems = isCorporateProfile
@@ -1255,16 +1367,48 @@ export function ProfileScreen({
         </SectionBlock>
       ) : null}
 
-      {info?.pitchDeck?.pitchDocument ? (
+      {info?.pitchDeck?.pitchDocument || pitchImages.length > 0 ? (
         <SectionBlock title="Pitch Deck" primaryColor={primaryColor}>
-          <Pressable
-            onPress={() => openLink(info.pitchDeck?.pitchDocument)}
-            style={[styles.linkButton, {borderColor: primaryColor}]}>
-            <Icon name="file-document-outline" size={18} color={primaryColor} />
-            <Text style={[styles.linkButtonText, {color: primaryColor}]}>
-              {info.pitchDeck.fileName || 'Open pitch deck'}
-            </Text>
-          </Pressable>
+          {/* Header row: section title is provided by SectionBlock above;
+              the "Full Screen" pill on the right mirrors the web layout
+              and just hands the source PDF to the OS PDF viewer. */}
+          {info?.pitchDeck?.pitchDocument ? (
+            <View style={styles.pitchActionRow}>
+              <Pressable
+                onPress={() => openLink(info.pitchDeck?.pitchDocument)}
+                style={({pressed}) => [
+                  styles.fullScreenPill,
+                  {borderColor: primaryColor},
+                  pressed && {opacity: 0.85},
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Open pitch deck full screen">
+                <Icon name="fullscreen" size={14} color={primaryColor} />
+                <Text style={[styles.fullScreenPillText, {color: primaryColor}]}>
+                  Full Screen
+                </Text>
+              </Pressable>
+            </View>
+          ) : null}
+
+          {pitchImages.length > 0 ? (
+            <PdfPagesCarousel
+              images={pitchImages}
+              primaryColor={primaryColor}
+              height={480}
+            />
+          ) : info?.pitchDeck?.pitchDocument ? (
+            // Backend hasn't finished page conversion yet — fall back to
+            // the open-externally button so users can still view the file.
+            <Pressable
+              onPress={() => openLink(info.pitchDeck?.pitchDocument)}
+              style={[styles.linkButton, {borderColor: primaryColor}]}>
+              <Icon name="file-document-outline" size={18} color={primaryColor} />
+              <Text style={[styles.linkButtonText, {color: primaryColor}]}>
+                {info.pitchDeck.fileName || 'Open pitch deck'}
+              </Text>
+            </Pressable>
+          ) : null}
         </SectionBlock>
       ) : null}
 
@@ -1282,6 +1426,22 @@ export function ProfileScreen({
           </Pressable>
         </SectionBlock>
       ) : null}
+
+      {/* Tenant-defined custom profile forms (e.g. "Program Office"),
+          rendered read-only with the form title as the section header so
+          users see their submitted data alongside the static profile. */}
+      {customForms.map(({form, values}) => (
+        <SectionBlock
+          key={form.uuid}
+          title={form.formTitle || form.formCode || 'Form'}
+          primaryColor={primaryColor}>
+          <CustomFormView
+            form={form}
+            values={values}
+            primaryColor={primaryColor}
+          />
+        </SectionBlock>
+      ))}
 
       {info?.modifiedAt ? (
         <Text style={styles.lastUpdated}>
@@ -1693,6 +1853,27 @@ const styles = StyleSheet.create({
   },
   linkButtonText: {
     fontSize: 13,
+    fontWeight: '700',
+  },
+  // Right-aligned action row above the pitch-deck carousel, matching the
+  // web layout's "Full Screen" pill in the top-right of the preview card.
+  pitchActionRow: {
+    alignItems: 'flex-end',
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+  },
+  fullScreenPill: {
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  fullScreenPillText: {
+    fontSize: 12,
     fontWeight: '700',
   },
   lastUpdated: {

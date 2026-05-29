@@ -78,11 +78,27 @@ export function DashboardContent({
   canToggleStatus,
 }: DashboardContentProps) {
   const progress = Math.max(0, Math.min(profileCompletion, 100));
-  // Two half-rotations make up the ring without an SVG dependency. The right
-  // half handles the first 50% of progress, the left half handles 50→100.
-  const rightRotation = Math.min(progress, 50) * 3.6;
-  const leftRotation = progress > 50 ? (progress - 50) * 3.6 : 0;
-  const showLeftHalf = progress > 50;
+  // Pre-compute the dot positions for the progress ring. We use a dotted
+  // perimeter instead of the prior CSS half-rotation trick because that
+  // produced visual artifacts at low percentages (the multi-color border
+  // + rounded-corner geometry doesn't render a clean partial arc). 60
+  // segments looks smooth, and `filledDots` is monotonic in `progress`
+  // so the visualization always matches the number shown in the middle.
+  const RING_SIZE = 80;
+  const RING_RADIUS = 34;
+  const RING_SEGMENTS = 60;
+  const RING_DOT_SIZE = 5;
+  const ringCenter = RING_SIZE / 2;
+  const filledDots = Math.round((progress / 100) * RING_SEGMENTS);
+  const ringDots = Array.from({length: RING_SEGMENTS}, (_, i) => {
+    // Start at 12 o'clock (−90° in math convention) and sweep clockwise.
+    const angle = (i / RING_SEGMENTS) * 2 * Math.PI - Math.PI / 2;
+    return {
+      left: ringCenter + RING_RADIUS * Math.cos(angle) - RING_DOT_SIZE / 2,
+      top: ringCenter + RING_RADIUS * Math.sin(angle) - RING_DOT_SIZE / 2,
+      filled: i < filledDots,
+    };
+  });
 
   // Search-scope state. Visible options filtered by tenant flags only —
   // every user can search any stakeholder type the tenant has enabled.
@@ -112,35 +128,21 @@ export function DashboardContent({
 
           <View style={styles.heroAside}>
             <View style={styles.progressRingOuter}>
-              <View style={styles.progressRingTrack} />
-              {progress >= 100 ? (
+              {/* Outer dotted ring — each dot is positioned absolutely
+                  around the perimeter and toggled to the "filled" color
+                  based on its index vs. filledDots. This renders correctly
+                  at any percentage (including 1–10%) where the prior
+                  half-rotation trick produced broken arcs. */}
+              {ringDots.map((dot, i) => (
                 <View
-                  style={[styles.progressRingFull, {borderColor: '#ffffff'}]}
+                  key={i}
+                  style={[
+                    styles.progressDot,
+                    {left: dot.left, top: dot.top},
+                    dot.filled && styles.progressDotFilled,
+                  ]}
                 />
-              ) : (
-                <>
-                  <View style={styles.progressHalfWrapperRight}>
-                    <View
-                      style={[
-                        styles.progressHalf,
-                        styles.progressHalfRight,
-                        {transform: [{rotate: `${rightRotation}deg`}]},
-                      ]}
-                    />
-                  </View>
-                  {showLeftHalf ? (
-                    <View style={styles.progressHalfWrapperLeft}>
-                      <View
-                        style={[
-                          styles.progressHalf,
-                          styles.progressHalfLeft,
-                          {transform: [{rotate: `${leftRotation}deg`}]},
-                        ]}
-                      />
-                    </View>
-                  ) : null}
-                </>
-              )}
+              ))}
               <View style={styles.progressRingInner}>
                 <Text
                   style={[styles.progressValue, {color: primaryColor}]}
@@ -474,8 +476,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm,
   },
-  // Circular progress ring built from two rotating half-borders so we don't
-  // need an SVG dependency. Uses translucent-white on the dark hero.
+  // Dotted progress ring — 60 small dots positioned around the perimeter,
+  // each colored either as the unfilled "track" or the filled "progress"
+  // color. Lives on the dark hero so the unfilled dots use a translucent
+  // white track tint and filled dots are solid white. Renders cleanly at
+  // every percentage including single-digit values (which the prior
+  // half-rotation trick handled poorly).
   progressRingOuter: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -483,58 +489,21 @@ const styles = StyleSheet.create({
     height: 80,
     position: 'relative',
   },
-  progressRingTrack: {
+  progressDot: {
     position: 'absolute',
-    width: 80,
-    height: 80,
-    borderRadius: 999,
-    borderWidth: 6,
-    borderColor: 'rgba(255,255,255,0.22)',
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: 'rgba(255,255,255,0.22)',
   },
-  progressRingFull: {
-    position: 'absolute',
-    width: 80,
-    height: 80,
-    borderRadius: 999,
-    borderWidth: 6,
-  },
-  progressHalfWrapperRight: {
-    position: 'absolute',
-    width: 40,
-    height: 80,
-    right: 0,
-    top: 0,
-    overflow: 'hidden',
-  },
-  progressHalfWrapperLeft: {
-    position: 'absolute',
-    width: 40,
-    height: 80,
-    left: 0,
-    top: 0,
-    overflow: 'hidden',
-  },
-  progressHalf: {
-    position: 'absolute',
-    width: 80,
-    height: 80,
-    left: 0,
-    top: 0,
-    borderRadius: 999,
-    borderWidth: 6,
-    borderColor: 'transparent',
-  },
-  progressHalfRight: {
-    borderLeftColor: '#ffffff',
-  },
-  progressHalfLeft: {
-    borderRightColor: '#ffffff',
+  progressDotFilled: {
+    backgroundColor: '#ffffff',
   },
   progressRingInner: {
     alignItems: 'center',
     justifyContent: 'center',
-    width: 60,
-    height: 60,
+    width: 56,
+    height: 56,
     borderRadius: 999,
     backgroundColor: '#ffffff',
   },
