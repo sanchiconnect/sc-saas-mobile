@@ -13,6 +13,7 @@ import {
   View,
 } from 'react-native';
 
+import {CalendarPicker} from '../../../core/components/CalendarPicker';
 import {ConfirmModal} from '../../../core/components/ConfirmModal';
 import {Icon} from '../../../core/components/Icon';
 import {colors, withAlpha} from '../../../core/theme/colors';
@@ -60,6 +61,33 @@ const REJECTED_SUBTABS: Array<{key: RejectedSubTab; label: string}> = [
 ];
 
 const PAGE_SIZE = 20;
+
+// "Let's connect" accept modal — how the user wants to take the connection
+// forward. Each option reveals its own sub-form and composes a different
+// first chat message (the connection's actionMessage).
+const OPT_SCHEDULE = 'Schedule video call on platform';
+const OPT_OFFLINE = 'Connect offline';
+const OPT_OTHER = 'Other';
+const ACCEPT_OPTIONS = [OPT_SCHEDULE, OPT_OFFLINE, OPT_OTHER];
+const ACCEPT_DURATIONS = [15, 30, 45, 60];
+const DEFAULT_ACCEPT_DURATION = 30;
+const DEFAULT_ACCEPT_MESSAGE = 'Glad to be connected!';
+// 30-min slots, 06:00 AM → 08:00 PM. Mirrors AccountSettingsScreen's picker.
+const ACCEPT_TIME_OPTIONS = [
+  '06:00 AM', '06:30 AM', '07:00 AM', '07:30 AM', '08:00 AM',
+  '08:30 AM', '09:00 AM', '09:30 AM', '10:00 AM', '10:30 AM',
+  '11:00 AM', '11:30 AM', '12:00 PM', '12:30 PM', '01:00 PM',
+  '01:30 PM', '02:00 PM', '02:30 PM', '03:00 PM', '03:30 PM',
+  '04:00 PM', '04:30 PM', '05:00 PM', '05:30 PM', '06:00 PM',
+  '06:30 PM', '07:00 PM', '07:30 PM', '08:00 PM',
+];
+
+// Today's date as ISO yyyy-mm-dd, used as the schedule date default + min.
+const todayIso = (): string => {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+};
 
 // On the /connections endpoint the counterparty fields live at the root
 // (companyName, name, avatar, accountType, people[]). On /requests/* they
@@ -191,7 +219,7 @@ export function ConnectionsScreen({
   // ConfirmModal state for remove / reject confirmations.
   const [pendingConfirm, setPendingConfirm] = useState<{
     connection: Connection;
-    action: 'accept' | 'remove';
+    action: 'remove';
   } | null>(null);
   // Reject-reason modal — open when the user taps Reject. Holds the
   // currently-selected option value and a free-text body for "Other reason".
@@ -199,6 +227,27 @@ export function ConnectionsScreen({
   const [rejectOption, setRejectOption] = useState<string>('Other reason');
   const [rejectMessage, setRejectMessage] = useState<string>('');
   const [isRejecting, setIsRejecting] = useState(false);
+  // Accept "Let's connect" modal — opens when the user taps Accept. Captures
+  // how they'd like to connect (radio) + the option's sub-form, which together
+  // compose the first chat message. Mirrors the web's accept-connection modal.
+  const [acceptFor, setAcceptFor] = useState<Connection | null>(null);
+  // null = nothing picked yet (matches web's initial empty radio state).
+  const [acceptOption, setAcceptOption] = useState<string | null>(null);
+  // OPT_OTHER greeting — pre-filled so the most common path is one tap.
+  const [acceptMessage, setAcceptMessage] = useState<string>(
+    DEFAULT_ACCEPT_MESSAGE,
+  );
+  // OPT_OFFLINE free-text — starts empty (web shows a placeholder prompt).
+  const [acceptOfflineText, setAcceptOfflineText] = useState<string>('');
+  // OPT_SCHEDULE sub-form.
+  const [acceptDuration, setAcceptDuration] = useState<number>(
+    DEFAULT_ACCEPT_DURATION,
+  );
+  const [acceptDate, setAcceptDate] = useState<string>('');
+  const [acceptTime, setAcceptTime] = useState<string>('');
+  const [showAcceptDatePicker, setShowAcceptDatePicker] = useState(false);
+  const [showAcceptTimePicker, setShowAcceptTimePicker] = useState(false);
+  const [isAccepting, setIsAccepting] = useState(false);
 
   const fetchCounts = useCallback(async () => {
     try {
@@ -313,10 +362,74 @@ export function ConnectionsScreen({
     setIsLoadingMore(false);
   };
 
-  // All three actions (accept, reject, remove) route through the ConfirmModal
-  // so the user always gets a chance to back out before we hit the API.
+  // Accept opens the "Let's connect" modal so the user picks how they'd like
+  // to connect before we hit the API. Reset every field to its default so the
+  // modal opens clean (no option pre-selected, like web). Remove still routes
+  // through the ConfirmModal.
   const handleAccept = (c: Connection) => {
-    setPendingConfirm({connection: c, action: 'accept'});
+    setAcceptFor(c);
+    setAcceptOption(null);
+    setAcceptMessage(DEFAULT_ACCEPT_MESSAGE);
+    setAcceptOfflineText('');
+    setAcceptDuration(DEFAULT_ACCEPT_DURATION);
+    setAcceptDate(todayIso());
+    setAcceptTime('');
+  };
+
+  // The accept message that lands in the chat depends on the chosen option:
+  //  • Schedule → a readable line describing the proposed call.
+  //  • Connect offline → the free-text the user entered.
+  //  • Other → the greeting (defaults to "Glad to be connected!").
+  // Never returns an empty string, so the backend never creates a blank
+  // first chat bubble (the original bug).
+  const buildAcceptMessage = (): string => {
+    if (acceptOption === OPT_SCHEDULE) {
+      return `Let's connect over a ${acceptDuration} min video call on ${acceptDate} at ${acceptTime}.`;
+    }
+    if (acceptOption === OPT_OFFLINE) {
+      return acceptOfflineText.trim();
+    }
+    return acceptMessage.trim() || DEFAULT_ACCEPT_MESSAGE;
+  };
+
+  // Whether the ACCEPT button is enabled: an option must be picked, and the
+  // chosen option's required fields must be filled.
+  const acceptIsValid = (() => {
+    if (acceptOption === OPT_SCHEDULE) {
+      return Boolean(acceptDate && acceptTime);
+    }
+    if (acceptOption === OPT_OFFLINE) {
+      return acceptOfflineText.trim().length > 0;
+    }
+    if (acceptOption === OPT_OTHER) {
+      return acceptMessage.trim().length > 0;
+    }
+    return false;
+  })();
+
+  const handleConfirmAccept = async () => {
+    if (!acceptFor || !acceptIsValid) return;
+    const message = buildAcceptMessage();
+    setIsAccepting(true);
+    setPendingActionUUID(acceptFor.connectionUUID);
+    try {
+      await connectionsService.accept(
+        token,
+        acceptFor.connectionUUID,
+        message,
+      );
+      setItems(prev =>
+        prev.filter(x => x.connectionUUID !== acceptFor.connectionUUID),
+      );
+      fetchCounts();
+      toast.success(`Connected with ${resolveName(acceptFor)}.`);
+      setAcceptFor(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not accept.');
+    } finally {
+      setIsAccepting(false);
+      setPendingActionUUID(null);
+    }
   };
 
   // Reject goes through a dedicated reason picker — title + radio options +
@@ -380,35 +493,24 @@ export function ConnectionsScreen({
     setPendingConfirm({connection: c, action: 'remove'});
   };
 
-  // Runs after the user taps Confirm in the ConfirmModal. Accept and Remove
-  // share this flow; Reject has its own reason-picker modal.
+  // Runs after the user taps Confirm in the ConfirmModal. Only Remove routes
+  // here now; Accept has its own "Let's connect" modal and Reject has its own
+  // reason-picker modal.
   const handleConfirmAction = async () => {
     if (!pendingConfirm) return;
-    const {connection, action} = pendingConfirm;
+    const {connection} = pendingConfirm;
     setPendingActionUUID(connection.connectionUUID);
     try {
-      if (action === 'accept') {
-        await connectionsService.accept(token, connection.connectionUUID);
-      } else {
-        await connectionsService.remove(token, connection.connectionUUID);
-      }
+      await connectionsService.remove(token, connection.connectionUUID);
       setItems(prev =>
         prev.filter(x => x.connectionUUID !== connection.connectionUUID),
       );
       fetchCounts();
-      toast.success(
-        action === 'accept'
-          ? `Connected with ${resolveName(connection)}.`
-          : `${resolveName(connection)} removed.`,
-      );
+      toast.success(`${resolveName(connection)} removed.`);
       setPendingConfirm(null);
     } catch (err) {
       toast.error(
-        err instanceof Error
-          ? err.message
-          : action === 'accept'
-            ? 'Could not accept.'
-            : 'Could not remove.',
+        err instanceof Error ? err.message : 'Could not remove.',
       );
     } finally {
       setPendingActionUUID(null);
@@ -1375,23 +1477,276 @@ export function ConnectionsScreen({
         </View>
       </Modal>
 
+      {/* Accept "Let's connect" modal — opens when the user taps Accept.
+          Radio picklist of how to connect + an editable greeting that becomes
+          the first chat message. Reuses the reject modal's layout styles. */}
+      <Modal
+        transparent
+        visible={acceptFor !== null}
+        animationType="fade"
+        onRequestClose={() => (isAccepting ? undefined : setAcceptFor(null))}>
+        <View style={styles.rejectOverlay}>
+          <Pressable
+            style={styles.rejectBackdrop}
+            onPress={() => (isAccepting ? undefined : setAcceptFor(null))}
+          />
+          <View style={styles.rejectCard}>
+            <View style={styles.rejectHeader}>
+              <Text style={styles.rejectTitle}>Let's connect</Text>
+              <Pressable
+                accessibilityLabel="Close"
+                hitSlop={6}
+                disabled={isAccepting}
+                onPress={() => setAcceptFor(null)}
+                style={styles.rejectCloseBtn}>
+                <Icon name="close" size={18} color="#475569" />
+              </Pressable>
+            </View>
+
+            <ScrollView
+              style={styles.rejectOptionsList}
+              showsVerticalScrollIndicator={false}>
+              {ACCEPT_OPTIONS.map(opt => {
+                const isActive = acceptOption === opt;
+                return (
+                  <Pressable
+                    key={opt}
+                    onPress={() => setAcceptOption(opt)}
+                    style={[
+                      styles.rejectOption,
+                      isActive && {borderColor: primaryColor},
+                    ]}>
+                    <View
+                      style={[
+                        styles.rejectRadio,
+                        isActive && {borderColor: primaryColor},
+                      ]}>
+                      {isActive ? (
+                        <View
+                          style={[
+                            styles.rejectRadioDot,
+                            {backgroundColor: primaryColor},
+                          ]}
+                        />
+                      ) : null}
+                    </View>
+                    <Text style={styles.rejectOptionLabel}>{opt}</Text>
+                  </Pressable>
+                );
+              })}
+
+              {/* Schedule video call — duration chips + date + start time. */}
+              {acceptOption === OPT_SCHEDULE ? (
+                <View style={styles.acceptScheduleBlock}>
+                  <Text style={styles.acceptScheduleHeading}>
+                    Schedule meeting
+                  </Text>
+
+                  <Text style={styles.acceptFieldLabel}>
+                    Duration (mins) <Text style={styles.acceptRequired}>*</Text>
+                  </Text>
+                  <View style={styles.acceptDurationRow}>
+                    {ACCEPT_DURATIONS.map(mins => {
+                      const isActive = acceptDuration === mins;
+                      return (
+                        <Pressable
+                          key={mins}
+                          onPress={() => setAcceptDuration(mins)}
+                          style={[
+                            styles.acceptDurationChip,
+                            isActive && {
+                              backgroundColor: primaryColor,
+                              borderColor: primaryColor,
+                            },
+                          ]}>
+                          <Text
+                            style={[
+                              styles.acceptDurationChipText,
+                              isActive && styles.acceptDurationChipTextActive,
+                            ]}>
+                            {mins}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+
+                  <View style={styles.acceptScheduleFieldsRow}>
+                    <View style={styles.acceptScheduleField}>
+                      <Text style={styles.acceptFieldLabel}>
+                        Date <Text style={styles.acceptRequired}>*</Text>
+                      </Text>
+                      <Pressable
+                        disabled={isAccepting}
+                        onPress={() => setShowAcceptDatePicker(true)}
+                        style={styles.acceptPickerInput}>
+                        <Text style={styles.acceptPickerValue}>
+                          {acceptDate || 'Select Date'}
+                        </Text>
+                        <Icon name="calendar" size={16} color="#64748b" />
+                      </Pressable>
+                    </View>
+
+                    <View style={styles.acceptScheduleField}>
+                      <Text style={styles.acceptFieldLabel}>
+                        Start Time <Text style={styles.acceptRequired}>*</Text>
+                      </Text>
+                      <Pressable
+                        disabled={isAccepting}
+                        onPress={() => setShowAcceptTimePicker(true)}
+                        style={styles.acceptPickerInput}>
+                        <Text
+                          style={[
+                            styles.acceptPickerValue,
+                            !acceptTime && styles.acceptPickerPlaceholder,
+                          ]}>
+                          {acceptTime || 'Select Time'}
+                        </Text>
+                        <Icon name="chevron-down" size={18} color="#64748b" />
+                      </Pressable>
+                    </View>
+                  </View>
+                </View>
+              ) : null}
+
+              {/* Connect offline — free-text with relevant info. */}
+              {acceptOption === OPT_OFFLINE ? (
+                <TextInput
+                  multiline
+                  numberOfLines={4}
+                  maxLength={300}
+                  value={acceptOfflineText}
+                  onChangeText={setAcceptOfflineText}
+                  placeholder="Enter text with relevant information to connect"
+                  placeholderTextColor="#94a3b8"
+                  editable={!isAccepting}
+                  style={styles.rejectTextarea}
+                />
+              ) : null}
+
+              {/* Other — editable greeting that becomes the first message. */}
+              {acceptOption === OPT_OTHER ? (
+                <>
+                  <Text style={styles.acceptMessageLabel}>Message</Text>
+                  <TextInput
+                    multiline
+                    numberOfLines={4}
+                    maxLength={300}
+                    value={acceptMessage}
+                    onChangeText={setAcceptMessage}
+                    placeholder="Glad to be connected!"
+                    placeholderTextColor="#94a3b8"
+                    editable={!isAccepting}
+                    style={styles.rejectTextarea}
+                  />
+                </>
+              ) : null}
+            </ScrollView>
+
+            <View style={styles.rejectActions}>
+              <Pressable
+                disabled={isAccepting}
+                onPress={() => setAcceptFor(null)}
+                style={[styles.rejectActionBtn, styles.rejectCancelBtn]}>
+                <Text style={styles.rejectCancelLabel}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                disabled={isAccepting || !acceptIsValid}
+                onPress={handleConfirmAccept}
+                style={[
+                  styles.rejectActionBtn,
+                  styles.rejectConfirmBtn,
+                  {backgroundColor: primaryColor},
+                  (isAccepting || !acceptIsValid) &&
+                    styles.rejectConfirmBtnDisabled,
+                ]}>
+                {isAccepting ? (
+                  <ActivityIndicator color="#ffffff" size="small" />
+                ) : (
+                  <Text style={styles.rejectConfirmLabel}>Accept</Text>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+
+        {/* Date picker for the Schedule option. Rendered inside the accept
+            Modal so it layers above it. */}
+        <CalendarPicker
+          visible={showAcceptDatePicker}
+          value={acceptDate}
+          minDate={todayIso()}
+          onSelect={iso => {
+            setAcceptDate(iso);
+            setShowAcceptDatePicker(false);
+          }}
+          onClose={() => setShowAcceptDatePicker(false)}
+        />
+
+        {/* Start-time picker — scrollable list of 30-min slots. */}
+        <Modal
+          transparent
+          visible={showAcceptTimePicker}
+          animationType="fade"
+          onRequestClose={() => setShowAcceptTimePicker(false)}>
+          <View style={styles.rejectOverlay}>
+            <Pressable
+              style={styles.rejectBackdrop}
+              onPress={() => setShowAcceptTimePicker(false)}
+            />
+            <View style={styles.acceptTimeCard}>
+              <View style={styles.rejectHeader}>
+                <Text style={styles.rejectTitle}>Select Time</Text>
+                <Pressable
+                  accessibilityLabel="Close"
+                  hitSlop={6}
+                  onPress={() => setShowAcceptTimePicker(false)}
+                  style={styles.rejectCloseBtn}>
+                  <Icon name="close" size={18} color="#475569" />
+                </Pressable>
+              </View>
+              <ScrollView showsVerticalScrollIndicator={false}>
+                {ACCEPT_TIME_OPTIONS.map(option => {
+                  const isActive = acceptTime === option;
+                  return (
+                    <Pressable
+                      key={option}
+                      onPress={() => {
+                        setAcceptTime(option);
+                        setShowAcceptTimePicker(false);
+                      }}
+                      style={[
+                        styles.acceptTimeOption,
+                        isActive && {backgroundColor: withAlpha(primaryColor, 0.1)},
+                      ]}>
+                      <Text
+                        style={[
+                          styles.acceptTimeOptionText,
+                          isActive && styles.acceptTimeOptionTextActive,
+                          isActive && {color: primaryColor},
+                        ]}>
+                        {option}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+      </Modal>
+
       <ConfirmModal
         visible={pendingConfirm !== null}
-        title={
-          pendingConfirm?.action === 'accept'
-            ? 'Accept this connection?'
-            : 'Remove connection?'
-        }
+        title="Remove connection?"
         message={
           pendingConfirm
-            ? pendingConfirm.action === 'accept'
-              ? `${resolveName(pendingConfirm.connection)} will be added to your active connections and you'll be able to chat and schedule calls.`
-              : `${resolveName(pendingConfirm.connection)} will be removed from your active connections. They won't be notified.`
+            ? `${resolveName(pendingConfirm.connection)} will be removed from your active connections. They won't be notified.`
             : undefined
         }
-        confirmLabel={pendingConfirm?.action === 'accept' ? 'Accept' : 'Remove'}
+        confirmLabel="Remove"
         cancelLabel="Cancel"
-        variant={pendingConfirm?.action === 'accept' ? 'default' : 'destructive'}
+        variant="destructive"
         loading={pendingActionUUID === pendingConfirm?.connection.connectionUUID}
         onConfirm={handleConfirmAction}
         onCancel={() => setPendingConfirm(null)}
@@ -1916,6 +2271,104 @@ const styles = StyleSheet.create({
     minHeight: 96,
     padding: 12,
     textAlignVertical: 'top',
+  },
+  acceptMessageLabel: {
+    color: '#64748b',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+    marginTop: 6,
+    textTransform: 'uppercase',
+  },
+  // ---------- Accept "Let's connect" schedule sub-form ----------
+  acceptScheduleBlock: {
+    marginTop: 8,
+  },
+  acceptScheduleHeading: {
+    color: '#0f172a',
+    fontSize: 15,
+    fontWeight: '800',
+    marginBottom: 10,
+  },
+  acceptFieldLabel: {
+    color: '#334155',
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  acceptRequired: {
+    color: '#dc2626',
+  },
+  acceptDurationRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 14,
+  },
+  acceptDurationChip: {
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderColor: '#e2e8f0',
+    borderRadius: 10,
+    borderWidth: 1.5,
+    flex: 1,
+    paddingVertical: 10,
+  },
+  acceptDurationChipText: {
+    color: '#0f172a',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  acceptDurationChipTextActive: {
+    color: '#ffffff',
+  },
+  acceptScheduleFieldsRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  acceptScheduleField: {
+    flex: 1,
+  },
+  acceptPickerInput: {
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    borderColor: '#e2e8f0',
+    borderRadius: 10,
+    borderWidth: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  acceptPickerValue: {
+    color: '#0f172a',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  acceptPickerPlaceholder: {
+    color: '#94a3b8',
+    fontWeight: '400',
+  },
+  acceptTimeCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 18,
+    maxHeight: '70%',
+    paddingBottom: 12,
+    paddingHorizontal: 18,
+    paddingTop: 16,
+    width: '100%',
+  },
+  acceptTimeOption: {
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 13,
+  },
+  acceptTimeOptionText: {
+    color: '#0f172a',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  acceptTimeOptionTextActive: {
+    fontWeight: '700',
   },
   rejectActions: {
     flexDirection: 'row',
