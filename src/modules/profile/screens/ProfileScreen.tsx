@@ -17,6 +17,11 @@ import {
   PdfPagesCarousel,
   usePitchImages,
 } from '../components/PdfPagesCarousel';
+import {CustomFormView} from '../components/CustomFormView';
+import {
+  normalizeRawField,
+  type DynamicForm,
+} from './editProfile/CustomFormTab';
 
 type ProfileScreenProps = {
   token: string;
@@ -260,6 +265,12 @@ export function ProfileScreen({
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // Tenant-defined custom profile forms (the "Program Office" etc. tabs
+  // from the edit flow) shown read-only on the public profile, paired
+  // with their submitted field values.
+  const [customForms, setCustomForms] = useState<
+    Array<{form: DynamicForm; values: Record<string, any>}>
+  >([]);
 
   const loadProfile = useCallback(
     async (mode: 'initial' | 'refresh' = 'initial') => {
@@ -623,6 +634,91 @@ export function ProfileScreen({
   useEffect(() => {
     void loadProfile('initial');
   }, [loadProfile]);
+
+  // Fetch tenant-defined custom profile forms + each form's submission so
+  // we can render them inline (read-only) at the bottom of the profile.
+  // Account type is needed to scope the form list to the user's role.
+  useEffect(() => {
+    const accountType = userBasic?.accountType;
+    if (!accountType) {
+      setCustomForms([]);
+      return;
+    }
+    let cancelled = false;
+    authService
+      .listProfileForms(token, accountType)
+      .then(async res => {
+        if (cancelled) return;
+        const items = Array.isArray(res?.data) ? res.data : [];
+        // Same active/profile-only filter the edit flow applies.
+        const forms: DynamicForm[] = items
+          .filter((raw: any) => {
+            if (raw?.status === false) return false;
+            if (raw?.useFormAs && raw.useFormAs !== 'form') return false;
+            if (
+              raw?.programs &&
+              Array.isArray(raw.programs) &&
+              raw.programs.length > 0
+            ) {
+              return false;
+            }
+            return true;
+          })
+          .map((raw: any) => {
+            const rawFields = Array.isArray(raw?.fields)
+              ? raw.fields
+              : Array.isArray(raw?.formFields)
+                ? raw.formFields
+                : Array.isArray(raw?.schema?.fields)
+                  ? raw.schema.fields
+                  : [];
+            const fields = rawFields
+              .map((f: any) => normalizeRawField(f))
+              .filter(Boolean);
+            return {
+              uuid: String(raw?.uuid || raw?.id || ''),
+              formTitle: raw?.formTitle || raw?.title,
+              formCode: raw?.formCode || raw?.code,
+              fields,
+            };
+          })
+          .filter((f: DynamicForm) => f.uuid && f.fields.length > 0);
+
+        // Fetch each form's submission in parallel. Failed lookups just
+        // mean the form renders with empty values rather than aborting.
+        const submissions = await Promise.all(
+          forms.map(form =>
+            authService
+              .getProfileFormSubmission(token, form.uuid)
+              .then(sres => {
+                const record =
+                  (sres as any)?.data && typeof (sres as any).data === 'object'
+                    ? (sres as any).data
+                    : (sres as any) || {};
+                const values =
+                  record?.data &&
+                  typeof record.data === 'object' &&
+                  !Array.isArray(record.data)
+                    ? record.data
+                    : record;
+                return values || {};
+              })
+              .catch(() => ({})),
+          ),
+        );
+
+        if (cancelled) return;
+        setCustomForms(
+          forms.map((form, i) => ({form, values: submissions[i] || {}})),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setCustomForms([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token, userBasic?.accountType]);
 
   if (isLoading) {
     return (
@@ -1330,6 +1426,22 @@ export function ProfileScreen({
           </Pressable>
         </SectionBlock>
       ) : null}
+
+      {/* Tenant-defined custom profile forms (e.g. "Program Office"),
+          rendered read-only with the form title as the section header so
+          users see their submitted data alongside the static profile. */}
+      {customForms.map(({form, values}) => (
+        <SectionBlock
+          key={form.uuid}
+          title={form.formTitle || form.formCode || 'Form'}
+          primaryColor={primaryColor}>
+          <CustomFormView
+            form={form}
+            values={values}
+            primaryColor={primaryColor}
+          />
+        </SectionBlock>
+      ))}
 
       {info?.modifiedAt ? (
         <Text style={styles.lastUpdated}>
