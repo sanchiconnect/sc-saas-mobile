@@ -78,25 +78,32 @@ export function DashboardContent({
   canToggleStatus,
 }: DashboardContentProps) {
   const progress = Math.max(0, Math.min(profileCompletion, 100));
-  // Pre-compute the dot positions for the progress ring. We use a dotted
-  // perimeter instead of the prior CSS half-rotation trick because that
-  // produced visual artifacts at low percentages (the multi-color border
-  // + rounded-corner geometry doesn't render a clean partial arc). 60
-  // segments looks smooth, and `filledDots` is monotonic in `progress`
-  // so the visualization always matches the number shown in the middle.
+  // Pre-compute the tick positions for the progress ring. Each tick is a
+  // tiny rectangle oriented tangent to the ring — packed densely so
+  // adjacent ticks overlap and form a smooth continuous band. Using
+  // rectangles instead of circular dots eliminates the "beaded" outer
+  // outline that read as zigzag. 90 segments at radius 34 = ~2.37px
+  // spacing, with each tick 4px wide (tangential overlap of ~1.6px).
   const RING_SIZE = 80;
   const RING_RADIUS = 34;
-  const RING_SEGMENTS = 60;
-  const RING_DOT_SIZE = 5;
+  const RING_SEGMENTS = 90;
+  const RING_TICK_W = 4; // tangential length
+  const RING_TICK_H = 7; // radial thickness (the stroke width)
   const ringCenter = RING_SIZE / 2;
-  const filledDots = Math.round((progress / 100) * RING_SEGMENTS);
-  const ringDots = Array.from({length: RING_SEGMENTS}, (_, i) => {
-    // Start at 12 o'clock (−90° in math convention) and sweep clockwise.
-    const angle = (i / RING_SEGMENTS) * 2 * Math.PI - Math.PI / 2;
+  const filledTicks = Math.round((progress / 100) * RING_SEGMENTS);
+  const ringTicks = Array.from({length: RING_SEGMENTS}, (_, i) => {
+    // Math: 0° = 3 o'clock; we want 0% to start at 12 o'clock and sweep
+    // clockwise — so subtract 90° from the angle.
+    const angleDeg = (i / RING_SEGMENTS) * 360 - 90;
+    const angleRad = (angleDeg * Math.PI) / 180;
     return {
-      left: ringCenter + RING_RADIUS * Math.cos(angle) - RING_DOT_SIZE / 2,
-      top: ringCenter + RING_RADIUS * Math.sin(angle) - RING_DOT_SIZE / 2,
-      filled: i < filledDots,
+      left: ringCenter + RING_RADIUS * Math.cos(angleRad) - RING_TICK_W / 2,
+      top: ringCenter + RING_RADIUS * Math.sin(angleRad) - RING_TICK_H / 2,
+      // Rotate each tick so its long side is tangent to the ring. +90°
+      // makes a horizontally-oriented rectangle align with the local
+      // tangent at that angle.
+      rotation: angleDeg + 90,
+      filled: i < filledTicks,
     };
   });
 
@@ -128,18 +135,23 @@ export function DashboardContent({
 
           <View style={styles.heroAside}>
             <View style={styles.progressRingOuter}>
-              {/* Outer dotted ring — each dot is positioned absolutely
-                  around the perimeter and toggled to the "filled" color
-                  based on its index vs. filledDots. This renders correctly
-                  at any percentage (including 1–10%) where the prior
-                  half-rotation trick produced broken arcs. */}
-              {ringDots.map((dot, i) => (
+              {/* Smooth progress ring — 90 thin rectangles, each rotated
+                  tangent to the perimeter and densely packed so adjacent
+                  ticks slightly overlap. Reads as a continuous band
+                  instead of the prior beaded dot pattern, while still
+                  rendering cleanly at any percentage (no rotation hacks
+                  on the colored arc itself). */}
+              {ringTicks.map((tick, i) => (
                 <View
                   key={i}
                   style={[
-                    styles.progressDot,
-                    {left: dot.left, top: dot.top},
-                    dot.filled && styles.progressDotFilled,
+                    styles.progressTick,
+                    {
+                      left: tick.left,
+                      top: tick.top,
+                      transform: [{rotate: `${tick.rotation}deg`}],
+                    },
+                    tick.filled && styles.progressTickFilled,
                   ]}
                 />
               ))}
@@ -476,12 +488,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm,
   },
-  // Dotted progress ring — 60 small dots positioned around the perimeter,
-  // each colored either as the unfilled "track" or the filled "progress"
-  // color. Lives on the dark hero so the unfilled dots use a translucent
-  // white track tint and filled dots are solid white. Renders cleanly at
-  // every percentage including single-digit values (which the prior
-  // half-rotation trick handled poorly).
+  // Smooth progress ring — 90 thin rectangles, each rotated tangent to
+  // the ring perimeter so adjacent ticks overlap slightly and form a
+  // continuous band. Filled ticks are solid white; unfilled use the
+  // translucent-white track tint over the dark hero background.
   progressRingOuter: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -489,14 +499,13 @@ const styles = StyleSheet.create({
     height: 80,
     position: 'relative',
   },
-  progressDot: {
+  progressTick: {
     position: 'absolute',
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
+    width: 4,
+    height: 7,
     backgroundColor: 'rgba(255,255,255,0.22)',
   },
-  progressDotFilled: {
+  progressTickFilled: {
     backgroundColor: '#ffffff',
   },
   progressRingInner: {
