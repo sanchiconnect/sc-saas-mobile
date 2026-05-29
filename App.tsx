@@ -1,5 +1,5 @@
 import React, {useEffect, useState} from 'react';
-import {StatusBar, StyleSheet, useColorScheme} from 'react-native';
+import {BackHandler, StatusBar, StyleSheet, useColorScheme} from 'react-native';
 import {SafeAreaProvider, SafeAreaView} from 'react-native-safe-area-context';
 import {KeyboardProvider} from 'react-native-keyboard-controller';
 
@@ -40,6 +40,41 @@ function App() {
   // where it would overlap the send button.
   const [feedbackFabSuppressed, setFeedbackFabSuppressed] = useState(false);
   const shouldShowFeedback = session !== null && !feedbackFabSuppressed;
+
+  // Hardware back on auth screens walks the user one step back through the
+  // auth flow instead of exiting the app. Only active while there's no
+  // session (HomeScreen owns its own BackHandler once the user signs in).
+  // Order: OTP → Login (the most common origin; signup users can re-enter
+  // the flow), Signup → Role, Role → Login, Login → suppressed so the
+  // user can't accidentally close the app from the root auth screen.
+  useEffect(() => {
+    if (session !== null) return;
+
+    const onBackPress = () => {
+      if (authScreen === AUTH_SCREENS.OTP) {
+        setAuthScreen(AUTH_SCREENS.LOGIN);
+        return true;
+      }
+      if (authScreen === AUTH_SCREENS.SIGNUP) {
+        setAuthScreen(AUTH_SCREENS.ROLE);
+        return true;
+      }
+      if (authScreen === AUTH_SCREENS.ROLE) {
+        setAuthScreen(AUTH_SCREENS.LOGIN);
+        return true;
+      }
+      // On the Login root: swallow the press so a stray back tap doesn't
+      // close the app mid-auth. Users can still exit via the home / app
+      // switcher buttons.
+      return true;
+    };
+
+    const subscription = BackHandler.addEventListener(
+      'hardwareBackPress',
+      onBackPress,
+    );
+    return () => subscription.remove();
+  }, [session, authScreen]);
 
   useEffect(() => {
     loadSession()
