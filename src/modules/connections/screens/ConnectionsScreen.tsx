@@ -1,4 +1,10 @@
-import React, {useCallback, useContext, useEffect, useState} from 'react';
+import React, {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -72,15 +78,36 @@ const ACCEPT_OPTIONS = [OPT_SCHEDULE, OPT_OFFLINE, OPT_OTHER];
 const ACCEPT_DURATIONS = [15, 30, 45, 60];
 const DEFAULT_ACCEPT_DURATION = 30;
 const DEFAULT_ACCEPT_MESSAGE = 'Glad to be connected!';
-// 30-min slots, 06:00 AM → 08:00 PM. Mirrors AccountSettingsScreen's picker.
-const ACCEPT_TIME_OPTIONS = [
-  '06:00 AM', '06:30 AM', '07:00 AM', '07:30 AM', '08:00 AM',
-  '08:30 AM', '09:00 AM', '09:30 AM', '10:00 AM', '10:30 AM',
-  '11:00 AM', '11:30 AM', '12:00 PM', '12:30 PM', '01:00 PM',
-  '01:30 PM', '02:00 PM', '02:30 PM', '03:00 PM', '03:30 PM',
-  '04:00 PM', '04:30 PM', '05:00 PM', '05:30 PM', '06:00 PM',
-  '06:30 PM', '07:00 PM', '07:30 PM', '08:00 PM',
-];
+// Start-time slots are derived from the selected meeting duration so the
+// options change with it (15-min → quarter-hour starts, 60-min → hourly, …).
+// The schedule window is 06:00–21:00 and a slot is only offered when the
+// meeting finishes by the 21:00 close — mirrors the web's filterAvailableSlots,
+// which trims trailing slots that the chosen duration can't fit.
+const SCHEDULE_DAY_START_MIN = 6 * 60; // 06:00 AM
+const SCHEDULE_DAY_END_MIN = 21 * 60; // 09:00 PM close
+
+const minutesToTimeLabel = (totalMins: number): string => {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const hours24 = Math.floor(totalMins / 60);
+  const mins = totalMins % 60;
+  const period = hours24 < 12 ? 'AM' : 'PM';
+  const hours12 = hours24 % 12 === 0 ? 12 : hours24 % 12;
+  return `${pad(hours12)}:${pad(mins)} ${period}`;
+};
+
+// Slots step by the duration and stop once the meeting would run past close.
+const buildStartTimeSlots = (durationMins: number): string[] => {
+  const step = durationMins > 0 ? durationMins : DEFAULT_ACCEPT_DURATION;
+  const slots: string[] = [];
+  for (
+    let start = SCHEDULE_DAY_START_MIN;
+    start + step <= SCHEDULE_DAY_END_MIN;
+    start += step
+  ) {
+    slots.push(minutesToTimeLabel(start));
+  }
+  return slots;
+};
 
 // Today's date as ISO yyyy-mm-dd, used as the schedule date default + min.
 const todayIso = (): string => {
@@ -248,6 +275,12 @@ export function ConnectionsScreen({
   const [showAcceptDatePicker, setShowAcceptDatePicker] = useState(false);
   const [showAcceptTimePicker, setShowAcceptTimePicker] = useState(false);
   const [isAccepting, setIsAccepting] = useState(false);
+  // Start-time options recomputed whenever the chosen duration changes, so the
+  // picker offers slots that fit the selected meeting length.
+  const acceptTimeOptions = useMemo(
+    () => buildStartTimeSlots(acceptDuration),
+    [acceptDuration],
+  );
 
   const fetchCounts = useCallback(async () => {
     try {
@@ -1551,7 +1584,12 @@ export function ConnectionsScreen({
                       return (
                         <Pressable
                           key={mins}
-                          onPress={() => setAcceptDuration(mins)}
+                          onPress={() => {
+                            // The valid start times change with duration, so
+                            // clear a stale selection when switching.
+                            if (mins !== acceptDuration) setAcceptTime('');
+                            setAcceptDuration(mins);
+                          }}
                           style={[
                             styles.acceptDurationChip,
                             isActive && {
@@ -1706,7 +1744,7 @@ export function ConnectionsScreen({
                 </Pressable>
               </View>
               <ScrollView showsVerticalScrollIndicator={false}>
-                {ACCEPT_TIME_OPTIONS.map(option => {
+                {acceptTimeOptions.map(option => {
                   const isActive = acceptTime === option;
                   return (
                     <Pressable
