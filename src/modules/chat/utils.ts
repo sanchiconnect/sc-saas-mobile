@@ -114,6 +114,95 @@ export const getAttachmentInfo = (
   return {kind, url, fileName};
 };
 
+// Structured payload carried by chat messages whose `messageType === 'meeting'`
+// — emitted both by the backend when a connection is accepted with a
+// scheduled video call AND by the Connections screen's accept flow on
+// mobile (which prefixes the body with `__MEETING__{json}__\n<fallback>`
+// for backward compat with clients that don't read messageType).
+//
+// Field shape mirrors what the web app's meeting-card consumes; extras
+// (participants names etc.) are best-effort and rendered when present.
+export type MeetingPayload = {
+  type: 'meeting';
+  duration?: number;
+  date?: string;
+  time?: string;
+  title?: string;
+};
+
+const MEETING_MARKER_RE =
+  /^__MEETING__(\{[\s\S]*?\})__(?:\r?\n([\s\S]*))?$/;
+
+// Extract meeting metadata from a message. Priority order:
+//   1. `messageType === 'meeting'` + a parseable JSON body  →  use that.
+//   2. `messageType === 'meeting'` + body without JSON      →  surface
+//      whatever fields can be inferred (often just the body as fallback
+//      text).
+//   3. Body starts with `__MEETING__{json}__\n<fallback>` (mobile-emitted
+//      format)                                              →  parse.
+//   4. Neither of the above                                 →  null.
+// Returning null lets the caller fall through to the regular text bubble.
+export const parseMeetingMarker = (
+  rawMessage: string | null | undefined,
+  messageType?: string | null,
+): {meeting: MeetingPayload; fallback: string} | null => {
+  const isMeetingType =
+    typeof messageType === 'string' &&
+    messageType.toLowerCase() === 'meeting';
+
+  // Case 1 & 2: messageType says it's a meeting. Try to parse JSON out of
+  // the body (whole body, then marker-wrapped, then give up gracefully).
+  if (isMeetingType) {
+    const plain = stripHtml(rawMessage);
+    // 1a. Whole body is JSON.
+    const trimmed = plain.trim();
+    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+      try {
+        const parsed = JSON.parse(trimmed) as Partial<MeetingPayload>;
+        return {
+          meeting: {type: 'meeting', ...parsed},
+          fallback: '',
+        };
+      } catch {
+        // Fall through to marker / fallback handling.
+      }
+    }
+    // 1b. Body is `__MEETING__{json}__\n<fallback>`.
+    const marker = plain.match(MEETING_MARKER_RE);
+    if (marker) {
+      try {
+        const parsed = JSON.parse(marker[1]) as Partial<MeetingPayload>;
+        return {
+          meeting: {type: 'meeting', ...parsed},
+          fallback: (marker[2] || '').trim(),
+        };
+      } catch {
+        // Fall through to bare-fallback.
+      }
+    }
+    // 2. messageType is 'meeting' but we couldn't parse details — still
+    // render the card with the body as fallback text so the user sees
+    // SOMETHING (better than a blank bubble).
+    return {
+      meeting: {type: 'meeting'},
+      fallback: plain.trim(),
+    };
+  }
+
+  // Case 3: marker-only path (legacy / older messages without messageType).
+  if (!rawMessage) return null;
+  const plain = stripHtml(rawMessage);
+  const match = plain.match(MEETING_MARKER_RE);
+  if (!match) return null;
+  try {
+    const meeting = JSON.parse(match[1]) as MeetingPayload;
+    if (meeting?.type !== 'meeting') return null;
+    return {meeting, fallback: (match[2] || '').trim()};
+  } catch {
+    return null;
+  }
+};
+
 // Different code paths flag soft-deleted messages with different field
 // names — local optimistic updates use `isDeleted`, the REST refetch may
 // return `is_deleted` (snake_case) or a `deletedAt` timestamp. Check them

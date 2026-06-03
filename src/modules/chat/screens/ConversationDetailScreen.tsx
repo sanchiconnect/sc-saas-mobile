@@ -37,7 +37,13 @@ import {ReplyThreadSheet} from '../components/ReplyThreadSheet';
 import {chatService} from '../services/chat.service';
 import {chatSocket} from '../services/chat.socket';
 import type {Conversation, ConversationParticipant, Message} from '../types';
-import {getAttachmentInfo, isMessageDeleted, stripHtml} from '../utils';
+import {
+  getAttachmentInfo,
+  isMessageDeleted,
+  parseMeetingMarker,
+  stripHtml,
+} from '../utils';
+import type {MeetingPayload} from '../utils';
 import type {AttachmentInfo} from '../utils';
 
 // Render the media payload for an attachment message. Images and videos
@@ -111,6 +117,120 @@ const renderAttachment = (
     </Pressable>
   );
 };
+
+// Meeting card shown in place of the bubble's text when the message
+// starts with the `__MEETING__{json}__` marker. Mirrors the web layout:
+// title row with the proposing pair, Date row, Time row, then a full-
+// width "View Meeting Details" CTA. The CTA is currently a no-op
+// (toast acknowledgement) — wire a real navigation target once the
+// meeting details route exists.
+// `2026-05-13` → `May 13, 2026`. Passes through anything that doesn't
+// parse cleanly (e.g. already-formatted strings from older clients).
+const formatMeetingDate = (raw?: string): string => {
+  if (!raw) return '';
+  const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return raw;
+  const [, y, mo, d] = m;
+  const date = new Date(Number(y), Number(mo) - 1, Number(d));
+  if (Number.isNaN(date.getTime())) return raw;
+  return date.toLocaleDateString('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  });
+};
+
+const renderMeetingCard = (
+  meeting: MeetingPayload,
+  primaryColor: string,
+  own: boolean,
+) => {
+  const formattedDate = formatMeetingDate(meeting.date);
+  return (
+    <View
+      style={[
+        meetingStyles.card,
+        own
+          ? {backgroundColor: 'rgba(255,255,255,0.12)'}
+          : {backgroundColor: '#eef3ff'},
+      ]}>
+      {meeting.title ? (
+        <Text
+          style={[
+            meetingStyles.title,
+            {color: own ? '#ffffff' : '#0f172a'},
+          ]}
+          numberOfLines={2}>
+          {meeting.title}
+        </Text>
+      ) : null}
+      {formattedDate ? (
+        <Text
+          style={[
+            meetingStyles.row,
+            {color: own ? 'rgba(255,255,255,0.85)' : '#334155'},
+          ]}>
+          Date:{' '}
+          <Text style={meetingStyles.rowValue}>{formattedDate}</Text>
+        </Text>
+      ) : null}
+      {meeting.time ? (
+        <Text
+          style={[
+            meetingStyles.row,
+            {color: own ? 'rgba(255,255,255,0.85)' : '#334155'},
+          ]}>
+          Time:{' '}
+          <Text style={meetingStyles.rowValue}>{meeting.time}</Text>
+        </Text>
+      ) : null}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="View meeting details"
+        style={({pressed}) => [
+          meetingStyles.cta,
+          {backgroundColor: primaryColor},
+          pressed && {opacity: 0.85},
+        ]}>
+        <Text style={meetingStyles.ctaText}>View Meeting Details</Text>
+      </Pressable>
+    </View>
+  );
+};
+
+const meetingStyles = StyleSheet.create({
+  card: {
+    borderRadius: 14,
+    gap: 6,
+    minWidth: 240,
+    padding: 14,
+  },
+  title: {
+    fontSize: 15,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  row: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  rowValue: {
+    fontWeight: '800',
+  },
+  cta: {
+    alignItems: 'center',
+    borderRadius: 10,
+    justifyContent: 'center',
+    marginTop: 10,
+    paddingVertical: 12,
+  },
+  ctaText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+  },
+});
 
 const attachmentStyles = StyleSheet.create({
   imageWrap: {
@@ -758,11 +878,21 @@ export function ConversationDetailScreen({
     const attachment = deleted
       ? null
       : getAttachmentInfo(item.message, item.messageType, item.fileUrl);
+    // Render a meeting card whenever the message's `messageType` is
+    // 'meeting' (the canonical signal from the backend / web) OR the
+    // body carries the `__MEETING__{json}__` marker the mobile accept
+    // flow emits for backward compat.
+    const meetingInfo =
+      !deleted && !attachment
+        ? parseMeetingMarker(item.message, item.messageType)
+        : null;
     const body = deleted
       ? 'Message deleted'
       : attachment
         ? ''
-        : stripHtml(item.message);
+        : meetingInfo
+          ? meetingInfo.fallback
+          : stripHtml(item.message);
     const replyCount = item.replyCount || 0;
     const canReply =
       !deleted && item.uuid && !item.uuid.startsWith('temp_');
@@ -883,6 +1013,8 @@ export function ConversationDetailScreen({
                     ? () => setActionSheetMessage(item)
                     : undefined,
                 )
+              ) : meetingInfo ? (
+                renderMeetingCard(meetingInfo.meeting, primaryColor, own)
               ) : (
                 <Text
                   style={[
