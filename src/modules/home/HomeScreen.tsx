@@ -547,6 +547,7 @@ export function HomeScreen({
         <ConnectionsScreen
           token={session.token}
           currentUserUuid={summary?.userUuid || session.user.uuid || session.user.id}
+          currentUserName={session.user.fullName}
           currentUserAccountType={summary?.accountType}
           onOpenChat={conversation => {
             setActiveConversation(conversation);

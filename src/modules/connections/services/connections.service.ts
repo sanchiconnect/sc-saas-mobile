@@ -95,6 +95,26 @@ export const connectionsService = {
     );
   },
 
+  // Post-accept handshake the web fires after a scheduled-call accept
+  // lands. The URL already carries the other user's UUID; we mirror the
+  // browser by also sending it in the body so the server has the value
+  // however it was wired internally. The response is unused.
+  async checkRequest(
+    token: string,
+    otherUserUUID: string,
+  ): Promise<unknown> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson(
+      `${BASE}/check/request/${otherUserUUID}`,
+      {
+        method: 'POST',
+        headers: getAuthHeader(token),
+        body: JSON.stringify({otherUserUUID}),
+      },
+      baseUrl,
+    );
+  },
+
   async remove(token: string, connectionUUID: string): Promise<unknown> {
     const baseUrl = await resolveBaseUrl();
     return requestJson(

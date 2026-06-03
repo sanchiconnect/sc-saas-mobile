@@ -1,4 +1,10 @@
-import React, {useCallback, useContext, useEffect, useState} from 'react';
+import React, {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -22,6 +28,8 @@ import {useToast} from '../../../core/toast/ToastProvider';
 import type {Conversation} from '../../chat/types';
 import {stripHtml} from '../../chat/utils';
 import {connectionsService} from '../services/connections.service';
+import {meetingsService} from '../services/meetings.service';
+import type {CalendarSlot} from '../services/meetings.service';
 import type {Connection, ConnectionCounts} from '../types';
 
 type Props = {
@@ -30,6 +38,10 @@ type Props = {
   // connection belongs to the counterparty so we can show their team-member
   // name + online status (mirrors web's getOnlineStatusConnections).
   currentUserUuid?: string;
+  // Current user's display name. Used to compose the meetingTitle field
+  // (`<currentUser> <> <otherUser>`) when scheduling a video call as
+  // part of accepting a connection request.
+  currentUserName?: string;
   // The current user's account type. Drives the reject-reason option set —
   // mentors / investors / corporates each get a tailored picklist.
   currentUserAccountType?: string;
@@ -72,15 +84,86 @@ const ACCEPT_OPTIONS = [OPT_SCHEDULE, OPT_OFFLINE, OPT_OTHER];
 const ACCEPT_DURATIONS = [15, 30, 45, 60];
 const DEFAULT_ACCEPT_DURATION = 30;
 const DEFAULT_ACCEPT_MESSAGE = 'Glad to be connected!';
-// 30-min slots, 06:00 AM → 08:00 PM. Mirrors AccountSettingsScreen's picker.
-const ACCEPT_TIME_OPTIONS = [
-  '06:00 AM', '06:30 AM', '07:00 AM', '07:30 AM', '08:00 AM',
-  '08:30 AM', '09:00 AM', '09:30 AM', '10:00 AM', '10:30 AM',
-  '11:00 AM', '11:30 AM', '12:00 PM', '12:30 PM', '01:00 PM',
-  '01:30 PM', '02:00 PM', '02:30 PM', '03:00 PM', '03:30 PM',
-  '04:00 PM', '04:30 PM', '05:00 PM', '05:30 PM', '06:00 PM',
-  '06:30 PM', '07:00 PM', '07:30 PM', '08:00 PM',
-];
+// Start-time slots are derived from the selected meeting duration so the
+// options change with it (15-min → quarter-hour starts, 60-min → hourly, …).
+// The schedule window is 06:00–21:00 and a slot is only offered when the
+// meeting finishes by the 21:00 close — mirrors the web's filterAvailableSlots,
+// which trims trailing slots that the chosen duration can't fit.
+const SCHEDULE_DAY_START_MIN = 6 * 60; // 06:00 AM
+const SCHEDULE_DAY_END_MIN = 21 * 60; // 09:00 PM close
+
+const minutesToTimeLabel = (totalMins: number): string => {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const hours24 = Math.floor(totalMins / 60);
+  const mins = totalMins % 60;
+  const period = hours24 < 12 ? 'AM' : 'PM';
+  const hours12 = hours24 % 12 === 0 ? 12 : hours24 % 12;
+  return `${pad(hours12)}:${pad(mins)} ${period}`;
+};
+
+// Slots step by the duration and stop once the meeting would run past close.
+const buildStartTimeSlots = (durationMins: number): string[] => {
+  const step = durationMins > 0 ? durationMins : DEFAULT_ACCEPT_DURATION;
+  const slots: string[] = [];
+  for (
+    let start = SCHEDULE_DAY_START_MIN;
+    start + step <= SCHEDULE_DAY_END_MIN;
+    start += step
+  ) {
+    slots.push(minutesToTimeLabel(start));
+  }
+  return slots;
+};
+
+// Time format helpers. The accept-modal picker stores the selected time
+// as a canonical 24-hour "HH:mm" string (matches both the calendar-
+// availability API's slot format and the meetings-create payload's
+// timeFrom/timeTo fields). Display in the picker UI uses 12-hour
+// "hh:mm am/pm" for user friendliness.
+// Permissive 24-hour matcher — accepts "H:MM", "HH:MM", and "HH:MM:SS"
+// since different deployments of the calendar-availability endpoint ship
+// the slot in any of those shapes. We always normalise to padded "HH:MM"
+// before sending to the meetings POST (which validates strict military
+// format on the server side).
+const TIME_24_RE = /^(\d{1,2}):(\d{2})(?::\d{2})?$/;
+const TIME_12_RE = /^(\d{1,2}):(\d{2})\s*(am|pm)$/i;
+
+const to24Hour = (raw: string): string => {
+  if (!raw) return '';
+  const m24 = raw.match(TIME_24_RE);
+  if (m24) return `${m24[1].padStart(2, '0')}:${m24[2]}`;
+  const m12 = raw.match(TIME_12_RE);
+  if (m12) {
+    let h = Number(m12[1]) % 12;
+    if (m12[3].toLowerCase() === 'pm') h += 12;
+    return `${String(h).padStart(2, '0')}:${m12[2]}`;
+  }
+  return raw;
+};
+
+const to12Hour = (raw: string): string => {
+  if (!raw) return '';
+  const m24 = raw.match(TIME_24_RE);
+  if (m24) {
+    const h24 = Number(m24[1]);
+    const period = h24 >= 12 ? 'pm' : 'am';
+    const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+    return `${String(h12).padStart(2, '0')}:${m24[2]} ${period}`;
+  }
+  return raw;
+};
+
+// Add `mins` minutes to a 24-hour "HH:mm" string; used to derive timeTo
+// from timeFrom + duration when the availability endpoint doesn't ship a
+// timeTo per slot.
+const addMinutes24h = (hhmm: string, mins: number): string => {
+  const m = hhmm.match(TIME_24_RE);
+  if (!m) return hhmm;
+  const total = Number(m[1]) * 60 + Number(m[2]) + mins;
+  const hh = ((Math.floor(total / 60) % 24) + 24) % 24;
+  const mm = ((total % 60) + 60) % 60;
+  return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+};
 
 // Today's date as ISO yyyy-mm-dd, used as the schedule date default + min.
 const todayIso = (): string => {
@@ -181,6 +264,7 @@ const formatDate = (raw?: string): string => {
 export function ConnectionsScreen({
   token,
   currentUserUuid,
+  currentUserName,
   currentUserAccountType,
   onOpenChat,
 }: Props) {
@@ -248,6 +332,112 @@ export function ConnectionsScreen({
   const [showAcceptDatePicker, setShowAcceptDatePicker] = useState(false);
   const [showAcceptTimePicker, setShowAcceptTimePicker] = useState(false);
   const [isAccepting, setIsAccepting] = useState(false);
+  // Recipient calendar availability — fetched whenever the Accept modal
+  // opens with the Schedule option, AND whenever the user changes the
+  // date. The picker presents these as start-time chips (in 12-hour
+  // format for display); the raw 24-hour timeFrom/timeTo go into the
+  // POST /meetings payload.
+  const [availableSlots, setAvailableSlots] = useState<CalendarSlot[]>([]);
+  const [isLoadingSlots, setIsLoadingSlots] = useState(false);
+  // Fallback start-time options when the calendar-availability endpoint
+  // returns nothing (network error / unsupported account type). Keeps
+  // the picker usable so the user isn't stuck.
+  const fallbackTimeOptions = useMemo(
+    () => buildStartTimeSlots(acceptDuration),
+    [acceptDuration],
+  );
+
+  // Normalized picker source. Each entry carries the raw 24-hour
+  // timeFrom / timeTo (what the meetings POST expects) plus a friendly
+  // 12-hour display label. Server-fetched availability wins; we fall
+  // back to the hardcoded slot grid only when the API returned nothing
+  // (so the user is never stuck staring at an empty picker).
+  type TimeChoice = {
+    timeFrom: string;
+    timeTo: string;
+    display: string;
+    available: boolean;
+  };
+  const timeChoices = useMemo<TimeChoice[]>(() => {
+    if (availableSlots.length > 0) {
+      return availableSlots.map(slot => ({
+        timeFrom: slot.timeFrom,
+        timeTo:
+          slot.timeTo || addMinutes24h(slot.timeFrom, acceptDuration),
+        display: to12Hour(slot.timeFrom),
+        available: slot.available !== false,
+      }));
+    }
+    return fallbackTimeOptions.map(label => {
+      const raw = to24Hour(label);
+      return {
+        timeFrom: raw,
+        timeTo: addMinutes24h(raw, acceptDuration),
+        display: label,
+        available: true,
+      };
+    });
+  }, [availableSlots, fallbackTimeOptions, acceptDuration]);
+
+  // Selected slot — derived from acceptTime (the canonical 24-hour
+  // string) so the submit handler can pull timeTo without re-parsing.
+  const selectedSlot = useMemo(
+    () => timeChoices.find(c => c.timeFrom === acceptTime) || null,
+    [timeChoices, acceptTime],
+  );
+
+  // Resolve the counterparty's UUID off the connection record — needed
+  // both for the calendar-availability fetch AND for the meeting POST.
+  const counterpartyUuid = useCallback(
+    (c: Connection | null): string => {
+      if (!c) return '';
+      return (
+        c.userUUID ||
+        c.otherUser?.uuid ||
+        c.user?.uuid ||
+        c.connectedUser?.uuid ||
+        ''
+      );
+    },
+    [],
+  );
+
+  // Refetch availability when the Schedule option is active and either
+  // the target connection or the chosen date changes. We clear the
+  // selected slot to avoid showing one the recipient may have just
+  // booked into.
+  useEffect(() => {
+    if (acceptOption !== OPT_SCHEDULE || !acceptFor || !acceptDate) {
+      return;
+    }
+    const otherUuid = counterpartyUuid(acceptFor);
+    if (!otherUuid) {
+      setAvailableSlots([]);
+      return;
+    }
+    let cancelled = false;
+    setIsLoadingSlots(true);
+    meetingsService
+      .getCalendarAvailability(token, otherUuid, acceptDate)
+      .then(slots => {
+        if (cancelled) return;
+        setAvailableSlots(slots);
+        // If the previously-selected time isn't in the new slot list,
+        // clear it so the user has to pick again from the fresh set.
+        setAcceptTime(prev =>
+          slots.some(s => s.timeFrom === prev) ? prev : '',
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setAvailableSlots([]);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingSlots(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [acceptOption, acceptFor, acceptDate, counterpartyUuid, token]);
 
   const fetchCounts = useCallback(async () => {
     try {
@@ -384,7 +574,12 @@ export function ConnectionsScreen({
   // first chat bubble (the original bug).
   const buildAcceptMessage = (): string => {
     if (acceptOption === OPT_SCHEDULE) {
-      return `Let's connect over a ${acceptDuration} min video call on ${acceptDate} at ${acceptTime}.`;
+      // The web app sends a short `actionMessage: "Schedule call"` on
+      // the accept PATCH, and creates the meeting separately via
+      // POST /api/v2/meetings/. The backend tags the auto-emitted chat
+      // message with `messageType: 'meeting'` so the chat detail screen
+      // renders the meeting card (see parseMeetingMarker in chat/utils).
+      return 'Schedule call';
     }
     if (acceptOption === OPT_OFFLINE) {
       return acceptOfflineText.trim();
@@ -410,14 +605,79 @@ export function ConnectionsScreen({
   const handleConfirmAccept = async () => {
     if (!acceptFor || !acceptIsValid) return;
     const message = buildAcceptMessage();
+    const isScheduleFlow = acceptOption === OPT_SCHEDULE;
     setIsAccepting(true);
     setPendingActionUUID(acceptFor.connectionUUID);
     try {
+      // Step 1: accept the connection. For the Schedule flow the
+      // actionMessage is the short label "Schedule call" — the meeting
+      // details go into the separate POST below, matching the web app.
       await connectionsService.accept(
         token,
         acceptFor.connectionUUID,
         message,
       );
+
+      // Step 2: schedule the meeting on the recipient's calendar. This
+      // is what causes the backend to emit a `messageType: 'meeting'`
+      // chat message that renders as the meeting card on both ends.
+      if (isScheduleFlow) {
+        const otherUuid = counterpartyUuid(acceptFor);
+        const otherName = resolveName(acceptFor);
+        const myName = currentUserName?.trim() || 'You';
+        // Force strict "HH:MM" military format — the backend validates
+        // this on POST /meetings and rejects with a 400 for "9:00",
+        // "09:00 am", "09:00:00", etc. to24Hour handles all of those.
+        const timeFrom = to24Hour(acceptTime);
+        const rawTimeTo =
+          selectedSlot?.timeTo || addMinutes24h(timeFrom, acceptDuration);
+        const timeTo = to24Hour(rawTimeTo);
+        // Browser-equivalent offset/timezone: getTimezoneOffset returns
+        // the LOCAL-from-UTC offset in minutes (e.g. IST → -330). The
+        // web app sends the value as-is, so we match.
+        const offset = String(new Date().getTimezoneOffset());
+        let timeZone = 'UTC';
+        try {
+          timeZone =
+            Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+        } catch {
+          // Older RN engines may not expose Intl; fall back to UTC.
+        }
+        try {
+          await meetingsService.createMeeting(token, {
+            date: acceptDate,
+            timeFrom,
+            timeTo,
+            meetingTitle: `${myName} <> ${otherName}`,
+            otherUserUUID: otherUuid,
+            duration: String(acceptDuration),
+            meetingTimeType: 'schedule_later',
+            meetingLocationType: 'virtual',
+            meetingToolType: 'inbuilt',
+            offset,
+            timeZone,
+          });
+          // Post-meeting handshake the web fires next — likely refreshes
+          // the connection state / nudges the other side. Best-effort:
+          // failure here doesn't block the success toast since both the
+          // accept and the meeting already landed.
+          if (otherUuid) {
+            connectionsService
+              .checkRequest(token, otherUuid)
+              .catch(() => undefined);
+          }
+        } catch (meetingErr) {
+          // The connection IS already accepted at this point — surface
+          // the meeting-create error without rolling that back. The user
+          // can reschedule manually from the chat.
+          toast.error(
+            meetingErr instanceof Error
+              ? `Connected, but could not schedule meeting: ${meetingErr.message}`
+              : 'Connected, but could not schedule meeting.',
+          );
+        }
+      }
+
       setItems(prev =>
         prev.filter(x => x.connectionUUID !== acceptFor.connectionUUID),
       );
@@ -1551,7 +1811,12 @@ export function ConnectionsScreen({
                       return (
                         <Pressable
                           key={mins}
-                          onPress={() => setAcceptDuration(mins)}
+                          onPress={() => {
+                            // The valid start times change with duration, so
+                            // clear a stale selection when switching.
+                            if (mins !== acceptDuration) setAcceptTime('');
+                            setAcceptDuration(mins);
+                          }}
                           style={[
                             styles.acceptDurationChip,
                             isActive && {
@@ -1600,7 +1865,14 @@ export function ConnectionsScreen({
                             styles.acceptPickerValue,
                             !acceptTime && styles.acceptPickerPlaceholder,
                           ]}>
-                          {acceptTime || 'Select Time'}
+                          {/* Display the 12-hour version so the user sees
+                              "09:00 am" even though acceptTime stores
+                              "09:00" internally for the API. */}
+                          {acceptTime
+                            ? selectedSlot?.display || to12Hour(acceptTime)
+                            : isLoadingSlots
+                              ? 'Loading slots…'
+                              : 'Select Time'}
                         </Text>
                         <Icon name="chevron-down" size={18} color="#64748b" />
                       </Pressable>
@@ -1706,30 +1978,49 @@ export function ConnectionsScreen({
                 </Pressable>
               </View>
               <ScrollView showsVerticalScrollIndicator={false}>
-                {ACCEPT_TIME_OPTIONS.map(option => {
-                  const isActive = acceptTime === option;
-                  return (
-                    <Pressable
-                      key={option}
-                      onPress={() => {
-                        setAcceptTime(option);
-                        setShowAcceptTimePicker(false);
-                      }}
-                      style={[
-                        styles.acceptTimeOption,
-                        isActive && {backgroundColor: withAlpha(primaryColor, 0.1)},
-                      ]}>
-                      <Text
+                {isLoadingSlots ? (
+                  <View style={styles.acceptTimeOption}>
+                    <Text style={styles.acceptTimeOptionText}>
+                      Loading available slots…
+                    </Text>
+                  </View>
+                ) : timeChoices.length === 0 ? (
+                  <View style={styles.acceptTimeOption}>
+                    <Text style={styles.acceptTimeOptionText}>
+                      No slots available on this date.
+                    </Text>
+                  </View>
+                ) : (
+                  timeChoices.map(choice => {
+                    const isActive = acceptTime === choice.timeFrom;
+                    return (
+                      <Pressable
+                        key={choice.timeFrom}
+                        disabled={!choice.available}
+                        onPress={() => {
+                          setAcceptTime(choice.timeFrom);
+                          setShowAcceptTimePicker(false);
+                        }}
                         style={[
-                          styles.acceptTimeOptionText,
-                          isActive && styles.acceptTimeOptionTextActive,
-                          isActive && {color: primaryColor},
+                          styles.acceptTimeOption,
+                          isActive && {
+                            backgroundColor: withAlpha(primaryColor, 0.1),
+                          },
+                          !choice.available && {opacity: 0.4},
                         ]}>
-                        {option}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
+                        <Text
+                          style={[
+                            styles.acceptTimeOptionText,
+                            isActive && styles.acceptTimeOptionTextActive,
+                            isActive && {color: primaryColor},
+                          ]}>
+                          {choice.display}
+                          {!choice.available ? ' · booked' : ''}
+                        </Text>
+                      </Pressable>
+                    );
+                  })
+                )}
               </ScrollView>
             </View>
           </View>
