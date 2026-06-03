@@ -37,6 +37,8 @@ import {ConversationDetailScreen} from '../chat/screens/ConversationDetailScreen
 import {ConversationListScreen} from '../chat/screens/ConversationListScreen';
 import type {Conversation} from '../chat/types';
 import {ConnectionsScreen} from '../connections/screens/ConnectionsScreen';
+import {CreatePostModal} from '../community/components/CreatePostModal';
+import {CommunityWallScreen} from '../community/screens/CommunityWallScreen';
 import {EditProfileScreen} from '../profile/screens/EditProfileScreen';
 import {TicketsScreen} from '../tickets/screens/TicketsScreen';
 import {dashboardService} from './services/dashboard.service';
@@ -79,6 +81,10 @@ export function HomeScreen({
   // the numbers reflect the latest state without polling.
   const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
   const [pendingConnectionsCount, setPendingConnectionsCount] = useState(0);
+  // Community Wall create-post composer + a bump key the feed watches to
+  // reload after a successful post.
+  const [isComposerOpen, setIsComposerOpen] = useState(false);
+  const [communityRefreshKey, setCommunityRefreshKey] = useState(0);
 
   // Tell App.tsx to hide the floating feedback FAB while the user is inside
   // a chat thread — otherwise it overlaps the send button.
@@ -551,6 +557,70 @@ export function HomeScreen({
     );
   }
 
+  if (selectedMenu.section === 'community') {
+    return (
+      <View style={styles.page}>
+        <SideMenu
+          globalSetting={globalSetting}
+          isVisible={isMenuOpen}
+          onClose={() => setIsMenuOpen(false)}
+          onLogout={onLogout}
+          onSelectMenu={setSelectedMenu}
+          primaryColor={primaryColor}
+          selectedMenu={selectedMenu}
+          session={session}
+          accountType={summary?.accountType}
+          unreadMessagesCount={unreadMessagesCount}
+          pendingConnectionsCount={pendingConnectionsCount}
+          avatarUrl={userAvatarUrl}
+        />
+        <View style={styles.topBar}>
+          <Pressable
+            style={({pressed}) => [
+              styles.iconButton,
+              pressed && {opacity: 0.5, backgroundColor: '#e2e8f0'},
+            ]}
+            hitSlop={10}
+            onPress={() => setSelectedMenu({section: 'dashboard'})}
+            accessibilityRole="button"
+            accessibilityLabel="Back">
+            <Icon name="arrow-left" size={24} color="#475569" />
+          </Pressable>
+          <Text style={styles.topBarTitle}>Community Wall</Text>
+          <Pressable
+            style={({pressed}) => [
+              styles.createButton,
+              {backgroundColor: primaryColor},
+              pressed && {opacity: 0.85},
+            ]}
+            onPress={() => setIsComposerOpen(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Create post">
+            <Icon name="plus" size={18} color="#ffffff" />
+            <Text style={styles.createButtonText}>CREATE</Text>
+          </Pressable>
+        </View>
+        <CommunityWallScreen
+          token={session.token}
+          primaryColor={primaryColor}
+          userUuid={summary?.userUuid || session.user.uuid || session.user.id}
+          logoBaseUrl={logoBaseUrl ?? undefined}
+          refreshKey={communityRefreshKey}
+        />
+        <CreatePostModal
+          visible={isComposerOpen}
+          token={session.token}
+          primaryColor={primaryColor}
+          onClose={() => setIsComposerOpen(false)}
+          onPosted={() => {
+            setIsComposerOpen(false);
+            setCommunityRefreshKey(key => key + 1);
+          }}
+        />
+      </View>
+    );
+  }
+
   return (
     <View style={styles.page}>
       <SideMenu
@@ -697,6 +767,7 @@ export function HomeScreen({
                 }
               }}
               primaryColor={primaryColor}
+              token={session.token}
               profileCompletion={summary?.profileCompletion ?? 0}
               searchText={searchText}
               stats={summary?.stats ?? []}
@@ -783,6 +854,20 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     marginLeft: 4,
+  },
+  createButton: {
+    alignItems: 'center',
+    borderRadius: 10,
+    flexDirection: 'row',
+    gap: 4,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+  },
+  createButtonText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
   logo: {
     height: 32,

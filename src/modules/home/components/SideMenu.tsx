@@ -13,6 +13,7 @@ import {AuthSession} from '../../auth/models/auth.models';
 import {Icon} from '../../../core/components/Icon';
 import {
   accountSettingItems,
+  communityItems,
   connectItems,
   filterMenuItems,
   programItems,
@@ -369,6 +370,22 @@ export function SideMenu({
               Dashboard
             </Text>
           </Pressable>
+
+          {/* Community Wall — rendered unconditionally for now (dummy
+              feature). Mirrors the Tickets row's always-visible pattern so it
+              shows regardless of the tenant's `community_feed` flag; gate it
+              with filterMenuItems(communityItems, filterCtx) once the feed
+              is backed by a real feature toggle. */}
+          <SingleSection
+            title="Community Wall"
+            section="community"
+            icon={communityItems[0].icon || 'account-group-outline'}
+            item={communityItems[0]}
+            onSelectMenu={onSelectMenu}
+            onClose={onClose}
+            primaryColor={primaryColor}
+            selectedMenu={selectedMenu}
+          />
 
           {visibleConnectItems.length > 0 ? (
             <ExpandableSection

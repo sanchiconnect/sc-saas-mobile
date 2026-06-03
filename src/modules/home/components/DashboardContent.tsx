@@ -11,6 +11,7 @@ import {
 import {Icon} from '../../../core/components/Icon';
 import {radii, spacing, typography, withAlpha} from '../../../core/theme/colors';
 import {DashboardStat} from '../types';
+import {PostComposer} from './PostComposer';
 import {RecommendedSection} from './RecommendedSection';
 
 // Search-scope chips, in display order. `userKey` matches the tenant.users.*
@@ -38,6 +39,7 @@ type TenantUsersFlags = Record<string, any> | null | undefined;
 
 type DashboardContentProps = {
   primaryColor: string;
+  token: string;
   userFirstName: string;
   searchText: string;
   onSearchChange: (value: string) => void;
@@ -64,6 +66,7 @@ function getGreeting(date: Date = new Date()): string {
 
 export function DashboardContent({
   primaryColor,
+  token,
   userFirstName,
   searchText,
   onSearchChange,
@@ -279,6 +282,8 @@ export function DashboardContent({
           </Pressable>
         ))}
       </View>
+
+      <PostComposer primaryColor={primaryColor} token={token} />
 
       <RecommendedSections
         accountType={accountType}
