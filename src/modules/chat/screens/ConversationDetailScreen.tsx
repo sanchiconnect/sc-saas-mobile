@@ -36,6 +36,8 @@ import {MediaViewerModal} from '../components/MediaViewerModal';
 import {ReplyThreadSheet} from '../components/ReplyThreadSheet';
 import {chatService} from '../services/chat.service';
 import {chatSocket} from '../services/chat.socket';
+import {meetingsService} from '../../connections/services/meetings.service';
+import {useToast} from '../../../core/toast/ToastProvider';
 import type {Conversation, ConversationParticipant, Message} from '../types';
 import {
   getAttachmentInfo,
@@ -197,6 +199,45 @@ const renderMeetingCard = (
     </View>
   );
 };
+
+// Top-of-thread meeting actions toolbar — two equal-width buttons:
+// "Setup Instant meeting" (ghost) and "Schedule meeting" (filled with
+// tenant primary color). Mirrors the web design's action row above the
+// chat thread.
+const meetingActionStyles = StyleSheet.create({
+  row: {
+    backgroundColor: '#ffffff',
+    borderBottomColor: '#e2e8f0',
+    borderBottomWidth: 1,
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  btn: {
+    alignItems: 'center',
+    borderRadius: 10,
+    flex: 1,
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  btnGhost: {
+    backgroundColor: '#f1f5f9',
+  },
+  btnGhostText: {
+    color: '#475569',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  btnFilledText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+});
 
 const meetingStyles = StyleSheet.create({
   card: {
@@ -455,6 +496,73 @@ export function ConversationDetailScreen({
       ? headerAvatar
       : `${logoBaseUrl}${headerAvatar}`
     : null;
+  // Meeting actions (Instant / Schedule) are only meaningful in 1:1
+  // chats — we need a specific other-user UUID to scope the meeting
+  // against. The toolbar simply doesn't render for group threads.
+  const toast = useToast();
+  const otherMember = findOtherMember(conversation, currentUserUuid);
+  const canScheduleMeeting =
+    isDirectChat(conversation) && Boolean(otherMember?.uuid);
+  const [isCreatingInstant, setIsCreatingInstant] = useState(false);
+
+  // Pad a number to 2 digits and convert minutes-of-day to "HH:MM"
+  // military format. Used by the Instant-meeting builder, which has to
+  // satisfy the same strict server validation the Schedule flow does.
+  const toHhmm = (totalMins: number): string => {
+    const safe = ((totalMins % (24 * 60)) + 24 * 60) % (24 * 60);
+    const h = Math.floor(safe / 60);
+    const m = safe % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  };
+
+  const handleInstantMeeting = async () => {
+    if (!canScheduleMeeting || !otherMember?.uuid) return;
+    setIsCreatingInstant(true);
+    try {
+      const now = new Date();
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const date = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+      const startMins = now.getHours() * 60 + now.getMinutes();
+      const myName = currentUserName?.trim() || 'You';
+      const otherName = otherMember.name || headerName;
+      let timeZone = 'UTC';
+      try {
+        timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+      } catch {
+        // Older RN engines may not expose Intl — fall back to UTC.
+      }
+      await meetingsService.createMeeting(token, {
+        date,
+        timeFrom: toHhmm(startMins),
+        timeTo: toHhmm(startMins + 30),
+        meetingTitle: `${myName} <> ${otherName}`,
+        otherUserUUID: otherMember.uuid,
+        duration: '30',
+        meetingTimeType: 'instant',
+        meetingLocationType: 'virtual',
+        meetingToolType: 'inbuilt',
+        offset: String(now.getTimezoneOffset()),
+        timeZone,
+      });
+      toast.success('Instant meeting started.');
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : 'Could not start meeting.',
+      );
+    } finally {
+      setIsCreatingInstant(false);
+    }
+  };
+
+  const handleScheduleMeetingTap = () => {
+    if (!canScheduleMeeting) return;
+    // The full Schedule modal (date / duration / time picker) is wired
+    // in the Connections accept flow; surface a hint here until that
+    // modal is extracted into a shared component for the chat surface.
+    toast.info(
+      'Open the Connections screen to schedule a meeting with this user.',
+    );
+  };
 
   const fetchPage = useCallback(
     async (page: number, mode: 'replace' | 'prepend') => {
@@ -1108,6 +1216,47 @@ export function ConversationDetailScreen({
           {headerName}
         </Text>
       </View>
+
+      {/* Meeting actions toolbar — only shown for 1:1 chats since both
+          API calls (instant + scheduled) need a single otherUserUUID. */}
+      {canScheduleMeeting ? (
+        <View style={meetingActionStyles.row}>
+          <Pressable
+            onPress={handleInstantMeeting}
+            disabled={isCreatingInstant}
+            style={({pressed}) => [
+              meetingActionStyles.btn,
+              meetingActionStyles.btnGhost,
+              pressed && !isCreatingInstant && {opacity: 0.85},
+              isCreatingInstant && {opacity: 0.6},
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Setup instant meeting">
+            {isCreatingInstant ? (
+              <ActivityIndicator size="small" color="#475569" />
+            ) : (
+              <Icon name="video-outline" size={16} color="#475569" />
+            )}
+            <Text style={meetingActionStyles.btnGhostText}>
+              Setup Instant meeting
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={handleScheduleMeetingTap}
+            style={({pressed}) => [
+              meetingActionStyles.btn,
+              {backgroundColor: primaryColor},
+              pressed && {opacity: 0.85},
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Schedule meeting">
+            <Icon name="calendar" size={16} color="#ffffff" />
+            <Text style={meetingActionStyles.btnFilledText}>
+              Schedule meeting
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
 
       {isLoading ? (
         <View style={styles.centered}>
