@@ -73,6 +73,34 @@ export type CreateMeetingPayload = {
   timeZone?: string;
 };
 
+// Per-day availability row used by the Edit Availability modal. Mirrors
+// the web's `days[]` shape: a closed flag + an array of allowed time
+// windows. `times` always has at least one entry; the UI lets the user
+// extend or close it.
+export type AvailabilityDay = {
+  closed?: boolean;
+  dayName?: string;
+  dayIndex?: number;
+  times?: Array<{startTime?: string | null; endTime?: string | null}>;
+};
+
+// Specific-date override (e.g. "I'm unavailable on June 30th"). Same
+// shape as a day except `date` is a YYYY-MM-DD string.
+export type AvailabilityDate = {
+  closed?: boolean;
+  date?: string;
+  times?: Array<{startTime?: string | null; endTime?: string | null}>;
+};
+
+// Full payload the user saves via the Edit Availability modal — matches
+// the web's `availabilityForm.value` shape exactly so the same backend
+// /availability endpoint accepts it.
+export type AvailabilityPayload = {
+  availabilityHours: string;
+  days?: AvailabilityDay[];
+  dates?: AvailabilityDate[];
+};
+
 // Public profile shape — used by the Schedule modal to derive the
 // recipient's `org_name` for the meeting title prefix. Backend ships
 // extra fields we don't need, kept loose so they pass through.
@@ -158,6 +186,42 @@ export type MeetingRow = {
 };
 
 export const meetingsService = {
+  // Current user's saved availability. Drives the Edit Availability
+  // modal's initial state (which radio is selected, weekday times,
+  // specific-date exceptions). Hits the canonical
+  // /meetings/users/calendar-availability endpoint (same path as the
+  // per-user GET, just without a uuid segment).
+  async getMyAvailability(token: string): Promise<AvailabilityPayload> {
+    const baseUrl = await resolveBaseUrl();
+    const res = await requestJson<unknown>(
+      'api/v1/meetings/users/calendar-availability',
+      {method: 'GET', headers: getAuthHeader(token)},
+      baseUrl,
+    );
+    const r = res as Record<string, unknown>;
+    const data =
+      (r?.data as AvailabilityPayload) || (r as AvailabilityPayload);
+    return data || {availabilityHours: 'anytime'};
+  },
+
+  // Save the user's availability via PATCH /calendar-availability.
+  // Web's `meetingService.setUsersAvailability`.
+  async setMyAvailability(
+    token: string,
+    payload: AvailabilityPayload,
+  ): Promise<unknown> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson(
+      'api/v1/meetings/users/calendar-availability',
+      {
+        method: 'PATCH',
+        headers: getAuthHeader(token),
+        body: JSON.stringify(payload),
+      },
+      baseUrl,
+    );
+  },
+
   // Public profile by UUID. Web's `profileService.getUserPublicProfile`
   // — used by the Schedule modal to read the recipient's `org_name`
   // for the meeting title prefix (web template:

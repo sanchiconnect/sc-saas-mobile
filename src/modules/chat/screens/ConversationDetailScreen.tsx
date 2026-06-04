@@ -37,6 +37,7 @@ import {ReplyThreadSheet} from '../components/ReplyThreadSheet';
 import {chatService} from '../services/chat.service';
 import {chatSocket} from '../services/chat.socket';
 import {meetingsService} from '../../connections/services/meetings.service';
+import {ScheduleMeetingModal} from '../../meetings/components/ScheduleMeetingModal';
 import {useToast} from '../../../core/toast/ToastProvider';
 import type {Conversation, ConversationParticipant, Message} from '../types';
 import {
@@ -504,6 +505,10 @@ export function ConversationDetailScreen({
   const canScheduleMeeting =
     isDirectChat(conversation) && Boolean(otherMember?.uuid);
   const [isCreatingInstant, setIsCreatingInstant] = useState(false);
+  // Drives the ScheduleMeetingModal — same component the Meetings
+  // screen uses, but locked to the other chat participant via the
+  // `presetUser` prop so the reviewer dropdown is skipped.
+  const [scheduleVisible, setScheduleVisible] = useState(false);
 
   // Pad a number to 2 digits and convert minutes-of-day to "HH:MM"
   // military format. Used by the Instant-meeting builder, which has to
@@ -556,12 +561,7 @@ export function ConversationDetailScreen({
 
   const handleScheduleMeetingTap = () => {
     if (!canScheduleMeeting) return;
-    // The full Schedule modal (date / duration / time picker) is wired
-    // in the Connections accept flow; surface a hint here until that
-    // modal is extracted into a shared component for the chat surface.
-    toast.info(
-      'Open the Connections screen to schedule a meeting with this user.',
-    );
+    setScheduleVisible(true);
   };
 
   const fetchPage = useCallback(
@@ -1448,6 +1448,18 @@ export function ConversationDetailScreen({
             ),
           );
         }}
+      />
+
+      <ScheduleMeetingModal
+        visible={scheduleVisible}
+        token={token}
+        currentUserName={currentUserName}
+        presetUser={
+          otherMember?.uuid
+            ? {uuid: otherMember.uuid, name: otherMember.name || headerName}
+            : null
+        }
+        onClose={() => setScheduleVisible(false)}
       />
     </KeyboardAvoidingView>
   );

@@ -15,6 +15,7 @@ import {useToast} from '../../../core/toast/ToastProvider';
 import {meetingsService} from '../../connections/services/meetings.service';
 import type {MeetingRow} from '../../connections/services/meetings.service';
 import {ScheduleMeetingModal} from '../components/ScheduleMeetingModal';
+import {EditAvailabilityModal} from '../components/EditAvailabilityModal';
 
 type Props = {
   token: string;
@@ -91,6 +92,7 @@ export function MyMeetingsScreen({token, currentUserName, onBack}: Props) {
   const primaryColor = theme?.primary || '#0b0aa3';
   const toast = useToast();
   const [scheduleVisible, setScheduleVisible] = useState(false);
+  const [availabilityVisible, setAvailabilityVisible] = useState(false);
   // Top-level tabs at the head of the screen — "All Meetings" shows the
   // calendar + lists, "Meeting Notes" is a placeholder while the notes
   // feed isn't wired up yet (matches the web header layout).
@@ -261,9 +263,7 @@ export function MyMeetingsScreen({token, currentUserName, onBack}: Props) {
           <Text style={styles.scheduleBtnText}>Schedule</Text>
         </Pressable>
         <Pressable
-          onPress={() =>
-            toast.info('Availability editor coming soon.')
-          }
+          onPress={() => setAvailabilityVisible(true)}
           style={({pressed}) => [
             styles.availabilityBtn,
             pressed && {opacity: 0.85},
@@ -451,7 +451,9 @@ export function MyMeetingsScreen({token, currentUserName, onBack}: Props) {
             </View>
           ) : null}
 
-          {/* Tabs: Meeting Requests / Sent Requests. */}
+          {/* Tabs: Meeting Requests / Sent Requests. Hidden on the
+              Meeting Notes tab — only the notes feed shows there. */}
+          {topTab === 'all' ? (
           <View style={styles.card}>
             <View style={styles.tabsRow}>
               <Pressable
@@ -516,8 +518,11 @@ export function MyMeetingsScreen({token, currentUserName, onBack}: Props) {
               ))
             )}
           </View>
+          ) : null}
 
-          {/* Meetings this week — separate card, mirrors the web. */}
+          {/* Meetings this week — separate card, mirrors the web. Hidden
+              on the Meeting Notes tab. */}
+          {topTab === 'all' ? (
           <View style={styles.card}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionHeaderText}>Meetings this week</Text>
@@ -547,6 +552,7 @@ export function MyMeetingsScreen({token, currentUserName, onBack}: Props) {
               ))
             )}
           </View>
+          ) : null}
         </ScrollView>
       )}
 
@@ -556,6 +562,12 @@ export function MyMeetingsScreen({token, currentUserName, onBack}: Props) {
         currentUserName={currentUserName}
         onClose={() => setScheduleVisible(false)}
         onCreated={loadAll}
+      />
+
+      <EditAvailabilityModal
+        visible={availabilityVisible}
+        token={token}
+        onClose={() => setAvailabilityVisible(false)}
       />
     </View>
   );
