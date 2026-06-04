@@ -88,8 +88,8 @@ export const businessChallengeItems: MenuItem[] = [
 ];
 
 export const actionItems: MenuItem[] = [
-  {key: 'my-actions', label: 'My Actions', icon: 'tools'},
-  {key: 'tasks', label: 'Tasks', icon: 'check-decagram-outline'},
+  {key: 'my-meetings', label: 'My Meetings', icon: 'video-outline'},
+  {key: 'my-connections', label: 'My Connections', icon: 'account-multiple-outline'},
 ];
 
 export const eventItems: MenuItem[] = [

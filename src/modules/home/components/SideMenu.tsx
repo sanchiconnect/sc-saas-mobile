@@ -13,6 +13,7 @@ import {AuthSession} from '../../auth/models/auth.models';
 import {Icon} from '../../../core/components/Icon';
 import {
   accountSettingItems,
+  actionItems,
   communityItems,
   connectItems,
   filterMenuItems,
@@ -221,6 +222,7 @@ export function SideMenu({
     accountType,
   };
   const visibleConnectItems = filterMenuItems(connectItems, filterCtx);
+  const visibleActionItems = filterMenuItems(actionItems, filterCtx);
   const visibleProgramItems = filterMenuItems(programItems, filterCtx);
   const visibleTicketItems = filterMenuItems(ticketItems, filterCtx);
   const visibleAccountSettingItems = filterMenuItems(
@@ -394,6 +396,35 @@ export function SideMenu({
               icon="account-group"
               items={visibleConnectItems}
               onSelectMenu={onSelectMenu}
+              onClose={onClose}
+              primaryColor={primaryColor}
+              selectedMenu={selectedMenu}
+            />
+          ) : null}
+
+          {/* My Actions — quick-jump shortcuts to Meetings and the
+              Connections list. Items are rendered as their own menu
+              section so the side bar matches the web layout (collapsible
+              group with sub-items). "My Connections" deep-links to the
+              existing top-level Connections screen so the user lands on
+              the live list, not a placeholder. */}
+          {visibleActionItems.length > 0 ? (
+            <ExpandableSection
+              title="My Actions"
+              section="actions"
+              icon="tools"
+              items={visibleActionItems}
+              onSelectMenu={selection => {
+                if (selection.item === 'My Connections') {
+                  onSelectMenu({section: 'connections'});
+                  return;
+                }
+                if (selection.item === 'My Meetings') {
+                  onSelectMenu({section: 'meetings'});
+                  return;
+                }
+                onSelectMenu(selection);
+              }}
               onClose={onClose}
               primaryColor={primaryColor}
               selectedMenu={selectedMenu}

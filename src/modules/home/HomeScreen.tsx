@@ -37,6 +37,7 @@ import {ConversationDetailScreen} from '../chat/screens/ConversationDetailScreen
 import {ConversationListScreen} from '../chat/screens/ConversationListScreen';
 import type {Conversation} from '../chat/types';
 import {ConnectionsScreen} from '../connections/screens/ConnectionsScreen';
+import {MyMeetingsScreen} from '../meetings/screens/MyMeetingsScreen';
 import {CreatePostModal} from '../community/components/CreatePostModal';
 import {CommunityWallScreen} from '../community/screens/CommunityWallScreen';
 import {EditProfileScreen} from '../profile/screens/EditProfileScreen';
@@ -508,6 +509,35 @@ export function HomeScreen({
           currentUserUuid={summary?.userUuid || session.user.uuid || session.user.id}
           currentUserName={session.user.fullName}
           onOpenConversation={setActiveConversation}
+        />
+      </View>
+    );
+  }
+
+  if (selectedMenu.section === 'meetings') {
+    return (
+      <View style={styles.page}>
+        <SideMenu
+          globalSetting={globalSetting}
+          isVisible={isMenuOpen}
+          onClose={() => setIsMenuOpen(false)}
+          onLogout={onLogout}
+          onSelectMenu={setSelectedMenu}
+          primaryColor={primaryColor}
+          selectedMenu={selectedMenu}
+          session={session}
+          accountType={summary?.accountType}
+          unreadMessagesCount={unreadMessagesCount}
+          pendingConnectionsCount={pendingConnectionsCount}
+          avatarUrl={userAvatarUrl}
+        />
+        <MyMeetingsScreen
+          token={session.token}
+          currentUserUuid={
+            summary?.userUuid || session.user.uuid || session.user.id
+          }
+          currentUserName={session.user.fullName}
+          onBack={() => setSelectedMenu({section: 'dashboard'})}
         />
       </View>
     );

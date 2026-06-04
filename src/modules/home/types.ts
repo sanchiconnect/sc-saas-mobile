@@ -13,7 +13,8 @@ export type AppSection =
   | 'edit-profile'
   | 'profile'
   | 'chat'
-  | 'connections';
+  | 'connections'
+  | 'meetings';
 
 export type AppMenuSelection = {
   section: AppSection;
