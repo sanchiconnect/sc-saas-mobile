@@ -3,8 +3,9 @@ import {
   requestJson,
   resolveBaseUrl,
 } from '../../../core/api/apiClient';
-import {resolveNumericId, resolveUuid} from '../utils';
+import {resolveNumericId, resolveProfileUuid, resolveUserUuid} from '../utils';
 import {
+  ConnectionState,
   ConnectRoleKey,
   DirectoryResponse,
   DirectoryUser,
@@ -12,28 +13,34 @@ import {
   FilterSelection,
   InvestorType,
   PaginationMeta,
+  ROLE_API_FRAGMENT,
   ROLE_ENDPOINT_SEGMENT,
 } from '../types';
 
 // ---------------------------------------------------------------------------
-// Endpoint map
+// Endpoint map (all confirmed from the web app's network tab)
 //
-// CONFIRMED (captured from the web app's network tab):
-//   GET api/v1/public/search/{type}?pageNumber&sortBy&orderBy&partnerId&…
-//   GET api/v1/public/global/custom/{comma,separated,keys}
-//   GET api/v1/wishlist/{ownerId}
+// Listing / filters:
+//   GET  api/v1/public/search/{type}?pageNumber&sortBy&orderBy&partnerId&…
+//   GET  api/v1/public/global/custom/{comma,separated,keys}
 //
-// UNVERIFIED — implemented per SanchiConnect REST conventions; if a call 4xxs,
-// adjust the path/body here (kept isolated so the screens never change):
-//   POST   api/v1/wishlist                       (add a saved profile)
-//   DELETE api/v1/wishlist/{id}                  (remove a saved profile)
-//   GET    api/v1/public/{type}/{uuid}           (public profile detail)
-//   POST   api/v1/connections                    (send a connection request)
+// Profile detail (keyed on the ACCOUNT/profile uuid):
+//   GET  api/v1/{plural}/public/{singular}-information/{profileUuid}
+//   GET  api/v1/forms-management/profile/data/{singular}/{profileUuid}
+//   GET  api/v1/{plural}/increment_views/{profileUuid}
+//
+// Connections (keyed on the USER uuid):
+//   POST api/v1/connections/check/request/{userUuid}   (relationship status)
+//   POST api/v1/connections/send/request   {toUserUUID, message}
+//
+// Saved profiles:
+//   GET  api/v1/wishlist/{ownerId}/{singular}
+//   POST/DELETE wishlist mutations — see notes on those methods.
 // ---------------------------------------------------------------------------
 
 const PUBLIC_SEARCH = 'api/v1/public/search';
-const PUBLIC_PROFILE = 'api/v1/public';
 const GLOBAL_CUSTOM = 'api/v1/public/global/custom';
+const FORMS_DATA = 'api/v1/forms-management/profile/data';
 const WISHLIST = 'api/v1/wishlist';
 const CONNECTIONS = 'api/v1/connections';
 
@@ -66,7 +73,8 @@ const extractItems = (data: any): any[] => {
 };
 
 const toDirectoryUser = (raw: Record<string, any>): DirectoryUser => ({
-  uuid: resolveUuid(raw),
+  uuid: resolveUserUuid(raw),
+  profileUuid: resolveProfileUuid(raw),
   id: resolveNumericId(raw) || undefined,
   accountType: raw?.accountType || raw?.account_type,
   raw,
@@ -152,16 +160,19 @@ export const connectService = {
     }).filter(group => group.options.length > 0);
   },
 
-  // The user's saved profiles. `ownerId` is the signed-in user's numeric id
-  // (the path param on the captured GET api/v1/wishlist/{id} call). Returns the
-  // set of saved entry uuids/ids so the directory can mark cards as saved.
+  // The user's saved profiles for a given role. Path:
+  //   GET api/v1/wishlist/{ownerId}/{singular}     (e.g. /wishlist/12/startup)
+  // `ownerId` is the signed-in user's numeric id. Returns the set of saved
+  // USER uuids so the directory can mark cards as saved.
   async getWishlist(
     token: string,
     ownerId: string,
+    role: ConnectRoleKey,
   ): Promise<{savedUuids: Set<string>; items: DirectoryUser[]}> {
     const baseUrl = await resolveBaseUrl();
+    const {singular} = ROLE_API_FRAGMENT[role];
     const res = await requestJson<any>(
-      `${WISHLIST}/${ownerId}`,
+      `${WISHLIST}/${ownerId}/${singular}`,
       {method: 'GET', headers: getAuthHeader(token)},
       baseUrl,
     );
@@ -170,16 +181,17 @@ export const connectService = {
     const items = list.map((entry: any) =>
       // A wishlist row may wrap the saved profile under `user`/`profile`, or be
       // the profile itself. Unwrap so cards render the same as in search.
-      toDirectoryUser(entry?.user || entry?.profile || entry?.wishlistUser || entry),
+      toDirectoryUser(
+        entry?.user || entry?.profile || entry?.wishlistUser || entry,
+      ),
     );
     const savedUuids = new Set(items.map(i => i.uuid).filter(Boolean));
     return {savedUuids, items};
   },
 
-  async addToWishlist(
-    token: string,
-    target: DirectoryUser,
-  ): Promise<unknown> {
+  // Save a member. The wishlist is keyed on the user uuid + account type
+  // (matching the per-type GET); exact mutation body is best-effort.
+  async addToWishlist(token: string, target: DirectoryUser): Promise<unknown> {
     const baseUrl = await resolveBaseUrl();
     return requestJson(
       WISHLIST,
@@ -198,33 +210,108 @@ export const connectService = {
   async removeFromWishlist(
     token: string,
     target: DirectoryUser,
+    role: ConnectRoleKey,
   ): Promise<unknown> {
     const baseUrl = await resolveBaseUrl();
+    const {singular} = ROLE_API_FRAGMENT[role];
     return requestJson(
-      `${WISHLIST}/${target.uuid}`,
+      `${WISHLIST}/${target.uuid}/${singular}`,
       {method: 'DELETE', headers: getAuthHeader(token)},
       baseUrl,
     );
   },
 
-  // Full public profile for the detail screen. Falls back to whatever the
-  // search row already carried if the dedicated fetch isn't available.
+  // Full public profile for the detail screen. Two endpoints, both keyed on the
+  // ACCOUNT/profile uuid (NOT the user uuid), merged into one object:
+  //   1. {plural}/public/{singular}-information/{profileUuid}  — core profile
+  //   2. forms-management/profile/data/{singular}/{profileUuid} — form answers
+  // Each is best-effort; the screen still renders from the search row if both
+  // fail.
   async getPublicProfile(
     token: string,
     role: ConnectRoleKey,
-    uuid: string,
+    profileUuid: string,
   ): Promise<Record<string, any>> {
     const baseUrl = await resolveBaseUrl();
-    const segment = ROLE_ENDPOINT_SEGMENT[role];
-    const res = await requestJson<any>(
-      `${PUBLIC_PROFILE}/${segment}/${uuid}`,
-      {method: 'GET', headers: getAuthHeader(token)},
-      baseUrl,
-    );
-    return res?.data ?? res ?? {};
+    const {plural, singular} = ROLE_API_FRAGMENT[role];
+    const [info, forms] = await Promise.all([
+      requestJson<any>(
+        `api/v1/${plural}/public/${singular}-information/${profileUuid}`,
+        {method: 'GET', headers: getAuthHeader(token)},
+        baseUrl,
+      ).catch(() => null),
+      requestJson<any>(
+        `${FORMS_DATA}/${singular}/${profileUuid}`,
+        {method: 'GET', headers: getAuthHeader(token)},
+        baseUrl,
+      ).catch(() => null),
+    ]);
+    const infoData = info?.data ?? info ?? {};
+    const formsData = forms?.data ?? forms ?? {};
+    // Core profile fields win over form-answer fields on key collisions.
+    return {...formsData, ...infoData};
   },
 
-  // Send a connection request to a member. `message` is the intro note.
+  // Fire-and-forget profile-view increment. Keyed on the account/profile uuid.
+  async incrementViews(
+    token: string,
+    role: ConnectRoleKey,
+    profileUuid: string,
+  ): Promise<void> {
+    const baseUrl = await resolveBaseUrl();
+    const {plural} = ROLE_API_FRAGMENT[role];
+    await requestJson(
+      `api/v1/${plural}/increment_views/${profileUuid}`,
+      {method: 'GET', headers: getAuthHeader(token)},
+      baseUrl,
+    ).catch(() => undefined);
+  },
+
+  // Relationship status with a member, keyed on the USER uuid. Drives the
+  // Connect button (Connect / Request Sent / Connected).
+  //   POST api/v1/connections/check/request/{userUuid}
+  async checkConnectionState(
+    token: string,
+    userUuid: string,
+  ): Promise<ConnectionState> {
+    const baseUrl = await resolveBaseUrl();
+    const res = await requestJson<any>(
+      `${CONNECTIONS}/check/request/${userUuid}`,
+      {
+        method: 'POST',
+        headers: getAuthHeader(token),
+        body: JSON.stringify(userUuid),
+      },
+      baseUrl,
+    );
+    const d = res?.data ?? res ?? {};
+    const status = String(
+      d?.connectionStatus || d?.status || d?.requestStatus || '',
+    ).toLowerCase();
+    if (
+      d?.isConnected === true ||
+      d?.connected === true ||
+      status === 'accepted' ||
+      status === 'connected'
+    ) {
+      return 'connected';
+    }
+    if (
+      d?.requestExist === true ||
+      d?.requestSent === true ||
+      d?.alreadyRequested === true ||
+      d?.isPending === true ||
+      status === 'pending' ||
+      status === 'sent' ||
+      status === 'received'
+    ) {
+      return 'pending';
+    }
+    return 'none';
+  },
+
+  // Send a connection request. Confirmed:
+  //   POST api/v1/connections/send/request   {toUserUUID, message}
   async sendConnectRequest(
     token: string,
     target: DirectoryUser,
@@ -232,13 +319,12 @@ export const connectService = {
   ): Promise<unknown> {
     const baseUrl = await resolveBaseUrl();
     return requestJson(
-      CONNECTIONS,
+      `${CONNECTIONS}/send/request`,
       {
         method: 'POST',
         headers: getAuthHeader(token),
         body: JSON.stringify({
-          userUUID: target.uuid,
-          accountType: target.accountType,
+          toUserUUID: target.uuid,
           message: message?.trim() || '',
         }),
       },

@@ -13,15 +13,36 @@ const firstString = (...vals: unknown[]): string => {
   return '';
 };
 
-// Stable identity for a directory entry. Prefer the user-level UUID (what
-// chat/connections key on), then account-specific uuids, then numeric id.
-export const resolveUuid = (item: Record<string, any>): string =>
+// The USER uuid — what connect / wishlist / chat key on. Prefer the explicit
+// user-uuid fields; only fall back to the bare `uuid` (often the account uuid)
+// when nothing better exists.
+export const resolveUserUuid = (item: Record<string, any>): string =>
   firstString(
     item?.userUUID,
     item?.userUuid,
-    item?.uuid,
     item?.user?.uuid,
+    item?.user?.userUUID,
+    item?.uuid,
     item?.id,
+  );
+
+// The account/profile uuid — what the role-specific detail endpoints key on
+// (startup-information, forms-management, increment_views). Prefer the
+// account-scoped uuids; fall back to the bare `uuid`, then the user uuid.
+export const resolveProfileUuid = (item: Record<string, any>): string =>
+  firstString(
+    item?.startupUUID,
+    item?.investorUUID,
+    item?.mentorUUID,
+    item?.corporateUUID,
+    item?.serviceProviderUUID,
+    item?.partnerUUID,
+    item?.individualUUID,
+    item?.programOfficeUUID,
+    item?.profileUUID,
+    item?.accountUUID,
+    item?.uuid,
+    item?.userUUID,
   );
 
 export const resolveNumericId = (item: Record<string, any>): string =>

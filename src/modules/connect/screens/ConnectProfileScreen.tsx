@@ -27,7 +27,7 @@ import {
   resolveLogo,
   resolveName,
 } from '../utils';
-import type {ConnectRoleKey, DirectoryUser} from '../types';
+import type {ConnectionState, ConnectRoleKey, DirectoryUser} from '../types';
 
 type Props = {
   token: string;
@@ -113,16 +113,21 @@ export function ConnectProfileScreen({
   const [connectOpen, setConnectOpen] = useState(false);
   const [connectMessage, setConnectMessage] = useState(DEFAULT_CONNECT_MESSAGE);
   const [isSending, setIsSending] = useState(false);
-  const [requestSent, setRequestSent] = useState(false);
+  // Relationship status drives the footer button. 'none' = can connect,
+  // 'pending' = request already out, 'connected' = already connected.
+  const [connState, setConnState] = useState<ConnectionState>('none');
 
+  // On open: pull the full profile (keyed on the account/profile uuid), bump
+  // the view counter, and resolve the connection state (keyed on the user
+  // uuid) — all in parallel, each best-effort.
   useEffect(() => {
     let cancelled = false;
     setIsLoading(true);
+
     connectService
-      .getPublicProfile(token, role, user.uuid)
+      .getPublicProfile(token, role, user.profileUuid)
       .then(full => {
         if (cancelled) return;
-        // Merge: keep the search-row fields, layer the fuller profile on top.
         if (full && typeof full === 'object') {
           setProfile(prev => ({...prev, ...full}));
         }
@@ -133,10 +138,25 @@ export function ConnectProfileScreen({
       .finally(() => {
         if (!cancelled) setIsLoading(false);
       });
+
+    // Fire-and-forget view increment.
+    connectService.incrementViews(token, role, user.profileUuid);
+
+    if (user.uuid) {
+      connectService
+        .checkConnectionState(token, user.uuid)
+        .then(state => {
+          if (!cancelled) setConnState(state);
+        })
+        .catch(() => {
+          // Leave as 'none' so the user can still attempt to connect.
+        });
+    }
+
     return () => {
       cancelled = true;
     };
-  }, [token, role, user.uuid]);
+  }, [token, role, user.profileUuid, user.uuid]);
 
   const name = resolveName(profile);
   const accountType = resolveAccountType(profile) || resolveAccountType(user.raw);
@@ -157,9 +177,15 @@ export function ConnectProfileScreen({
     setIsSending(true);
     try {
       await connectService.sendConnectRequest(token, user, connectMessage);
-      setRequestSent(true);
+      setConnState('pending');
       setConnectOpen(false);
       toast.success(`Connection request sent to ${name}.`);
+      // Re-confirm status with the server (mirrors the web's follow-up
+      // check/request call after a send).
+      connectService
+        .checkConnectionState(token, user.uuid)
+        .then(setConnState)
+        .catch(() => undefined);
     } catch (err) {
       toast.error(
         err instanceof Error ? err.message : 'Could not send request.',
@@ -168,6 +194,21 @@ export function ConnectProfileScreen({
       setIsSending(false);
     }
   };
+
+  // Footer button presentation derived from the connection state.
+  const connectDisabled = connState !== 'none';
+  const connectLabel =
+    connState === 'connected'
+      ? 'Connected'
+      : connState === 'pending'
+        ? 'Request Sent'
+        : 'Connect';
+  const connectIcon =
+    connState === 'connected'
+      ? 'account-check'
+      : connState === 'pending'
+        ? 'check'
+        : 'account-plus-outline';
 
   return (
     <View style={styles.page}>
@@ -280,23 +321,21 @@ export function ConnectProfileScreen({
 
       <View style={styles.footer}>
         <Pressable
-          disabled={requestSent}
+          disabled={connectDisabled}
           onPress={() => {
             setConnectMessage(DEFAULT_CONNECT_MESSAGE);
             setConnectOpen(true);
           }}
           style={[
             styles.connectBtn,
-            {backgroundColor: requestSent ? colors.borderStrong : primaryColor},
+            {
+              backgroundColor: connectDisabled
+                ? colors.borderStrong
+                : primaryColor,
+            },
           ]}>
-          <Icon
-            name={requestSent ? 'check' : 'account-plus-outline'}
-            size={18}
-            color="#ffffff"
-          />
-          <Text style={styles.connectBtnText}>
-            {requestSent ? 'Request Sent' : 'Connect'}
-          </Text>
+          <Icon name={connectIcon} size={18} color="#ffffff" />
+          <Text style={styles.connectBtnText}>{connectLabel}</Text>
         </Pressable>
       </View>
 

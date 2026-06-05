@@ -108,6 +108,21 @@ export function ConnectDirectoryScreen({
     return () => clearTimeout(id);
   }, [searchInput]);
 
+  // Sync the active tab when the user picks a different Connect role from the
+  // side drawer. This screen stays mounted across drawer navigations, so only
+  // the `initialRoleKey` prop changes — the seeded `useState` above would
+  // otherwise keep showing the first role (and never fire the tapped role's
+  // search). A top-tab tap does NOT change initialRoleKey, so it isn't clobbered.
+  useEffect(() => {
+    if (initialRoleKey && roles.some(r => r.key === initialRoleKey)) {
+      setRoleKey(initialRoleKey);
+      setShowSaved(false);
+    }
+    // Intentionally keyed only on initialRoleKey — `roles` is a fresh array each
+    // render and would re-run this every render, clobbering top-tab selections.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialRoleKey]);
+
   const fetchPage = useCallback(
     async (targetPage: number, mode: 'replace' | 'append') => {
       try {
@@ -160,13 +175,14 @@ export function ConnectDirectoryScreen({
       const {savedUuids: ids, items: saved} = await connectService.getWishlist(
         token,
         wishlistOwnerId,
+        roleKey,
       );
       setSavedUuids(ids);
       setSavedItems(saved);
     } catch {
       // Non-fatal — directory still works without saved state.
     }
-  }, [token, wishlistOwnerId]);
+  }, [token, wishlistOwnerId, roleKey]);
 
   useEffect(() => {
     loadWishlist();
@@ -218,7 +234,7 @@ export function ConnectDirectoryScreen({
       });
       try {
         if (wasSaved) {
-          await connectService.removeFromWishlist(token, user);
+          await connectService.removeFromWishlist(token, user, roleKey);
           setSavedItems(prev => prev.filter(i => i.uuid !== user.uuid));
         } else {
           await connectService.addToWishlist(token, user);
@@ -241,7 +257,7 @@ export function ConnectDirectoryScreen({
         setSavingUuid(null);
       }
     },
-    [token, savedUuids, savingUuid, toast],
+    [token, roleKey, savedUuids, savingUuid, toast],
   );
 
   const data = showSaved ? savedItems : items;

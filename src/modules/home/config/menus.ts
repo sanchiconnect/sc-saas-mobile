@@ -3,48 +3,47 @@ import type {MenuItem} from '../types';
 // `userKey` matches the frontend's `brandDetails.users.<key>` flag for each
 // role. If the tenant has disabled investors, the Investors row is hidden, etc.
 // `featureKey` (where present) matches a flag in `brandDetails.features.*`.
+// Note: the web Connect directory lists every stakeholder type to every user
+// (including your own type), so these items are NOT gated by account type —
+// only by the tenant's `users.<key>` enable flag. Adding excludeAccountTypes
+// here would hide e.g. the Startups tab from a startup account, which is the
+// opposite of the web behavior.
 export const connectItems: MenuItem[] = [
   {
     key: 'startups',
     label: 'Startups',
     icon: 'rocket-launch',
     userKey: 'startups',
-    excludeAccountTypes: ['startup'],
   },
   {
     key: 'investors',
     label: 'Investors',
     icon: 'cash-multiple',
     userKey: 'investors',
-    excludeAccountTypes: ['investor'],
   },
   {
     key: 'corporates',
     label: 'Corporates',
     icon: 'office-building',
     userKey: 'corporates',
-    excludeAccountTypes: ['corporate'],
   },
   {
     key: 'mentors',
     label: 'Mentors',
     icon: 'account-tie',
     userKey: 'mentors',
-    excludeAccountTypes: ['mentor'],
   },
   {
     key: 'service-providers',
     label: 'Service Providers',
     icon: 'briefcase',
     userKey: 'service_providers',
-    excludeAccountTypes: ['service_provider'],
   },
   {
     key: 'partners',
     label: 'Partners',
     icon: 'handshake',
     userKey: 'partners',
-    excludeAccountTypes: ['partner'],
   },
   {
     key: 'program-office-team',

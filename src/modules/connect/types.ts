@@ -15,7 +15,7 @@ export type ConnectRoleKey =
   | 'program-office-team'
   | 'individuals';
 
-// Each role's URL segment for the public-search + public-profile endpoints.
+// Each role's URL segment for the public-search endpoint.
 // A few differ from the menu key (kebab → snake/plural the backend expects).
 export const ROLE_ENDPOINT_SEGMENT: Record<ConnectRoleKey, string> = {
   startups: 'startups',
@@ -28,16 +28,54 @@ export const ROLE_ENDPOINT_SEGMENT: Record<ConnectRoleKey, string> = {
   individuals: 'individuals',
 };
 
+// Plural + singular path fragments used by the role-specific detail endpoints:
+//   GET api/v1/{plural}/public/{singular}-information/{profileUuid}
+//   GET api/v1/forms-management/profile/data/{singular}/{profileUuid}
+//   GET api/v1/{plural}/increment_views/{profileUuid}
+//   GET api/v1/wishlist/{ownerId}/{singular}
+// Confirmed for startups; the rest follow the same convention.
+export const ROLE_API_FRAGMENT: Record<
+  ConnectRoleKey,
+  {plural: string; singular: string}
+> = {
+  startups: {plural: 'startups', singular: 'startup'},
+  investors: {plural: 'investors', singular: 'investor'},
+  corporates: {plural: 'corporates', singular: 'corporate'},
+  mentors: {plural: 'mentors', singular: 'mentor'},
+  'service-providers': {
+    plural: 'service-providers',
+    singular: 'service-provider',
+  },
+  partners: {plural: 'partners', singular: 'partner'},
+  'program-office-team': {
+    plural: 'program-offices',
+    singular: 'program-office',
+  },
+  individuals: {plural: 'individuals', singular: 'individual'},
+};
+
+// The relationship between the signed-in user and a directory member, derived
+// from POST connections/check/request/{userUuid}. Drives the Connect button.
+export type ConnectionState =
+  | 'none' // can send a request
+  | 'pending' // a request is already outstanding (sent or received)
+  | 'connected'; // already connected
+
 // A single directory entry. Field names vary a lot across roles and backend
 // versions (companyName vs organizationName vs name; companyLogo vs avatar; …)
 // so the raw payload is kept intact under `raw` and the renderer reads it
 // through the resolvers in utils.ts. The handful of fields below are the ones
 // we always normalize up-front because the list/saved logic depends on them.
 export type DirectoryUser = {
-  // Stable identity used for keys, wishlist, profile navigation. We prefer the
-  // user UUID; fall back to the account-specific uuid or numeric id.
+  // The USER uuid — the identity connect / wishlist / chat key on
+  // (e.g. POST connections/send/request → toUserUUID). Prefer userUUID; fall
+  // back to the account uuid only when no user uuid is present.
   uuid: string;
-  // Numeric id when present — some write endpoints (wishlist) key on it.
+  // The account/profile uuid — what the role-specific detail endpoints key on
+  // (startup-information, forms-management, increment_views). Distinct from the
+  // user uuid: a startup row carries both.
+  profileUuid: string;
+  // Numeric id when present — some write endpoints key on it.
   id?: string;
   accountType?: string;
   raw: Record<string, any>;
