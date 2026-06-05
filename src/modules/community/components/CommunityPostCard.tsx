@@ -1,7 +1,10 @@
-import React, {useContext, useState} from 'react';
+import React, {useContext, useRef, useState} from 'react';
 import {
   ActivityIndicator,
+  Alert,
+  Dimensions,
   Image,
+  Modal,
   Pressable,
   StyleSheet,
   Text,
@@ -38,6 +41,12 @@ type Props = {
   // Called after a reaction is successfully toggled, so the parent can refresh
   // wall stats (e.g. the "reactions" tally in the stats card).
   onReacted?: () => void;
+  // Logged-in user's uuid. When it matches the post author, the header shows a
+  // "..." menu with Edit / Delete. Omitted (guest / share preview) → no menu.
+  currentUserUuid?: string;
+  // Called with the post uuid after the user deletes their own post, so the
+  // parent can drop it from the feed and refresh wall stats.
+  onDeleted?: (uuid: string) => void;
 };
 
 // Resolve a relative S3 path (`users/abc/x.png`) into an absolute URL using
@@ -112,6 +121,8 @@ export function CommunityPostCard({
   readOnly = false,
   canInteract = true,
   onReacted,
+  currentUserUuid,
+  onDeleted,
 }: Props) {
   const {domain, theme} = useContext(TenantContext);
   // Brand accent for the "reacted" (liked) state; falls back to a blue.
@@ -152,6 +163,13 @@ export function CommunityPostCard({
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [replyText, setReplyText] = useState('');
   const [replyingPosting, setReplyingPosting] = useState(false);
+  // Owner overflow menu (Edit / Delete) — open state + in-flight delete guard.
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  // Screen-space anchor for the menu, measured from the "..." trigger so the
+  // dropdown opens right under it instead of floating at a fixed position.
+  const menuBtnRef = useRef<View>(null);
+  const [menuAnchor, setMenuAnchor] = useState({top: 0, right: spacing.lg});
 
   const loadComments = async () => {
     setLoadingComments(true);
@@ -285,6 +303,59 @@ export function CommunityPostCard({
     }
   };
 
+  // Measure the trigger in screen space, then open the menu anchored just below
+  // its bottom-right corner. Falls back to a top-right default if measuring
+  // hasn't resolved yet.
+  const openMenu = () => {
+    const node = menuBtnRef.current;
+    if (!node) {
+      setMenuOpen(true);
+      return;
+    }
+    node.measureInWindow((x, y, width, height) => {
+      const screenWidth = Dimensions.get('window').width;
+      setMenuAnchor({
+        top: y + height + spacing.xs,
+        right: Math.max(spacing.sm, screenWidth - (x + width)),
+      });
+      setMenuOpen(true);
+    });
+  };
+
+  // Permanently delete the post. Confirmed via a native alert; on success the
+  // parent drops it from the feed. Errors surface in an alert so the card stays.
+  const deletePost = async () => {
+    if (isDeleting) return;
+    setIsDeleting(true);
+    try {
+      await communityService.deletePost(token, post.uuid);
+      onDeleted?.(post.uuid);
+    } catch (e: any) {
+      Alert.alert('Delete failed', e?.message || 'Could not delete this post.');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const confirmDelete = () => {
+    setMenuOpen(false);
+    Alert.alert(
+      'Delete post',
+      'This post will be permanently removed. This cannot be undone.',
+      [
+        {text: 'Cancel', style: 'cancel'},
+        {text: 'Delete', style: 'destructive', onPress: deletePost},
+      ],
+    );
+  };
+
+  // Edit isn't wired to a compose flow yet — surface a placeholder so the menu
+  // action is discoverable without pretending it works.
+  const handleEdit = () => {
+    setMenuOpen(false);
+    Alert.alert('Edit post', 'Editing posts will be available soon.');
+  };
+
   const avatarUri = resolveUrl(
     post.user.avatar || post.user.organizationLogo,
     logoBaseUrl,
@@ -311,6 +382,11 @@ export function CommunityPostCard({
   const pollEnded = pollTimeLeftLabel === 'Poll ended';
   const hasVoted = pollOptions.some(o => o.userVoted);
   const canVotePoll = !readOnly && !locked && !pollEnded && !hasVoted;
+
+  // The overflow menu (Edit / Delete) is for the author's own posts only, and
+  // never in the read-only share preview.
+  const canManage =
+    !readOnly && !!currentUserUuid && post.user.uuid === currentUserUuid;
 
   return (
     <View style={styles.card}>
@@ -341,8 +417,63 @@ export function CommunityPostCard({
           <Text style={styles.timeText}>{timeAgo(post.createdAt)}</Text>
         </View>
 
-        <Icon name="dots-horizontal" size={22} color="#94a3b8" />
+        {canManage ? (
+          isDeleting ? (
+            <ActivityIndicator size="small" color="#94a3b8" />
+          ) : (
+            <Pressable
+              ref={menuBtnRef}
+              onPress={openMenu}
+              hitSlop={10}
+              accessibilityRole="button"
+              accessibilityLabel="Post options">
+              <Icon name="dots-horizontal" size={22} color="#94a3b8" />
+            </Pressable>
+          )
+        ) : null}
       </View>
+
+      {/* Owner overflow menu — Edit / Delete. A transparent backdrop dismisses
+          it; the card itself anchors the dropdown to the top-right. */}
+      {canManage ? (
+        <Modal
+          visible={menuOpen}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setMenuOpen(false)}>
+          <Pressable
+            style={styles.menuBackdrop}
+            onPress={() => setMenuOpen(false)}>
+            <View
+              style={[
+                styles.menuCard,
+                {top: menuAnchor.top, right: menuAnchor.right},
+              ]}>
+              <Pressable
+                style={({pressed}) => [
+                  styles.menuItem,
+                  pressed && styles.menuItemPressed,
+                ]}
+                onPress={handleEdit}>
+                <Text style={styles.menuItemText}>Edit</Text>
+                <Icon name="pencil-outline" size={18} color="#475569" />
+              </Pressable>
+              <View style={styles.menuDivider} />
+              <Pressable
+                style={({pressed}) => [
+                  styles.menuItem,
+                  pressed && styles.menuItemPressed,
+                ]}
+                onPress={confirmDelete}>
+                <Text style={[styles.menuItemText, styles.menuItemDanger]}>
+                  Delete
+                </Text>
+                <Icon name="trash-can-outline" size={18} color="#dc2626" />
+              </Pressable>
+            </View>
+          </Pressable>
+        </Modal>
+      ) : null}
 
       {/* Body text */}
       {text ? <Text style={styles.bodyText}>{text}</Text> : null}
@@ -728,6 +859,47 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     gap: spacing.md,
+  },
+  // Backdrop fills the screen; the menu card is pinned near the top-right to
+  // sit roughly under the "..." trigger.
+  menuBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15,23,42,0.15)',
+  },
+  menuCard: {
+    position: 'absolute',
+    backgroundColor: '#ffffff',
+    borderRadius: radii.md,
+    paddingVertical: spacing.xs,
+    minWidth: 168,
+    shadowColor: '#0f172a',
+    shadowOffset: {width: 0, height: 6},
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+    elevation: 6,
+  },
+  menuItem: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+  },
+  menuItemPressed: {
+    backgroundColor: '#f1f5f9',
+  },
+  menuItemText: {
+    color: '#0f172a',
+    fontSize: typography.body,
+    fontWeight: '600',
+  },
+  menuItemDanger: {
+    color: '#dc2626',
+  },
+  menuDivider: {
+    backgroundColor: '#e2e8f0',
+    height: 1,
+    marginHorizontal: spacing.md,
   },
   avatarWrap: {
     alignItems: 'center',

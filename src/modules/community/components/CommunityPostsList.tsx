@@ -33,6 +33,11 @@ type Props = {
   // Called after a reaction is toggled on any card, so the parent can refresh
   // wall stats.
   onReacted?: () => void;
+  // Logged-in user's uuid — forwarded to each card so authors get the
+  // Edit / Delete menu on their own posts.
+  currentUserUuid?: string;
+  // Called after a post is deleted, so the parent can refresh wall stats.
+  onPostDeleted?: () => void;
 };
 
 // Paginated, pull-to-refresh, infinite-scroll list of community posts. The
@@ -50,6 +55,8 @@ export function CommunityPostsList({
   emptySubtitle = 'Community posts will appear here.',
   canInteract = true,
   onReacted,
+  currentUserUuid,
+  onPostDeleted,
 }: Props) {
   const [posts, setPosts] = useState<CommunityPost[]>([]);
   const [page, setPage] = useState(1);
@@ -92,6 +99,16 @@ export function CommunityPostsList({
     loadPage(1, 'refresh');
   }, [loadPage]);
 
+  // Drop a deleted post from the list immediately and let the parent refresh
+  // wall stats (the "My Posts" / "My Polls" tallies).
+  const handleDeleted = useCallback(
+    (uuid: string) => {
+      setPosts(prev => prev.filter(p => p.uuid !== uuid));
+      onPostDeleted?.();
+    },
+    [onPostDeleted],
+  );
+
   const handleEndReached = useCallback(() => {
     if (isLoadingMore || isLoading || isRefreshing) return;
     if (page >= totalPages) return;
@@ -127,6 +144,8 @@ export function CommunityPostsList({
           logoBaseUrl={logoBaseUrl}
           canInteract={canInteract}
           onReacted={onReacted}
+          currentUserUuid={currentUserUuid}
+          onDeleted={handleDeleted}
         />
       )}
       contentContainerStyle={styles.listContent}

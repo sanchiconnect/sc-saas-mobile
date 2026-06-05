@@ -166,6 +166,21 @@ export const communityService = {
     );
   },
 
+  // Delete one of the logged-in user's own wall posts (including any attached
+  // poll). The backend authorises by owner, so this only succeeds for posts the
+  // caller created. Returns just a status message.
+  async deletePost(
+    token: string,
+    postUuid: string,
+  ): Promise<{status_code: number; message: string}> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<{status_code: number; message: string}>(
+      `${BASE}/posts/${postUuid}`,
+      {method: 'DELETE', headers: getAuthHeader(token)},
+      baseUrl,
+    );
+  },
+
   // Paginated list of comments on a post. Same `{ data: { items, meta } }`
   // shape as the posts feed.
   async listComments(
