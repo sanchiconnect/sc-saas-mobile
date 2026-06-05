@@ -126,6 +126,7 @@ export function CommunityWallScreen({
         </View>
         <CommunityPostsList
           key={activeFilter}
+          token={token}
           primaryColor={primaryColor}
           logoBaseUrl={logoBaseUrl}
           fetchPage={fetchFiltered}
@@ -140,6 +141,7 @@ export function CommunityWallScreen({
   return (
     <CommunityPostsList
       key="feed"
+      token={token}
       primaryColor={primaryColor}
       logoBaseUrl={logoBaseUrl}
       fetchPage={fetchFeed}

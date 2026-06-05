@@ -87,10 +87,57 @@ export type WallStatsResponse = {
   data: WallStats;
 };
 
+// Poll attached to a new post. `timeLine` is the backend duration enum
+// (one_day / one_week / one_month).
+export type CreatePollPayload = {
+  question: string;
+  options: string[];
+  timeLine: string;
+};
+
 export type CreatePostResponse = {
   status_code: number;
   message: string;
   data?: CommunityPost;
+};
+
+// A single comment on a wall post
+// (`api/v1/community-wall/posts/:uuid/comments`).
+export type CommunityComment = {
+  uuid: string;
+  comment: string;
+  createdAt: string;
+  user: CommunityPostUser;
+  // The backend may report nested-reply / reaction tallies per comment.
+  totalReplies?: number;
+  totalReactions?: number;
+};
+
+export type AddCommentResponse = {
+  status_code: number;
+  message: string;
+  data?: CommunityComment;
+};
+
+// A reply to a comment. The backend returns the same shape as a comment,
+// nested under its parent comment.
+export type CommunityReply = CommunityComment;
+
+export type AddReplyResponse = {
+  status_code: number;
+  message: string;
+  data?: CommunityReply;
+};
+
+// Listing comments for a post. The backend paginates like the posts feed
+// (`{ data: { items, meta } }`).
+export type CommentsResponse = {
+  status_code: number;
+  message: string;
+  data: {
+    items: CommunityComment[];
+    meta: PaginationMeta;
+  };
 };
 
 export type PaginationMeta = {

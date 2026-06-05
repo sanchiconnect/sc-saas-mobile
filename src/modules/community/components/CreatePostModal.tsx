@@ -17,6 +17,7 @@ import {RichEditor, actions} from 'react-native-pell-rich-editor';
 import {Icon} from '../../../core/components/Icon';
 import {radii, spacing, typography} from '../../../core/theme/colors';
 import {communityService} from '../services/community.service';
+import {CreatePollModal, type PollDraft} from './CreatePollModal';
 import {ImageUploadModal, type PickedImage} from './ImageUploadModal';
 
 type Props = {
@@ -56,15 +57,19 @@ export function CreatePostModal({
   const [isImagePickerOpen, setIsImagePickerOpen] = useState(false);
   const [isLinkOpen, setIsLinkOpen] = useState(false);
   const [linkUrl, setLinkUrl] = useState('');
+  const [poll, setPoll] = useState<PollDraft | null>(null);
+  const [isPollOpen, setIsPollOpen] = useState(false);
   const [isPosting, setIsPosting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Poll is view-only for now (not persisted), so it doesn't gate posting.
   const canPost = (hasText(html) || images.length > 0) && !isPosting;
 
   const reset = () => {
     richText.current?.setContentHTML('');
     setHtml('');
     setImages([]);
+    setPoll(null);
     setError(null);
     setLinkUrl('');
     setIsLinkOpen(false);
@@ -108,6 +113,8 @@ export function CreatePostModal({
       const paths = await Promise.all(
         images.map(img => communityService.uploadFile(token, img)),
       );
+      // Poll is view-only for now — built and previewed, but not yet sent to
+      // the backend. Pass `poll` here once the create-poll contract is wired.
       await communityService.createPost(token, html, paths);
       reset();
       onPosted();
@@ -205,6 +212,40 @@ export function CreatePostModal({
                 ))}
               </View>
             ) : null}
+
+            {/* Poll preview */}
+            {poll ? (
+              <View style={styles.pollPreview}>
+                <View style={styles.pollPreviewHeader}>
+                  <Text style={styles.pollPreviewQuestion} numberOfLines={2}>
+                    {poll.question}
+                  </Text>
+                  <View style={styles.pollPreviewActions}>
+                    <Pressable
+                      onPress={() => setIsPollOpen(true)}
+                      accessibilityRole="button"
+                      accessibilityLabel="Edit poll"
+                      hitSlop={6}>
+                      <Icon name="pencil-outline" size={18} color="#475569" />
+                    </Pressable>
+                    <Pressable
+                      onPress={() => setPoll(null)}
+                      accessibilityRole="button"
+                      accessibilityLabel="Remove poll"
+                      hitSlop={6}>
+                      <Icon name="close" size={18} color="#94a3b8" />
+                    </Pressable>
+                  </View>
+                </View>
+                {poll.options.map((option, i) => (
+                  <View key={i} style={styles.pollPreviewOption}>
+                    <Text style={styles.pollPreviewOptionText} numberOfLines={1}>
+                      {option}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
           </ScrollView>
 
           {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -243,10 +284,15 @@ export function CreatePostModal({
               </Pressable>
               <Pressable
                 style={styles.mediaButton}
+                onPress={() => setIsPollOpen(true)}
                 accessibilityRole="button"
                 accessibilityLabel="Add poll"
                 hitSlop={6}>
-                <Icon name="poll" size={24} color="#475569" />
+                <Icon
+                  name="poll"
+                  size={24}
+                  color={poll ? primaryColor : '#475569'}
+                />
               </Pressable>
             </View>
           </View>
@@ -259,6 +305,15 @@ export function CreatePostModal({
         primaryColor={primaryColor}
         onClose={() => setIsImagePickerOpen(false)}
         onPicked={picked => setImages(prev => [...prev, ...picked])}
+      />
+
+      {/* Poll builder sub-modal */}
+      <CreatePollModal
+        visible={isPollOpen}
+        primaryColor={primaryColor}
+        initial={poll}
+        onClose={() => setIsPollOpen(false)}
+        onSave={setPoll}
       />
 
       {/* Link URL prompt */}
@@ -381,6 +436,44 @@ const styles = StyleSheet.create({
     right: -6,
     top: -6,
     width: 22,
+  },
+  pollPreview: {
+    backgroundColor: '#f8fafc',
+    borderColor: '#e2e8f0',
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    marginTop: spacing.md,
+    padding: spacing.md,
+  },
+  pollPreviewHeader: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    gap: spacing.sm,
+    justifyContent: 'space-between',
+    marginBottom: spacing.sm,
+  },
+  pollPreviewQuestion: {
+    color: '#0f172a',
+    flex: 1,
+    fontSize: typography.subhead,
+    fontWeight: '700',
+  },
+  pollPreviewActions: {
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  pollPreviewOption: {
+    backgroundColor: '#ffffff',
+    borderColor: '#e2e8f0',
+    borderRadius: radii.md,
+    borderWidth: 1,
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
+  },
+  pollPreviewOptionText: {
+    color: '#0f172a',
+    fontSize: typography.body,
   },
   error: {
     color: '#dc2626',

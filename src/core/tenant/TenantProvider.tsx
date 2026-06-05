@@ -14,6 +14,9 @@ type TenantContextType = {
   baseUrl: string | null;
   loading: boolean;
   theme: ThemeType | null;
+  // Tenant web domain (customDomain preferred, else the default domain) from
+  // /verify_tenant. Used to build shareable web links to in-app content.
+  domain: string | null;
   globalSetting?: {
     brandName?: string;
     logo?: string;
@@ -42,6 +45,7 @@ export const TenantContext = createContext<TenantContextType>({
   baseUrl: null,
   loading: true,
   theme: null,
+  domain: null,
   globalSetting: null,
 });
 
@@ -49,6 +53,7 @@ export const TenantProvider = ({children}: Props) => {
   const [baseUrl, setBaseUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [theme, setTheme] = useState<ThemeType | null>(null);
+  const [domain, setDomain] = useState<string | null>(null);
   const [globalSetting, setGlobalSetting] =
     useState<TenantContextType['globalSetting']>(null);
 
@@ -94,6 +99,9 @@ export const TenantProvider = ({children}: Props) => {
       try {
         const res = await fetchTenantsSetting();
         const url = res?.data?.apiUrl;
+        // Prefer a tenant's custom domain over the default for share links.
+        const tenantDomain = res?.data?.customDomain || res?.data?.domain;
+        if (tenantDomain) setDomain(tenantDomain);
 
         if (url) {
           setBaseUrl(url);
@@ -111,7 +119,8 @@ export const TenantProvider = ({children}: Props) => {
   }, []);
 
   return (
-    <TenantContext.Provider value={{baseUrl, loading, theme, globalSetting}}>
+    <TenantContext.Provider
+      value={{baseUrl, loading, theme, domain, globalSetting}}>
       {children}
     </TenantContext.Provider>
   );

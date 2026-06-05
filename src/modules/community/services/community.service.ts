@@ -6,7 +6,11 @@ import {
   safeJsonParse,
 } from '../../../core/api/apiClient';
 import type {
+  AddCommentResponse,
+  AddReplyResponse,
+  CommentsResponse,
   CommunityPostsResponse,
+  CreatePollPayload,
   CreatePostResponse,
   WallStatsResponse,
 } from '../types';
@@ -132,6 +136,7 @@ export const communityService = {
     token: string,
     text: string,
     images: string[] = [],
+    poll: CreatePollPayload | null = null,
   ): Promise<CreatePostResponse> {
     const baseUrl = await resolveBaseUrl();
     return requestJson<CreatePostResponse>(
@@ -139,7 +144,61 @@ export const communityService = {
       {
         method: 'POST',
         headers: getAuthHeader(token),
-        body: JSON.stringify({text, images}),
+        body: JSON.stringify({text, images, ...(poll ? {poll} : {})}),
+      },
+      baseUrl,
+    );
+  },
+
+  // Paginated list of comments on a post. Same `{ data: { items, meta } }`
+  // shape as the posts feed.
+  async listComments(
+    token: string,
+    postUuid: string,
+    {page = 1}: {page?: number} = {},
+  ): Promise<CommentsResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<CommentsResponse>(
+      `${BASE}/posts/${postUuid}/comments?page=${page}`,
+      {method: 'GET', headers: getAuthHeader(token)},
+      baseUrl,
+    );
+  },
+
+  // Post a comment on a wall post. The backend expects `{ comment }` and
+  // returns the created comment under `data`.
+  async addComment(
+    token: string,
+    postUuid: string,
+    comment: string,
+  ): Promise<AddCommentResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<AddCommentResponse>(
+      `${BASE}/posts/${postUuid}/comments`,
+      {
+        method: 'POST',
+        headers: getAuthHeader(token),
+        body: JSON.stringify({comment}),
+      },
+      baseUrl,
+    );
+  },
+
+  // Reply to a comment on a post. The backend nests replies under the parent
+  // comment and, like `addComment`, expects `{ comment }`.
+  async replyToComment(
+    token: string,
+    postUuid: string,
+    commentUuid: string,
+    comment: string,
+  ): Promise<AddReplyResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<AddReplyResponse>(
+      `${BASE}/posts/${postUuid}/comments/${commentUuid}/reply`,
+      {
+        method: 'POST',
+        headers: getAuthHeader(token),
+        body: JSON.stringify({comment}),
       },
       baseUrl,
     );

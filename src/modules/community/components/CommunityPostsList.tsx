@@ -14,6 +14,8 @@ import {CommunityPostCard} from './CommunityPostCard';
 import type {CommunityPost, CommunityPostsResponse} from '../types';
 
 type Props = {
+  // Auth token — forwarded to each card so users can post comments.
+  token: string;
   primaryColor: string;
   logoBaseUrl?: string;
   // Fetches one page of posts. Must be stable (memoised) — a new identity
@@ -31,6 +33,7 @@ type Props = {
 // data source is injected via `fetchPage`, so the same list renders the main
 // feed and every filtered ("My Posts", "My Polls", …) view.
 export function CommunityPostsList({
+  token,
   primaryColor,
   logoBaseUrl,
   fetchPage,
@@ -110,7 +113,11 @@ export function CommunityPostsList({
       data={posts}
       keyExtractor={item => item.uuid}
       renderItem={({item}) => (
-        <CommunityPostCard post={item} logoBaseUrl={logoBaseUrl} />
+        <CommunityPostCard
+          post={item}
+          token={token}
+          logoBaseUrl={logoBaseUrl}
+        />
       )}
       contentContainerStyle={styles.listContent}
       showsVerticalScrollIndicator={false}

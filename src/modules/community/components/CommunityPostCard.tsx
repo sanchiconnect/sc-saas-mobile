@@ -1,14 +1,34 @@
-import React from 'react';
-import {Image, StyleSheet, Text, View} from 'react-native';
+import React, {useContext, useState} from 'react';
+import {
+  ActivityIndicator,
+  Image,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 
 import {Icon} from '../../../core/components/Icon';
+import {TenantContext} from '../../../core/tenant/TenantProvider';
 import {radii, spacing, typography} from '../../../core/theme/colors';
-import type {CommunityPost} from '../types';
+import {communityService} from '../services/community.service';
+import {SharePostModal} from './SharePostModal';
+import type {CommunityComment, CommunityPost} from '../types';
+
+// Greyed-out tint for footer actions in readOnly (guest) mode.
+const MUTED = '#cbd5e1';
 
 type Props = {
   post: CommunityPost;
+  // Auth token — required to post a comment.
+  token: string;
   // Tenant imgKit base for resolving relative avatar / image paths.
   logoBaseUrl?: string;
+  // Guest / shared-post mode: render the post but disable every write action
+  // (comment, reply, react, share). Used by the share preview so a signed-out
+  // viewer can read the post without being able to interact with it.
+  readOnly?: boolean;
 };
 
 // Resolve a relative S3 path (`users/abc/x.png`) into an absolute URL using
@@ -76,7 +96,114 @@ const pollTimeLeft = (timeLine: string, createdAt: string): string => {
   return `${days} day${days === 1 ? '' : 's'} left`;
 };
 
-export function CommunityPostCard({post, logoBaseUrl}: Props) {
+export function CommunityPostCard({
+  post,
+  token,
+  logoBaseUrl,
+  readOnly = false,
+}: Props) {
+  const {domain} = useContext(TenantContext);
+  // Web URL to this post for the share sheet. Must mirror the frontend's
+  // single-post route (`/community-feed/posts/post/:uuid`); only built when
+  // the tenant domain is known.
+  const shareUrl = domain
+    ? `https://${domain}/community-feed/posts/post/${post.uuid}`
+    : undefined;
+  const [isShareOpen, setIsShareOpen] = useState(false);
+  const [comment, setComment] = useState('');
+  const [isPosting, setIsPosting] = useState(false);
+  // Locally tracked so the footer count bumps right after a successful post,
+  // without waiting for a full feed reload.
+  const [commentCount, setCommentCount] = useState(post.stats.totalComments);
+  // Comment thread — lazily fetched the first time the user expands it.
+  const [expanded, setExpanded] = useState(false);
+  const [comments, setComments] = useState<CommunityComment[]>([]);
+  const [commentsLoaded, setCommentsLoaded] = useState(false);
+  const [loadingComments, setLoadingComments] = useState(false);
+  // Reply composer — only one comment's reply box is open at a time.
+  const [replyingTo, setReplyingTo] = useState<string | null>(null);
+  const [replyText, setReplyText] = useState('');
+  const [replyingPosting, setReplyingPosting] = useState(false);
+
+  const loadComments = async () => {
+    setLoadingComments(true);
+    try {
+      const res = await communityService.listComments(token, post.uuid);
+      const items = res?.data?.items ?? [];
+      setComments(items);
+      setCommentsLoaded(true);
+      // Trust the server's total over the feed snapshot.
+      const total = res?.data?.meta?.totalItems;
+      if (typeof total === 'number') setCommentCount(total);
+    } catch {
+      // Leave the thread empty; the user can collapse and retry.
+    } finally {
+      setLoadingComments(false);
+    }
+  };
+
+  const toggleComments = () => {
+    if (readOnly) return;
+    const next = !expanded;
+    setExpanded(next);
+    if (next && !commentsLoaded && !loadingComments) loadComments();
+  };
+
+  const submitComment = async () => {
+    const trimmed = comment.trim();
+    if (readOnly || !trimmed || isPosting) return;
+    setIsPosting(true);
+    try {
+      const res = await communityService.addComment(token, post.uuid, trimmed);
+      setComment('');
+      setCommentCount(prev => prev + 1);
+      // Show the new comment immediately if the thread is open.
+      if (res?.data) setComments(prev => [res.data as CommunityComment, ...prev]);
+      if (!expanded) {
+        setExpanded(true);
+        if (!commentsLoaded) loadComments();
+      }
+    } catch {
+      // Keep the draft so the user can retry on failure.
+    } finally {
+      setIsPosting(false);
+    }
+  };
+
+  const toggleReply = (commentUuid: string) => {
+    if (readOnly) return;
+    setReplyingTo(prev => (prev === commentUuid ? null : commentUuid));
+    setReplyText('');
+  };
+
+  const submitReply = async (commentUuid: string) => {
+    const trimmed = replyText.trim();
+    if (readOnly || !trimmed || replyingPosting) return;
+    setReplyingPosting(true);
+    try {
+      await communityService.replyToComment(
+        token,
+        post.uuid,
+        commentUuid,
+        trimmed,
+      );
+      // Bump the parent comment's reply tally and close the composer.
+      setComments(prev =>
+        prev.map(c =>
+          c.uuid === commentUuid
+            ? {...c, totalReplies: (c.totalReplies ?? 0) + 1}
+            : c,
+        ),
+      );
+      setReplyText('');
+      setReplyingTo(null);
+    } catch {
+      // Keep the draft so the user can retry on failure.
+    } finally {
+      setReplyingPosting(false);
+    }
+  };
+
   const avatarUri = resolveUrl(
     post.user.avatar || post.user.organizationLogo,
     logoBaseUrl,
@@ -161,27 +288,217 @@ export function CommunityPostCard({post, logoBaseUrl}: Props) {
         </View>
       ) : null}
 
-      {/* Footer — comment / reaction counts + share */}
+      {/* Footer — comment / reaction counts + share. In readOnly (guest /
+          shared-post) mode every item is rendered muted and non-interactive. */}
       <View style={styles.footer}>
+        {readOnly ? (
+          <View style={styles.footerItem}>
+            <Icon name="comment-outline" size={18} color={MUTED} />
+            <Text style={[styles.footerText, styles.footerTextMuted]}>
+              {commentCount} comment
+              {commentCount === 1 ? '' : 's'}
+            </Text>
+          </View>
+        ) : (
+          <Pressable
+            style={({pressed}) => [
+              styles.footerItem,
+              pressed && styles.sendPressed,
+            ]}
+            onPress={toggleComments}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={expanded ? 'Hide comments' : 'Show comments'}>
+            <Icon name="comment-outline" size={18} color="#64748b" />
+            <Text style={styles.footerText}>
+              {commentCount} comment
+              {commentCount === 1 ? '' : 's'}
+            </Text>
+          </Pressable>
+        )}
         <View style={styles.footerItem}>
-          <Icon name="comment-outline" size={18} color="#64748b" />
-          <Text style={styles.footerText}>
-            {post.stats.totalComments} comment
-            {post.stats.totalComments === 1 ? '' : 's'}
-          </Text>
-        </View>
-        <View style={styles.footerItem}>
-          <Icon name="thumb-up-outline" size={18} color="#64748b" />
-          <Text style={styles.footerText}>
+          <Icon name="thumb-up-outline" size={18} color={readOnly ? MUTED : '#64748b'} />
+          <Text style={[styles.footerText, readOnly && styles.footerTextMuted]}>
             {post.stats.totalReactions} reaction
             {post.stats.totalReactions === 1 ? '' : 's'}
           </Text>
         </View>
-        <View style={styles.footerItem}>
-          <Icon name="share-variant-outline" size={18} color="#64748b" />
-          <Text style={styles.footerText}>Share</Text>
-        </View>
+        {readOnly ? (
+          <View style={styles.footerItem}>
+            <Icon name="share-variant-outline" size={18} color={MUTED} />
+            <Text style={[styles.footerText, styles.footerTextMuted]}>Share</Text>
+          </View>
+        ) : (
+          <Pressable
+            style={({pressed}) => [
+              styles.footerItem,
+              pressed && styles.sendPressed,
+            ]}
+            onPress={() => setIsShareOpen(true)}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Share post">
+            <Icon name="share-variant-outline" size={18} color="#64748b" />
+            <Text style={styles.footerText}>Share</Text>
+          </Pressable>
+        )}
       </View>
+
+      {/* Comment thread (lazy — only once expanded) */}
+      {expanded ? (
+        <View style={styles.thread}>
+          <View style={styles.threadHeader}>
+            <Text style={styles.threadHeaderText}>Comments</Text>
+          </View>
+          {loadingComments ? (
+            <ActivityIndicator
+              size="small"
+              color="#64748b"
+              style={styles.threadLoader}
+            />
+          ) : comments.length === 0 ? (
+            <Text style={styles.threadEmpty}>No comments yet.</Text>
+          ) : (
+            comments.map(c => {
+              const cAvatar = resolveUrl(c.user?.avatar, logoBaseUrl);
+              return (
+                <View key={c.uuid} style={styles.commentRow}>
+                  <View style={styles.commentAvatar}>
+                    {cAvatar ? (
+                      <Image
+                        source={{uri: cAvatar}}
+                        style={styles.avatarImage}
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <Text style={styles.commentAvatarText}>
+                        {(c.user?.name ?? '?').slice(0, 2).toUpperCase()}
+                      </Text>
+                    )}
+                  </View>
+                  <View style={styles.commentBody}>
+                    <View style={styles.commentMetaRow}>
+                      <Text style={styles.commentAuthor} numberOfLines={1}>
+                        {c.user?.name ?? 'Member'}
+                      </Text>
+                      <Text style={styles.commentTime}>
+                        {timeAgo(c.createdAt)}
+                      </Text>
+                    </View>
+                    <Text style={styles.commentText}>{c.comment}</Text>
+
+                    {/* Reply count + toggle */}
+                    <View style={styles.commentActions}>
+                      <View style={styles.footerItem}>
+                        <Icon
+                          name="comment-outline"
+                          size={15}
+                          color="#94a3b8"
+                        />
+                        <Text style={styles.commentActionText}>
+                          {c.totalReplies ?? 0} repl
+                          {(c.totalReplies ?? 0) === 1 ? 'y' : 'ies'}
+                        </Text>
+                      </View>
+                      <Pressable
+                        onPress={() => toggleReply(c.uuid)}
+                        hitSlop={8}
+                        accessibilityRole="button"
+                        accessibilityLabel="Reply to comment"
+                        style={({pressed}) => pressed && styles.sendPressed}>
+                        <Text style={styles.replyToggleText}>Reply</Text>
+                      </Pressable>
+                    </View>
+
+                    {/* Reply composer (only for the active comment) */}
+                    {replyingTo === c.uuid ? (
+                      <View style={styles.replyBar}>
+                        <TextInput
+                          style={styles.replyInput}
+                          value={replyText}
+                          onChangeText={setReplyText}
+                          placeholder="Write a reply"
+                          placeholderTextColor="#94a3b8"
+                          multiline
+                          editable={!replyingPosting}
+                          onSubmitEditing={() => submitReply(c.uuid)}
+                          returnKeyType="send"
+                          autoFocus
+                        />
+                        {replyingPosting ? (
+                          <ActivityIndicator size="small" color="#64748b" />
+                        ) : (
+                          <Pressable
+                            onPress={() => submitReply(c.uuid)}
+                            disabled={!replyText.trim()}
+                            hitSlop={10}
+                            accessibilityRole="button"
+                            accessibilityLabel="Post reply"
+                            style={({pressed}) =>
+                              pressed && styles.sendPressed
+                            }>
+                            <Icon
+                              name="send-outline"
+                              size={20}
+                              color={replyText.trim() ? '#475569' : '#cbd5e1'}
+                            />
+                          </Pressable>
+                        )}
+                      </View>
+                    ) : null}
+                  </View>
+                </View>
+              );
+            })
+          )}
+        </View>
+      ) : null}
+
+      {/* Comment composer — disabled in readOnly mode so a signed-out viewer
+          sees, but cannot use, the input. */}
+      <View style={[styles.commentBar, readOnly && styles.commentBarMuted]}>
+        <TextInput
+          style={styles.commentInput}
+          value={comment}
+          onChangeText={setComment}
+          placeholder={readOnly ? 'Sign in to comment' : 'Write a comment'}
+          placeholderTextColor="#94a3b8"
+          multiline
+          editable={!readOnly && !isPosting}
+          onSubmitEditing={submitComment}
+          returnKeyType="send"
+        />
+        {readOnly ? (
+          <Icon name="send-outline" size={22} color="#cbd5e1" />
+        ) : isPosting ? (
+          <ActivityIndicator size="small" color="#64748b" />
+        ) : (
+          <Pressable
+            onPress={submitComment}
+            disabled={!comment.trim()}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel="Post comment"
+            style={({pressed}) => pressed && styles.sendPressed}>
+            <Icon
+              name="send-outline"
+              size={22}
+              color={comment.trim() ? '#475569' : '#cbd5e1'}
+            />
+          </Pressable>
+        )}
+      </View>
+
+      {/* Share sheet (live mode only) */}
+      {readOnly ? null : (
+        <SharePostModal
+          visible={isShareOpen}
+          post={post}
+          shareUrl={shareUrl}
+          logoBaseUrl={logoBaseUrl}
+          onClose={() => setIsShareOpen(false)}
+        />
+      )}
     </View>
   );
 }
@@ -333,5 +650,130 @@ const styles = StyleSheet.create({
     color: '#64748b',
     fontSize: typography.body,
     fontWeight: '600',
+  },
+  footerTextMuted: {
+    color: MUTED,
+  },
+  commentBar: {
+    alignItems: 'center',
+    borderTopColor: '#e2e8f0',
+    borderTopWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.md,
+    marginTop: spacing.md,
+    paddingTop: spacing.md,
+  },
+  commentBarMuted: {
+    opacity: 0.7,
+  },
+  commentInput: {
+    color: '#0f172a',
+    flex: 1,
+    fontSize: typography.bodyLg,
+    maxHeight: 96,
+    paddingVertical: 0,
+  },
+  sendPressed: {
+    opacity: 0.5,
+  },
+  thread: {
+    marginTop: spacing.md,
+  },
+  threadHeader: {
+    backgroundColor: '#f8fafc',
+    borderRadius: radii.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+  },
+  threadHeaderText: {
+    color: '#475569',
+    fontSize: typography.subhead,
+    fontWeight: '700',
+  },
+  threadLoader: {
+    marginVertical: spacing.lg,
+  },
+  threadEmpty: {
+    color: '#94a3b8',
+    fontSize: typography.body,
+    paddingVertical: spacing.lg,
+  },
+  commentRow: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    marginTop: spacing.lg,
+  },
+  commentAvatar: {
+    alignItems: 'center',
+    backgroundColor: '#f1f5f9',
+    borderColor: '#e2e8f0',
+    borderRadius: radii.md,
+    borderWidth: 1,
+    height: 40,
+    justifyContent: 'center',
+    overflow: 'hidden',
+    width: 40,
+  },
+  commentAvatarText: {
+    color: '#475569',
+    fontSize: typography.body,
+    fontWeight: '800',
+  },
+  commentBody: {
+    flex: 1,
+  },
+  commentMetaRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  commentAuthor: {
+    color: '#0f172a',
+    flexShrink: 1,
+    fontSize: typography.body,
+    fontWeight: '800',
+  },
+  commentTime: {
+    color: '#94a3b8',
+    fontSize: typography.small,
+  },
+  commentText: {
+    color: '#0f172a',
+    fontSize: typography.bodyLg,
+    lineHeight: 20,
+    marginTop: 2,
+  },
+  commentActions: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.lg,
+    marginTop: spacing.sm,
+  },
+  commentActionText: {
+    color: '#94a3b8',
+    fontSize: typography.small,
+    fontWeight: '600',
+  },
+  replyToggleText: {
+    color: '#475569',
+    fontSize: typography.small,
+    fontWeight: '700',
+  },
+  replyBar: {
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    borderRadius: radii.md,
+    flexDirection: 'row',
+    gap: spacing.md,
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  replyInput: {
+    color: '#0f172a',
+    flex: 1,
+    fontSize: typography.body,
+    maxHeight: 80,
+    paddingVertical: 0,
   },
 });
