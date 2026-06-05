@@ -55,6 +55,9 @@ type DashboardContentProps = {
   tenantUsers?: TenantUsersFlags;
   logoBaseUrl?: string;
   canToggleStatus?: boolean;
+  // Whether the signed-in user is approved to publish posts. Forwarded to the
+  // composer; defaults to true.
+  isApproved?: boolean;
 };
 
 function getGreeting(date: Date = new Date()): string {
@@ -79,6 +82,7 @@ export function DashboardContent({
   tenantUsers,
   logoBaseUrl,
   canToggleStatus,
+  isApproved = true,
 }: DashboardContentProps) {
   const progress = Math.max(0, Math.min(profileCompletion, 100));
   // Pre-compute the tick positions for the progress ring. Each tick is a
@@ -283,7 +287,11 @@ export function DashboardContent({
         ))}
       </View>
 
-      <PostComposer primaryColor={primaryColor} token={token} />
+      <PostComposer
+        primaryColor={primaryColor}
+        token={token}
+        isApproved={isApproved}
+      />
 
       <RecommendedSections
         accountType={accountType}

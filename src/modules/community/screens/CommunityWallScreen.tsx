@@ -17,6 +17,9 @@ type Props = {
   logoBaseUrl?: string;
   // Bumped by the parent after a new post is created to force a reload.
   refreshKey?: number;
+  // Whether the signed-in user is approved to comment / react / share.
+  // Forwarded to each post card; defaults to true.
+  canInteract?: boolean;
 };
 
 // Title + empty-state copy for each filtered stat list.
@@ -56,12 +59,16 @@ export function CommunityWallScreen({
   userUuid,
   logoBaseUrl,
   refreshKey = 0,
+  canInteract = true,
 }: Props) {
   const [stats, setStats] = useState<WallStats | null>(null);
   const [activeFilter, setActiveFilter] = useState<WallStatType | null>(null);
+  // Bumped after a reaction so the stats card re-fetches (the reactions tally
+  // moves without needing a full feed reload).
+  const [statsRefresh, setStatsRefresh] = useState(0);
 
-  // Stats reflect the whole wall, not a page — load on mount and after a new
-  // post. A failed stats fetch shouldn't break the feed.
+  // Stats reflect the whole wall, not a page — load on mount, after a new
+  // post, and after a reaction. A failed stats fetch shouldn't break the feed.
   useEffect(() => {
     let cancelled = false;
     communityService
@@ -73,7 +80,9 @@ export function CommunityWallScreen({
     return () => {
       cancelled = true;
     };
-  }, [token, refreshKey]);
+  }, [token, refreshKey, statsRefresh]);
+
+  const handleReacted = useCallback(() => setStatsRefresh(k => k + 1), []);
 
   // Stable fetcher for the main feed (reloads only when token/refreshKey move).
   const fetchFeed = useCallback(
@@ -130,6 +139,8 @@ export function CommunityWallScreen({
           primaryColor={primaryColor}
           logoBaseUrl={logoBaseUrl}
           fetchPage={fetchFiltered}
+          canInteract={canInteract}
+          onReacted={handleReacted}
           emptyIcon={meta.emptyIcon}
           emptyTitle={meta.emptyTitle}
           emptySubtitle={meta.emptySubtitle}
@@ -146,6 +157,8 @@ export function CommunityWallScreen({
       logoBaseUrl={logoBaseUrl}
       fetchPage={fetchFeed}
       reloadKey={refreshKey}
+      canInteract={canInteract}
+      onReacted={handleReacted}
       ListHeaderComponent={statsHeader}
     />
   );

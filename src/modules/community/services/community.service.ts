@@ -144,7 +144,23 @@ export const communityService = {
       {
         method: 'POST',
         headers: getAuthHeader(token),
-        body: JSON.stringify({text, images, ...(poll ? {poll} : {})}),
+        // The backend expects a flat body: `image` / `url` / `file` are always
+        // present (empty when unused), and a poll is spread inline as
+        // `question` / `timeLine` / `options` — NOT nested under a `poll` key.
+        body: JSON.stringify({
+          text,
+          image: '',
+          url: '',
+          file: '',
+          images,
+          ...(poll
+            ? {
+                question: poll.question,
+                timeLine: poll.timeLine,
+                options: poll.options,
+              }
+            : {}),
+        }),
       },
       baseUrl,
     );
@@ -179,6 +195,43 @@ export const communityService = {
         method: 'POST',
         headers: getAuthHeader(token),
         body: JSON.stringify({comment}),
+      },
+      baseUrl,
+    );
+  },
+
+  // React to a wall post. `reaction` is the reaction-type slug (like / love /
+  // funny / surprise / …); defaults to `like`. The backend toggles the
+  // logged-in user's reaction for that type and returns just a status message,
+  // so callers update counts optimistically.
+  async reactToPost(
+    token: string,
+    postUuid: string,
+    reaction: string = 'like',
+  ): Promise<{status_code: number; message: string}> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<{status_code: number; message: string}>(
+      `${BASE}/posts/${postUuid}/react/${reaction}`,
+      {method: 'POST', headers: getAuthHeader(token)},
+      baseUrl,
+    );
+  },
+
+  // Cast a vote on a poll attached to a wall post. The backend identifies the
+  // poll and chosen option by numeric id. Returns just a status message, so
+  // callers update vote counts optimistically.
+  async voteOnPoll(
+    token: string,
+    pollId: number,
+    optionId: number,
+  ): Promise<{status_code: number; message: string}> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<{status_code: number; message: string}>(
+      `${BASE}/posts/poll/vote`,
+      {
+        method: 'POST',
+        headers: getAuthHeader(token),
+        body: JSON.stringify({pollId, optionId}),
       },
       baseUrl,
     );

@@ -14,6 +14,8 @@ import {
 import {AuthSession} from '../auth/models/auth.models';
 import {TenantContext} from '../../core/tenant/TenantProvider';
 import {Icon} from '../../core/components/Icon';
+import {Tooltip} from '../../core/components/Tooltip';
+import {APPROVAL_REQUIRED_MESSAGE} from '../community/constants';
 import {DashboardContent} from './components/DashboardContent';
 import {SectionScreen} from './components/SectionScreen';
 import {SideMenu} from './components/SideMenu';
@@ -618,24 +620,41 @@ export function HomeScreen({
             <Icon name="arrow-left" size={24} color="#475569" />
           </Pressable>
           <Text style={styles.topBarTitle}>Community Wall</Text>
-          <Pressable
-            style={({pressed}) => [
-              styles.createButton,
-              {backgroundColor: primaryColor},
-              pressed && {opacity: 0.85},
-            ]}
-            onPress={() => setIsComposerOpen(true)}
-            accessibilityRole="button"
-            accessibilityLabel="Create post">
-            <Icon name="plus" size={18} color="#ffffff" />
-            <Text style={styles.createButtonText}>CREATE</Text>
-          </Pressable>
+          {summary?.isApproved ? (
+            <Pressable
+              style={({pressed}) => [
+                styles.createButton,
+                {backgroundColor: primaryColor},
+                pressed && {opacity: 0.85},
+              ]}
+              onPress={() => setIsComposerOpen(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Create post">
+              <Icon name="plus" size={18} color="#ffffff" />
+              <Text style={styles.createButtonText}>CREATE</Text>
+            </Pressable>
+          ) : (
+            // Unapproved users can't create posts yet — show the button muted
+            // with a tap-to-reveal "admin approval" tooltip.
+            <Tooltip
+              message={APPROVAL_REQUIRED_MESSAGE}
+              placement="bottom"
+              accessibilityLabel="Create post">
+              <View style={[styles.createButton, {backgroundColor: '#e2e8f0'}]}>
+                <Icon name="plus" size={18} color="#94a3b8" />
+                <Text style={[styles.createButtonText, {color: '#94a3b8'}]}>
+                  CREATE
+                </Text>
+              </View>
+            </Tooltip>
+          )}
         </View>
         <CommunityWallScreen
           token={session.token}
           primaryColor={primaryColor}
           userUuid={summary?.userUuid || session.user.uuid || session.user.id}
           logoBaseUrl={logoBaseUrl ?? undefined}
+          canInteract={Boolean(summary?.isApproved)}
           refreshKey={communityRefreshKey}
         />
         <CreatePostModal
@@ -808,6 +827,7 @@ export function HomeScreen({
               tenantUsers={globalSetting?.users}
               logoBaseUrl={logoBaseUrl ?? undefined}
               canToggleStatus={summary?.canToggleStatus}
+              isApproved={Boolean(summary?.isApproved)}
             />
           </>
         ) : null}
