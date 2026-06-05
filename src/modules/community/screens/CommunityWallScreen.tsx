@@ -83,6 +83,8 @@ export function CommunityWallScreen({
   }, [token, refreshKey, statsRefresh]);
 
   const handleReacted = useCallback(() => setStatsRefresh(k => k + 1), []);
+  // A deleted post changes the user's wall tallies, so refresh the stats card.
+  const handlePostDeleted = useCallback(() => setStatsRefresh(k => k + 1), []);
 
   // Stable fetcher for the main feed (reloads only when token/refreshKey move).
   const fetchFeed = useCallback(
@@ -141,6 +143,8 @@ export function CommunityWallScreen({
           fetchPage={fetchFiltered}
           canInteract={canInteract}
           onReacted={handleReacted}
+          currentUserUuid={userUuid}
+          onPostDeleted={handlePostDeleted}
           emptyIcon={meta.emptyIcon}
           emptyTitle={meta.emptyTitle}
           emptySubtitle={meta.emptySubtitle}
@@ -159,6 +163,8 @@ export function CommunityWallScreen({
       reloadKey={refreshKey}
       canInteract={canInteract}
       onReacted={handleReacted}
+      currentUserUuid={userUuid}
+      onPostDeleted={handlePostDeleted}
       ListHeaderComponent={statsHeader}
     />
   );
