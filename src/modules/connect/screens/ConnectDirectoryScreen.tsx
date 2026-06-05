@@ -1,6 +1,7 @@
 import React, {useCallback, useEffect, useState} from 'react';
 import {
   ActivityIndicator,
+  BackHandler,
   FlatList,
   Modal,
   Pressable,
@@ -122,6 +123,27 @@ export function ConnectDirectoryScreen({
     // render and would re-run this every render, clobbering top-tab selections.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialRoleKey]);
+
+  // Hardware back should step back through this screen's own internal
+  // navigation BEFORE HomeScreen's handler sends the user to the dashboard:
+  // profile detail → list, then saved view → directory. Returning true marks
+  // the event handled so the parent handler doesn't also fire. This listener
+  // is registered after HomeScreen's (child mounts later) so it runs first.
+  useEffect(() => {
+    const onBack = () => {
+      if (activeProfile) {
+        setActiveProfile(null);
+        return true;
+      }
+      if (showSaved) {
+        setShowSaved(false);
+        return true;
+      }
+      return false;
+    };
+    const sub = BackHandler.addEventListener('hardwareBackPress', onBack);
+    return () => sub.remove();
+  }, [activeProfile, showSaved]);
 
   const fetchPage = useCallback(
     async (targetPage: number, mode: 'replace' | 'append') => {

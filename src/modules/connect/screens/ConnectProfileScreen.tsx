@@ -2,7 +2,9 @@ import React, {useEffect, useMemo, useState} from 'react';
 import {
   ActivityIndicator,
   Image,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -345,7 +347,15 @@ export function ConnectProfileScreen({
         visible={connectOpen}
         animationType="fade"
         onRequestClose={() => (isSending ? undefined : setConnectOpen(false))}>
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          // A React Native <Modal> on Android lives in its own dialog window
+          // that doesn't reliably honor the activity's adjustResize, so a
+          // centered card gets covered by the keyboard on real devices (it
+          // looked fine on the emulator). `height` actively shrinks the overlay
+          // so the card + Send/Cancel buttons stay above the keyboard; iOS uses
+          // the smoother `padding`.
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <Pressable
             style={styles.modalBackdrop}
             onPress={() => (isSending ? undefined : setConnectOpen(false))}
@@ -388,7 +398,7 @@ export function ConnectProfileScreen({
               </Pressable>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
