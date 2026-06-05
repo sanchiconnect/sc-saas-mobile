@@ -166,6 +166,36 @@ export const communityService = {
     );
   },
 
+  // Edit the text of one of the logged-in user's own wall posts. Only the
+  // rich-text body changes — the existing images are echoed back unchanged so
+  // the backend doesn't drop them, and any poll is left untouched. The backend
+  // authorises by owner, so this only succeeds for posts the caller created.
+  async updatePost(
+    token: string,
+    postUuid: string,
+    text: string,
+    images: string[] = [],
+  ): Promise<CreatePostResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<CreatePostResponse>(
+      `${BASE}/posts/${postUuid}`,
+      {
+        method: 'PATCH',
+        headers: getAuthHeader(token),
+        // `image` / `url` / `file` are sent null and the existing `images` are
+        // echoed back so editing the text never wipes the attached image(s).
+        body: JSON.stringify({
+          text,
+          image: null,
+          url: null,
+          file: null,
+          images,
+        }),
+      },
+      baseUrl,
+    );
+  },
+
   // Delete one of the logged-in user's own wall posts (including any attached
   // poll). The backend authorises by owner, so this only succeeds for posts the
   // caller created. Returns just a status message.

@@ -18,6 +18,7 @@ import {TenantContext} from '../../../core/tenant/TenantProvider';
 import {radii, spacing, typography, withAlpha} from '../../../core/theme/colors';
 import {APPROVAL_REQUIRED_MESSAGE} from '../constants';
 import {communityService} from '../services/community.service';
+import {EditPostModal} from './EditPostModal';
 import {SharePostModal} from './SharePostModal';
 import type {CommunityComment, CommunityPost} from '../types';
 
@@ -166,6 +167,11 @@ export function CommunityPostCard({
   // Owner overflow menu (Edit / Delete) — open state + in-flight delete guard.
   const [menuOpen, setMenuOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  // Edit modal (text-only) open state, plus the post's current rich-text body.
+  // Seeded from the feed and updated locally after a successful edit so the
+  // card reflects the new text without a full reload.
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [postHtml, setPostHtml] = useState(post.text);
   // Screen-space anchor for the menu, measured from the "..." trigger so the
   // dropdown opens right under it instead of floating at a fixed position.
   const menuBtnRef = useRef<View>(null);
@@ -349,11 +355,10 @@ export function CommunityPostCard({
     );
   };
 
-  // Edit isn't wired to a compose flow yet — surface a placeholder so the menu
-  // action is discoverable without pretending it works.
+  // Open the text-only edit modal for the author's own post.
   const handleEdit = () => {
     setMenuOpen(false);
-    Alert.alert('Edit post', 'Editing posts will be available soon.');
+    setIsEditOpen(true);
   };
 
   const avatarUri = resolveUrl(
@@ -361,7 +366,7 @@ export function CommunityPostCard({
     logoBaseUrl,
   );
   const orgName = post.user.organizationName;
-  const text = stripHtml(post.text);
+  const text = stripHtml(postHtml);
   // Prefer the `images` array; fall back to the legacy single `image` field.
   const imagePaths = post.images?.length
     ? post.images
@@ -827,6 +832,23 @@ export function CommunityPostCard({
           </Pressable>
         )}
       </View>
+
+      {/* Edit modal (text-only) — author's own posts only. */}
+      {canManage ? (
+        <EditPostModal
+          visible={isEditOpen}
+          token={token}
+          primaryColor={reactedColor}
+          postUuid={post.uuid}
+          initialHtml={postHtml}
+          images={imagePaths}
+          onClose={() => setIsEditOpen(false)}
+          onSaved={html => {
+            setPostHtml(html);
+            setIsEditOpen(false);
+          }}
+        />
+      ) : null}
 
       {/* Share sheet (live mode only) */}
       {readOnly ? null : (
