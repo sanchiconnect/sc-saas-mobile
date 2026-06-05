@@ -752,17 +752,23 @@ const styles = StyleSheet.create({
   gridWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    paddingHorizontal: 4,
+    // Match the weekday header's horizontal padding so each 1/7 cell lines up
+    // directly under its Sun–Sat label.
+    paddingHorizontal: 8,
     paddingVertical: 4,
   },
   gridCell: {
     alignItems: 'center',
     borderRadius: 8,
     gap: 4,
-    margin: 2,
+    // Only vertical margin — a horizontal margin on top of a 1/7 width makes
+    // the seven cells overflow the row and wrap to six per line. The column
+    // gap is instead absorbed by each cell centering its content. Mirrors the
+    // core CalendarPicker grid.
+    marginVertical: 2,
     minHeight: 52,
     paddingTop: 6,
-    width: `${100 / 7 - 0.6}%`,
+    width: `${100 / 7}%`,
   },
   gridCellDay: {
     color: '#0f172a',

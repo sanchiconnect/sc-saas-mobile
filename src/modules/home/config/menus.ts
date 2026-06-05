@@ -160,8 +160,18 @@ export const isMenuItemVisible = (
   if (item.featureKey && !ctx.features?.[item.featureKey]) {
     return false;
   }
-  if (item.userKey && !ctx.users?.[item.userKey]) {
-    return false;
+  if (item.userKey) {
+    // Per-role tenant gate (drives the Connect submenu). Only enforce it when
+    // the tenant settings actually shipped a non-empty `users` map. If that
+    // config is missing entirely — which would otherwise filter out every
+    // Connect role and hide the whole group from the drawer — fall back to
+    // showing the role. When the map IS present we honor it as before, so a
+    // tenant that explicitly disables a role still hides it.
+    const usersMap = ctx.users;
+    const hasUsersConfig = !!usersMap && Object.keys(usersMap).length > 0;
+    if (hasUsersConfig && !usersMap[item.userKey]) {
+      return false;
+    }
   }
   return true;
 };
