@@ -62,8 +62,9 @@ export function CreatePostModal({
   const [isPosting, setIsPosting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Poll is view-only for now (not persisted), so it doesn't gate posting.
-  const canPost = (hasText(html) || images.length > 0) && !isPosting;
+  // A post is valid with text, an image, OR a poll.
+  const canPost =
+    (hasText(html) || images.length > 0 || poll != null) && !isPosting;
 
   const reset = () => {
     richText.current?.setContentHTML('');
@@ -113,9 +114,9 @@ export function CreatePostModal({
       const paths = await Promise.all(
         images.map(img => communityService.uploadFile(token, img)),
       );
-      // Poll is view-only for now — built and previewed, but not yet sent to
-      // the backend. Pass `poll` here once the create-poll contract is wired.
-      await communityService.createPost(token, html, paths);
+      // Attach the poll (if one was built) — sent flat as
+      // question / timeLine / options by the service.
+      await communityService.createPost(token, html, paths, poll);
       reset();
       onPosted();
     } catch (e: any) {

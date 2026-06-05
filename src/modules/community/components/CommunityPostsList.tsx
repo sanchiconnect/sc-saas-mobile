@@ -27,6 +27,12 @@ type Props = {
   emptyIcon?: string;
   emptyTitle?: string;
   emptySubtitle?: string;
+  // Whether the signed-in user is approved to comment / react / share.
+  // Forwarded to each card; defaults to true.
+  canInteract?: boolean;
+  // Called after a reaction is toggled on any card, so the parent can refresh
+  // wall stats.
+  onReacted?: () => void;
 };
 
 // Paginated, pull-to-refresh, infinite-scroll list of community posts. The
@@ -42,6 +48,8 @@ export function CommunityPostsList({
   emptyIcon = 'account-group-outline',
   emptyTitle = 'No posts yet',
   emptySubtitle = 'Community posts will appear here.',
+  canInteract = true,
+  onReacted,
 }: Props) {
   const [posts, setPosts] = useState<CommunityPost[]>([]);
   const [page, setPage] = useState(1);
@@ -117,6 +125,8 @@ export function CommunityPostsList({
           post={item}
           token={token}
           logoBaseUrl={logoBaseUrl}
+          canInteract={canInteract}
+          onReacted={onReacted}
         />
       )}
       contentContainerStyle={styles.listContent}

@@ -14,6 +14,7 @@ import {
 import {RichEditor, actions} from 'react-native-pell-rich-editor';
 
 import {Icon} from '../../../core/components/Icon';
+import {Tooltip} from '../../../core/components/Tooltip';
 import {
   CreatePollModal,
   type PollDraft,
@@ -22,6 +23,7 @@ import {
   ImageUploadModal,
   type PickedImage,
 } from '../../community/components/ImageUploadModal';
+import {APPROVAL_REQUIRED_MESSAGE} from '../../community/constants';
 import {communityService} from '../../community/services/community.service';
 import {radii, spacing, typography} from '../../../core/theme/colors';
 
@@ -46,9 +48,17 @@ type PostComposerProps = {
   // Called after a post is published (e.g. to refresh a feed). Optional —
   // the dashboard doesn't render the wall, so it can be omitted.
   onPosted?: () => void;
+  // Whether the signed-in user is approved to publish. Unapproved users see
+  // the composer muted with an "admin approval" tooltip. Defaults to true.
+  isApproved?: boolean;
 };
 
-export function PostComposer({primaryColor, token, onPosted}: PostComposerProps) {
+export function PostComposer({
+  primaryColor,
+  token,
+  onPosted,
+  isApproved = true,
+}: PostComposerProps) {
   const richText = useRef<RichEditor>(null);
   const [html, setHtml] = useState('');
   const [active, setActive] = useState<string[]>([]);
@@ -61,8 +71,14 @@ export function PostComposer({primaryColor, token, onPosted}: PostComposerProps)
   const [isPosting, setIsPosting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Poll is view-only for now (not persisted), so it doesn't gate posting.
-  const canPost = (hasText(html) || images.length > 0) && !isPosting;
+  // Unapproved users can't publish — the whole composer is muted and the POST
+  // button carries an "admin approval" tooltip.
+  const gated = !isApproved;
+  // A post is valid with text, an image, OR a poll.
+  const canPost =
+    !gated &&
+    (hasText(html) || images.length > 0 || poll != null) &&
+    !isPosting;
 
   const reset = () => {
     richText.current?.setContentHTML('');
@@ -106,9 +122,9 @@ export function PostComposer({primaryColor, token, onPosted}: PostComposerProps)
       const paths = await Promise.all(
         images.map(img => communityService.uploadFile(token, img)),
       );
-      // Poll is view-only for now — built and previewed, but not yet sent to
-      // the backend. Pass `poll` here once the create-poll contract is wired.
-      await communityService.createPost(token, html, paths);
+      // Attach the poll (if one was built) — sent flat as
+      // question / timeLine / options by the service.
+      await communityService.createPost(token, html, paths, poll);
       reset();
       onPosted?.();
     } catch (e: any) {
@@ -163,7 +179,7 @@ export function PostComposer({primaryColor, token, onPosted}: PostComposerProps)
               placeholderColor: '#94a3b8',
               contentCSSText: 'font-size: 15px; line-height: 22px;',
             }}
-            disabled={isPosting}
+            disabled={isPosting || gated}
           />
 
           {/* Picked-image previews — uploaded on post */}
@@ -222,48 +238,77 @@ export function PostComposer({primaryColor, token, onPosted}: PostComposerProps)
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
+        {/* Persistent approval notice — unapproved users see why posting is
+            disabled without having to tap the muted POST button. */}
+        {gated ? (
+          <View style={styles.approvalNotice}>
+            <Icon name="information-outline" size={16} color="#b45309" />
+            <Text style={styles.approvalNoticeText}>
+              {APPROVAL_REQUIRED_MESSAGE}
+            </Text>
+          </View>
+        ) : null}
+
         <View style={styles.footer}>
-          <Pressable
-            style={[
-              styles.postButton,
-              {backgroundColor: canPost ? primaryColor : '#e2e8f0'},
-            ]}
-            onPress={handlePost}
-            disabled={!canPost}
-            accessibilityRole="button"
-            accessibilityLabel="Post">
-            {isPosting ? (
-              <ActivityIndicator size="small" color="#94a3b8" />
-            ) : (
-              <Text
-                style={[
-                  styles.postButtonText,
-                  {color: canPost ? '#ffffff' : '#94a3b8'},
-                ]}>
-                POST
-              </Text>
-            )}
-          </Pressable>
+          {gated ? (
+            <Tooltip
+              message={APPROVAL_REQUIRED_MESSAGE}
+              accessibilityLabel="Post">
+              <View style={[styles.postButton, {backgroundColor: '#e2e8f0'}]}>
+                <Text style={[styles.postButtonText, {color: '#94a3b8'}]}>
+                  POST
+                </Text>
+              </View>
+            </Tooltip>
+          ) : (
+            <Pressable
+              style={[
+                styles.postButton,
+                {backgroundColor: canPost ? primaryColor : '#e2e8f0'},
+              ]}
+              onPress={handlePost}
+              disabled={!canPost}
+              accessibilityRole="button"
+              accessibilityLabel="Post">
+              {isPosting ? (
+                <ActivityIndicator size="small" color="#94a3b8" />
+              ) : (
+                <Text
+                  style={[
+                    styles.postButtonText,
+                    {color: canPost ? '#ffffff' : '#94a3b8'},
+                  ]}>
+                  POST
+                </Text>
+              )}
+            </Pressable>
+          )}
 
           <View style={styles.mediaActions}>
             <Pressable
               style={styles.mediaButton}
               onPress={() => setIsImagePickerOpen(true)}
+              disabled={gated}
               accessibilityRole="button"
               accessibilityLabel="Add image"
               hitSlop={6}>
-              <Icon name="image-outline" size={24} color="#475569" />
+              <Icon
+                name="image-outline"
+                size={24}
+                color={gated ? '#cbd5e1' : '#475569'}
+              />
             </Pressable>
             <Pressable
               style={styles.mediaButton}
               onPress={() => setIsPollOpen(true)}
+              disabled={gated}
               accessibilityRole="button"
               accessibilityLabel="Add poll"
               hitSlop={6}>
               <Icon
                 name="poll"
                 size={24}
-                color={poll ? primaryColor : '#475569'}
+                color={gated ? '#cbd5e1' : poll ? primaryColor : '#475569'}
               />
             </Pressable>
           </View>
@@ -441,6 +486,22 @@ const styles = StyleSheet.create({
     color: '#dc2626',
     fontSize: typography.body,
     marginTop: spacing.sm,
+  },
+  approvalNotice: {
+    alignItems: 'center',
+    backgroundColor: '#fef3c7',
+    borderRadius: radii.md,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  approvalNoticeText: {
+    color: '#b45309',
+    flex: 1,
+    fontSize: typography.small,
+    fontWeight: '600',
   },
   footer: {
     flexDirection: 'row',

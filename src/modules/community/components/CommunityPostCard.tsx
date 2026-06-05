@@ -10,8 +10,10 @@ import {
 } from 'react-native';
 
 import {Icon} from '../../../core/components/Icon';
+import {Tooltip} from '../../../core/components/Tooltip';
 import {TenantContext} from '../../../core/tenant/TenantProvider';
-import {radii, spacing, typography} from '../../../core/theme/colors';
+import {radii, spacing, typography, withAlpha} from '../../../core/theme/colors';
+import {APPROVAL_REQUIRED_MESSAGE} from '../constants';
 import {communityService} from '../services/community.service';
 import {SharePostModal} from './SharePostModal';
 import type {CommunityComment, CommunityPost} from '../types';
@@ -29,6 +31,13 @@ type Props = {
   // (comment, reply, react, share). Used by the share preview so a signed-out
   // viewer can read the post without being able to interact with it.
   readOnly?: boolean;
+  // Whether the signed-in user is approved to interact (comment, react, share).
+  // Unapproved users see the actions muted with an "admin approval" tooltip.
+  // Defaults to true so existing call sites are unaffected.
+  canInteract?: boolean;
+  // Called after a reaction is successfully toggled, so the parent can refresh
+  // wall stats (e.g. the "reactions" tally in the stats card).
+  onReacted?: () => void;
 };
 
 // Resolve a relative S3 path (`users/abc/x.png`) into an absolute URL using
@@ -101,8 +110,16 @@ export function CommunityPostCard({
   token,
   logoBaseUrl,
   readOnly = false,
+  canInteract = true,
+  onReacted,
 }: Props) {
-  const {domain} = useContext(TenantContext);
+  const {domain, theme} = useContext(TenantContext);
+  // Brand accent for the "reacted" (liked) state; falls back to a blue.
+  const reactedColor = theme?.primary || '#2563eb';
+  // Approval gate: a signed-in but unapproved user. Distinct from `readOnly`
+  // (signed-out guest) so we can show an "admin approval" tooltip instead of a
+  // "sign in" hint. Both states block every write action.
+  const locked = !readOnly && !canInteract;
   // Web URL to this post for the share sheet. Must mirror the frontend's
   // single-post route (`/community-feed/posts/post/:uuid`); only built when
   // the tenant domain is known.
@@ -115,6 +132,17 @@ export function CommunityPostCard({
   // Locally tracked so the footer count bumps right after a successful post,
   // without waiting for a full feed reload.
   const [commentCount, setCommentCount] = useState(post.stats.totalComments);
+  // Reaction state — seeded from the feed and updated optimistically so the
+  // thumb fills and the count bumps the instant the user taps.
+  const [reacted, setReacted] = useState(post.isLoggedInUserReacted);
+  const [reactionCount, setReactionCount] = useState(post.stats.totalReactions);
+  const [isReacting, setIsReacting] = useState(false);
+  // Poll state — seeded from the feed and updated optimistically on vote.
+  const [pollOptions, setPollOptions] = useState(post.poll?.options ?? []);
+  const [pollTotalVotes, setPollTotalVotes] = useState(
+    post.poll?.totalVotes ?? 0,
+  );
+  const [isVoting, setIsVoting] = useState(false);
   // Comment thread — lazily fetched the first time the user expands it.
   const [expanded, setExpanded] = useState(false);
   const [comments, setComments] = useState<CommunityComment[]>([]);
@@ -143,7 +171,7 @@ export function CommunityPostCard({
   };
 
   const toggleComments = () => {
-    if (readOnly) return;
+    if (readOnly || locked) return;
     const next = !expanded;
     setExpanded(next);
     if (next && !commentsLoaded && !loadingComments) loadComments();
@@ -151,7 +179,7 @@ export function CommunityPostCard({
 
   const submitComment = async () => {
     const trimmed = comment.trim();
-    if (readOnly || !trimmed || isPosting) return;
+    if (readOnly || locked || !trimmed || isPosting) return;
     setIsPosting(true);
     try {
       const res = await communityService.addComment(token, post.uuid, trimmed);
@@ -170,15 +198,68 @@ export function CommunityPostCard({
     }
   };
 
+  // Like / unlike the post. The backend toggles the user's `like` reaction for
+  // this post, so we flip local state optimistically and roll back on failure.
+  const toggleReaction = async () => {
+    if (readOnly || locked || isReacting) return;
+    const next = !reacted;
+    setReacted(next);
+    setReactionCount(prev => Math.max(0, prev + (next ? 1 : -1)));
+    setIsReacting(true);
+    try {
+      await communityService.reactToPost(token, post.uuid, 'like');
+      // Let the parent refresh wall stats (the reactions tally).
+      onReacted?.();
+    } catch {
+      // Revert the optimistic update if the request failed.
+      setReacted(!next);
+      setReactionCount(prev => Math.max(0, prev + (next ? -1 : 1)));
+    } finally {
+      setIsReacting(false);
+    }
+  };
+
+  // Vote for a poll option. One vote per poll — once cast, the options lock,
+  // so this only ever handles a first-time vote. Optimistic, rolls back on
+  // failure (which re-enables voting).
+  const votePoll = async (optionId: number) => {
+    const poll = post.poll;
+    if (readOnly || locked || isVoting || !poll) return;
+    // Guard against a double-tap landing before the first vote re-renders.
+    if (pollOptions.some(o => o.userVoted)) return;
+
+    const prevOptions = pollOptions;
+    const prevTotal = pollTotalVotes;
+
+    setPollOptions(prev =>
+      prev.map(o =>
+        o.id === optionId
+          ? {...o, userVoted: true, voteCount: o.voteCount + 1}
+          : o,
+      ),
+    );
+    setPollTotalVotes(t => t + 1);
+
+    setIsVoting(true);
+    try {
+      await communityService.voteOnPoll(token, poll.id, optionId);
+    } catch {
+      setPollOptions(prevOptions);
+      setPollTotalVotes(prevTotal);
+    } finally {
+      setIsVoting(false);
+    }
+  };
+
   const toggleReply = (commentUuid: string) => {
-    if (readOnly) return;
+    if (readOnly || locked) return;
     setReplyingTo(prev => (prev === commentUuid ? null : commentUuid));
     setReplyText('');
   };
 
   const submitReply = async (commentUuid: string) => {
     const trimmed = replyText.trim();
-    if (readOnly || !trimmed || replyingPosting) return;
+    if (readOnly || locked || !trimmed || replyingPosting) return;
     setReplyingPosting(true);
     try {
       await communityService.replyToComment(
@@ -219,6 +300,17 @@ export function CommunityPostCard({
   const imageUris = imagePaths
     .map(p => resolveUrl(p, logoBaseUrl))
     .filter((u): u is string => Boolean(u));
+
+  // Poll voting is allowed only for live, approved viewers, while the poll is
+  // still open, and only until the user has cast a vote — once voted, the
+  // options lock (no switching / re-voting).
+  const poll = post.poll;
+  const pollTimeLeftLabel = poll
+    ? pollTimeLeft(poll.timeLine, poll.pollCreatedAt)
+    : '';
+  const pollEnded = pollTimeLeftLabel === 'Poll ended';
+  const hasVoted = pollOptions.some(o => o.userVoted);
+  const canVotePoll = !readOnly && !locked && !pollEnded && !hasVoted;
 
   return (
     <View style={styles.card}>
@@ -267,23 +359,78 @@ export function CommunityPostCard({
       ))}
 
       {/* Poll */}
-      {post.poll ? (
+      {poll ? (
         <View style={styles.pollCard}>
-          <Text style={styles.pollQuestion}>{post.poll.question}</Text>
-          {post.poll.options.map(option => (
-            <View key={option.id} style={styles.pollOption}>
-              <Text style={styles.pollOptionText} numberOfLines={2}>
-                {option.optionText}
-              </Text>
-              {option.voteCount > 0 ? (
-                <Text style={styles.pollOptionCount}>{option.voteCount}</Text>
-              ) : null}
-            </View>
-          ))}
+          <Text style={styles.pollQuestion}>{poll.question}</Text>
+          {pollOptions.map(option => {
+            const voted = option.userVoted;
+            // Show results (fill bar + %) once the poll has any votes.
+            const showResults = pollTotalVotes > 0;
+            const pct = showResults
+              ? Math.round((option.voteCount / pollTotalVotes) * 100)
+              : 0;
+            const inner = (
+              <>
+                {showResults ? (
+                  <View
+                    style={[
+                      styles.pollOptionFill,
+                      {width: `${pct}%`},
+                      voted && {backgroundColor: withAlpha(reactedColor, 0.12)},
+                    ]}
+                  />
+                ) : null}
+                <View style={styles.pollOptionLabelRow}>
+                  <Text
+                    style={[
+                      styles.pollOptionText,
+                      voted && styles.pollOptionTextVoted,
+                      voted && {color: reactedColor},
+                    ]}
+                    numberOfLines={2}>
+                    {option.optionText}
+                  </Text>
+                  {voted ? (
+                    <Icon name="check-circle" size={18} color={reactedColor} />
+                  ) : null}
+                </View>
+                {showResults ? (
+                  <Text
+                    style={[styles.pollOptionPct, voted && {color: reactedColor}]}>
+                    {pct}%
+                  </Text>
+                ) : null}
+              </>
+            );
+            return canVotePoll ? (
+              <Pressable
+                key={option.id}
+                // No pressed-opacity feedback here: the vote already gives
+                // immediate visual feedback (fill + check), and dimming on
+                // press reads as a distracting "blink" when switching options.
+                style={[styles.pollOption, voted && {borderColor: reactedColor}]}
+                onPress={() => votePoll(option.id)}
+                disabled={isVoting}
+                accessibilityRole="button"
+                accessibilityState={{selected: voted}}
+                accessibilityLabel={`Vote for ${option.optionText}`}>
+                {inner}
+              </Pressable>
+            ) : (
+              <View
+                key={option.id}
+                style={[
+                  styles.pollOption,
+                  voted && {borderColor: reactedColor},
+                ]}>
+                {inner}
+              </View>
+            );
+          })}
           <Text style={styles.pollMeta}>
-            {post.poll.totalVotes} vote{post.poll.totalVotes === 1 ? '' : 's'}
+            {pollTotalVotes} vote{pollTotalVotes === 1 ? '' : 's'}
             {' • '}
-            {pollTimeLeft(post.poll.timeLine, post.poll.pollCreatedAt)}
+            {pollTimeLeftLabel}
           </Text>
         </View>
       ) : null}
@@ -291,7 +438,17 @@ export function CommunityPostCard({
       {/* Footer — comment / reaction counts + share. In readOnly (guest /
           shared-post) mode every item is rendered muted and non-interactive. */}
       <View style={styles.footer}>
-        {readOnly ? (
+        {locked ? (
+          <Tooltip message={APPROVAL_REQUIRED_MESSAGE} accessibilityLabel="Comment">
+            <View style={styles.footerItem}>
+              <Icon name="comment-outline" size={18} color={MUTED} />
+              <Text style={[styles.footerText, styles.footerTextMuted]}>
+                {commentCount} comment
+                {commentCount === 1 ? '' : 's'}
+              </Text>
+            </View>
+          </Tooltip>
+        ) : readOnly ? (
           <View style={styles.footerItem}>
             <Icon name="comment-outline" size={18} color={MUTED} />
             <Text style={[styles.footerText, styles.footerTextMuted]}>
@@ -316,14 +473,55 @@ export function CommunityPostCard({
             </Text>
           </Pressable>
         )}
-        <View style={styles.footerItem}>
-          <Icon name="thumb-up-outline" size={18} color={readOnly ? MUTED : '#64748b'} />
-          <Text style={[styles.footerText, readOnly && styles.footerTextMuted]}>
-            {post.stats.totalReactions} reaction
-            {post.stats.totalReactions === 1 ? '' : 's'}
-          </Text>
-        </View>
-        {readOnly ? (
+        {locked ? (
+          <Tooltip message={APPROVAL_REQUIRED_MESSAGE} accessibilityLabel="React">
+            <View style={styles.footerItem}>
+              <Icon name="thumb-up-outline" size={18} color={MUTED} />
+              <Text style={[styles.footerText, styles.footerTextMuted]}>
+                {reactionCount} reaction
+                {reactionCount === 1 ? '' : 's'}
+              </Text>
+            </View>
+          </Tooltip>
+        ) : readOnly ? (
+          <View style={styles.footerItem}>
+            <Icon name="thumb-up-outline" size={18} color={MUTED} />
+            <Text style={[styles.footerText, styles.footerTextMuted]}>
+              {reactionCount} reaction
+              {reactionCount === 1 ? '' : 's'}
+            </Text>
+          </View>
+        ) : (
+          <Pressable
+            style={({pressed}) => [
+              styles.footerItem,
+              pressed && styles.sendPressed,
+            ]}
+            onPress={toggleReaction}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityState={{selected: reacted}}
+            accessibilityLabel={reacted ? 'Remove reaction' : 'Like post'}>
+            <Icon
+              name={reacted ? 'thumb-up' : 'thumb-up-outline'}
+              size={18}
+              color={reacted ? reactedColor : '#64748b'}
+            />
+            <Text
+              style={[styles.footerText, reacted && {color: reactedColor}]}>
+              {reactionCount} reaction
+              {reactionCount === 1 ? '' : 's'}
+            </Text>
+          </Pressable>
+        )}
+        {locked ? (
+          <Tooltip message={APPROVAL_REQUIRED_MESSAGE} accessibilityLabel="Share">
+            <View style={styles.footerItem}>
+              <Icon name="share-variant-outline" size={18} color={MUTED} />
+              <Text style={[styles.footerText, styles.footerTextMuted]}>Share</Text>
+            </View>
+          </Tooltip>
+        ) : readOnly ? (
           <View style={styles.footerItem}>
             <Icon name="share-variant-outline" size={18} color={MUTED} />
             <Text style={[styles.footerText, styles.footerTextMuted]}>Share</Text>
@@ -456,19 +654,29 @@ export function CommunityPostCard({
 
       {/* Comment composer — disabled in readOnly mode so a signed-out viewer
           sees, but cannot use, the input. */}
-      <View style={[styles.commentBar, readOnly && styles.commentBarMuted]}>
+      <View
+        style={[
+          styles.commentBar,
+          (readOnly || locked) && styles.commentBarMuted,
+        ]}>
         <TextInput
           style={styles.commentInput}
           value={comment}
           onChangeText={setComment}
-          placeholder={readOnly ? 'Sign in to comment' : 'Write a comment'}
+          placeholder={
+            locked
+              ? APPROVAL_REQUIRED_MESSAGE
+              : readOnly
+                ? 'Sign in to comment'
+                : 'Write a comment'
+          }
           placeholderTextColor="#94a3b8"
           multiline
-          editable={!readOnly && !isPosting}
+          editable={!readOnly && !locked && !isPosting}
           onSubmitEditing={submitComment}
           returnKeyType="send"
         />
-        {readOnly ? (
+        {readOnly || locked ? (
           <Icon name="send-outline" size={22} color="#cbd5e1" />
         ) : isPosting ? (
           <ActivityIndicator size="small" color="#64748b" />
@@ -614,15 +822,33 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginBottom: spacing.sm,
+    overflow: 'hidden',
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md + 2,
   },
+  // Result bar — sits behind the option content, width set to the vote %.
+  pollOptionFill: {
+    backgroundColor: '#eef2f7',
+    bottom: 0,
+    left: 0,
+    position: 'absolute',
+    top: 0,
+  },
+  pollOptionLabelRow: {
+    alignItems: 'center',
+    flex: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
   pollOptionText: {
     color: '#0f172a',
-    flex: 1,
+    flexShrink: 1,
     fontSize: typography.bodyLg,
   },
-  pollOptionCount: {
+  pollOptionTextVoted: {
+    fontWeight: '700',
+  },
+  pollOptionPct: {
     color: '#64748b',
     fontSize: typography.body,
     fontWeight: '700',
