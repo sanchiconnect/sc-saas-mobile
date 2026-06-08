@@ -39,6 +39,9 @@ import {ConversationDetailScreen} from '../chat/screens/ConversationDetailScreen
 import {ConversationListScreen} from '../chat/screens/ConversationListScreen';
 import type {Conversation} from '../chat/types';
 import {ConnectionsScreen} from '../connections/screens/ConnectionsScreen';
+import {ConnectDirectoryScreen} from '../connect/screens/ConnectDirectoryScreen';
+import type {ConnectRoleKey} from '../connect/types';
+import {filterMenuItems} from './config/menus';
 import {MyMeetingsScreen} from '../meetings/screens/MyMeetingsScreen';
 import {CreatePostModal} from '../community/components/CreatePostModal';
 import {CommunityWallScreen} from '../community/screens/CommunityWallScreen';
@@ -226,12 +229,6 @@ export function HomeScreen({
       }
     >
   > = {
-    connect: {
-      title: 'Connect',
-      subtitle:
-        'Build professional relationships across the ecosystem and switch between connection groups from one reusable view.',
-      items: connectItems,
-    },
     program: {
       title: 'Programs',
       subtitle:
@@ -586,6 +583,73 @@ export function HomeScreen({
             setSelectedMenu({section: 'chat'});
           }}
         />
+      </View>
+    );
+  }
+
+  if (selectedMenu.section === 'connect') {
+    // Role tabs come from the same connect menu list the side drawer uses,
+    // filtered by the tenant's enabled user types + the current account type.
+    const roleTabs = filterMenuItems(connectItems, {
+      users: globalSetting?.users,
+      features: globalSetting?.features,
+      accountType: summary?.accountType,
+    }).map(item => ({key: item.key as ConnectRoleKey, label: item.label}));
+    // selectedMenu.item is a menu label; map it back to the role key so a tap
+    // on "Investors" in the drawer opens that tab.
+    const initialRoleKey = connectItems.find(
+      i => i.label === selectedMenu.item,
+    )?.key as ConnectRoleKey | undefined;
+
+    return (
+      <View style={styles.page}>
+        <SideMenu
+          globalSetting={globalSetting}
+          isVisible={isMenuOpen}
+          onClose={() => setIsMenuOpen(false)}
+          onLogout={onLogout}
+          onSelectMenu={setSelectedMenu}
+          primaryColor={primaryColor}
+          selectedMenu={selectedMenu}
+          session={session}
+          accountType={summary?.accountType}
+          unreadMessagesCount={unreadMessagesCount}
+          pendingConnectionsCount={pendingConnectionsCount}
+          avatarUrl={userAvatarUrl}
+        />
+        <View style={styles.topBar}>
+          <Pressable
+            style={({pressed}) => [
+              styles.iconButton,
+              pressed && {opacity: 0.5, backgroundColor: '#e2e8f0'},
+            ]}
+            hitSlop={10}
+            onPress={() => setSelectedMenu({section: 'dashboard'})}
+            accessibilityRole="button"
+            accessibilityLabel="Back">
+            <Icon name="arrow-left" size={24} color="#475569" />
+          </Pressable>
+          <Text style={styles.topBarTitle}>Connect</Text>
+        </View>
+        {roleTabs.length === 0 ? (
+          <View style={styles.connectEmpty}>
+            <Icon name="account-search-outline" size={42} color="#cbd5e1" />
+            <Text style={styles.connectEmptyText}>
+              No member directories are enabled for your account.
+            </Text>
+          </View>
+        ) : (
+          <ConnectDirectoryScreen
+            token={session.token}
+            roles={roleTabs}
+            initialRoleKey={initialRoleKey}
+            primaryColor={primaryColor}
+            logoBaseUrl={logoBaseUrl ?? undefined}
+            wishlistOwnerId={
+              session.user.id || summary?.userUuid || session.user.uuid || ''
+            }
+          />
+        )}
       </View>
     );
   }
@@ -1020,5 +1084,18 @@ const styles = StyleSheet.create({
     color: '#92400e',
     fontSize: 13,
     lineHeight: 18,
+  },
+  connectEmpty: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 40,
+    gap: 12,
+  },
+  connectEmptyText: {
+    color: '#64748b',
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
   },
 });

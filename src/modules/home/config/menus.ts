@@ -3,48 +3,47 @@ import type {MenuItem} from '../types';
 // `userKey` matches the frontend's `brandDetails.users.<key>` flag for each
 // role. If the tenant has disabled investors, the Investors row is hidden, etc.
 // `featureKey` (where present) matches a flag in `brandDetails.features.*`.
+// Note: the web Connect directory lists every stakeholder type to every user
+// (including your own type), so these items are NOT gated by account type —
+// only by the tenant's `users.<key>` enable flag. Adding excludeAccountTypes
+// here would hide e.g. the Startups tab from a startup account, which is the
+// opposite of the web behavior.
 export const connectItems: MenuItem[] = [
   {
     key: 'startups',
     label: 'Startups',
     icon: 'rocket-launch',
     userKey: 'startups',
-    excludeAccountTypes: ['startup'],
   },
   {
     key: 'investors',
     label: 'Investors',
     icon: 'cash-multiple',
     userKey: 'investors',
-    excludeAccountTypes: ['investor'],
   },
   {
     key: 'corporates',
     label: 'Corporates',
     icon: 'office-building',
     userKey: 'corporates',
-    excludeAccountTypes: ['corporate'],
   },
   {
     key: 'mentors',
     label: 'Mentors',
     icon: 'account-tie',
     userKey: 'mentors',
-    excludeAccountTypes: ['mentor'],
   },
   {
     key: 'service-providers',
     label: 'Service Providers',
     icon: 'briefcase',
     userKey: 'service_providers',
-    excludeAccountTypes: ['service_provider'],
   },
   {
     key: 'partners',
     label: 'Partners',
     icon: 'handshake',
     userKey: 'partners',
-    excludeAccountTypes: ['partner'],
   },
   {
     key: 'program-office-team',
@@ -160,8 +159,18 @@ export const isMenuItemVisible = (
   if (item.featureKey && !ctx.features?.[item.featureKey]) {
     return false;
   }
-  if (item.userKey && !ctx.users?.[item.userKey]) {
-    return false;
+  if (item.userKey) {
+    // Per-role tenant gate (drives the Connect submenu). Only enforce it when
+    // the tenant settings actually shipped a non-empty `users` map. If that
+    // config is missing entirely — which would otherwise filter out every
+    // Connect role and hide the whole group from the drawer — fall back to
+    // showing the role. When the map IS present we honor it as before, so a
+    // tenant that explicitly disables a role still hides it.
+    const usersMap = ctx.users;
+    const hasUsersConfig = !!usersMap && Object.keys(usersMap).length > 0;
+    if (hasUsersConfig && !usersMap[item.userKey]) {
+      return false;
+    }
   }
   return true;
 };
