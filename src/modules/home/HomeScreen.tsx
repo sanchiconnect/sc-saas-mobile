@@ -682,6 +682,9 @@ export function HomeScreen({
         primaryColor={primaryColor}
         selectedMenu={selectedMenu}
         session={session}
+        accountType={summary?.accountType}
+        unreadMessagesCount={unreadMessagesCount}
+        pendingConnectionsCount={pendingConnectionsCount}
         avatarUrl={userAvatarUrl}
       />
 

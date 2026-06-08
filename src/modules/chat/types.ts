@@ -15,8 +15,13 @@ export type Conversation = {
   lastMessage?: string | Message;
   lastMessageType?: string;
   lastMessageAt?: string;
-  // Server-side unread count for the current user.
+  // Server-side unread count for the current user. The backend returns this
+  // as `unRead` on the conversation-list endpoint; the others are kept as
+  // aliases in case other tenants/payloads use a different casing.
+  unRead?: number;
+  unreadMessageCount?: number;
   unreadCount?: number;
+  unread_count?: number;
   // Avatar can live at the conversation level (group chats) or on the
   // "other" participant for 1:1 chats — surface either at the type level
   // and let the list resolver pick the right one.

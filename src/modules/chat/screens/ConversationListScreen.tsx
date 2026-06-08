@@ -264,7 +264,12 @@ export function ConversationListScreen({
       lastMessagePreview(item);
     const preview = previewText || 'No messages yet';
     const timeRaw = item.lastMessageAt || previewCreatedAt;
-    const unread = item.unreadCount || 0;
+    const unread =
+      item.unRead ??
+      item.unreadMessageCount ??
+      item.unreadCount ??
+      item.unread_count ??
+      0;
     return (
       <Pressable
         style={styles.row}
