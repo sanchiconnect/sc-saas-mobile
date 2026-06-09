@@ -652,6 +652,7 @@ export function HomeScreen({
             primaryColor={primaryColor}
             logoBaseUrl={logoBaseUrl ?? undefined}
             onActiveProfileChange={setConnectProfileActive}
+            isApproved={Boolean(summary?.isApproved)}
           />
         )}
       </View>

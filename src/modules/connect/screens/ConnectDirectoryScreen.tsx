@@ -38,6 +38,7 @@ type Props = {
   primaryColor: string;
   logoBaseUrl?: string;
   onActiveProfileChange?: (active: boolean) => void;
+  isApproved?: boolean;
 };
 
 const SORTS: DirectorySort[] = [
@@ -61,6 +62,7 @@ export function ConnectDirectoryScreen({
   primaryColor,
   logoBaseUrl,
   onActiveProfileChange,
+  isApproved,
 }: Props) {
   useToast(); // keep provider happy; no wishlist toasts needed currently
 
@@ -227,6 +229,7 @@ export function ConnectDirectoryScreen({
         primaryColor={primaryColor}
         logoBaseUrl={logoBaseUrl}
         onBack={closeProfile}
+        isApproved={isApproved}
       />
     );
   }

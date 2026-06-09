@@ -42,6 +42,7 @@ type Props = {
   primaryColor: string;
   logoBaseUrl?: string;
   onBack: () => void;
+  isApproved?: boolean;
 };
 
 const DEFAULT_CONNECT_MESSAGE = "Hi, I'd love to connect.";
@@ -218,6 +219,7 @@ export function ConnectProfileScreen({
   primaryColor,
   logoBaseUrl,
   onBack,
+  isApproved,
 }: Props) {
   const toast = useToast();
   const {baseUrl: tenantBaseUrl, globalSetting} = useContext(TenantContext);
@@ -798,17 +800,6 @@ export function ConnectProfileScreen({
                 <Text style={styles.lockedTitle}>
                   Accessible only to connections
                 </Text>
-                <Pressable
-                  onPress={() => {
-                    setConnectMessage(DEFAULT_CONNECT_MESSAGE);
-                    setConnectOpen(true);
-                  }}
-                  style={[
-                    styles.lockedConnectBtn,
-                    {backgroundColor: primaryColor},
-                  ]}>
-                  <Text style={styles.lockedConnectBtnText}>CONNECT</Text>
-                </Pressable>
               </View>
             )}
           </SectionCard>
@@ -922,9 +913,16 @@ export function ConnectProfileScreen({
         <View style={styles.scrollPad} />
       </ScrollView>
 
-      {/* Footer: Connected badge (no action) or Connect / Request Sent button */}
+      {/* Footer: approval gate, connected badge, or connect button */}
       <View style={styles.footer}>
-        {connState === 'connected' ? (
+        {isApproved === false ? (
+          <View style={styles.approvalNotice}>
+            <Text style={styles.approvalNoticeText}>
+              Prior to initiating connections, your profile must be approved by
+              the admin.
+            </Text>
+          </View>
+        ) : connState === 'connected' ? (
           <View
             style={[
               styles.connectedBadge,
@@ -1401,6 +1399,21 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderTopColor: colors.border,
     borderTopWidth: 1,
+  },
+  approvalNotice: {
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderColor: '#e2e8f0',
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+  },
+  approvalNoticeText: {
+    color: '#475569',
+    fontSize: 13,
+    lineHeight: 20,
+    textAlign: 'center',
   },
   connectBtn: {
     flexDirection: 'row',
