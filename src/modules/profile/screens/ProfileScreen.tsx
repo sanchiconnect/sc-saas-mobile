@@ -11,6 +11,8 @@ import {
   View,
 } from 'react-native';
 
+import Video from 'react-native-video';
+
 import {authService} from '../../auth/services/auth.service';
 import {Icon} from '../../../core/components/Icon';
 import {
@@ -122,6 +124,7 @@ type StartupInfo = {
     elevatorPitch?: string | null;
     pitchDocument?: string | null;
     powerPitchUrl?: string | null;
+    uploadPitchUrl?: string | null;
     embedUrl?: string | null;
     fileName?: string | null;
     // Pre-converted PDF page images for inline preview. Backend may use any
@@ -638,6 +641,11 @@ export function ProfileScreen({
   // Fetch tenant-defined custom profile forms + each form's submission so
   // we can render them inline (read-only) at the bottom of the profile.
   // Account type is needed to scope the form list to the user's role.
+  // usePitchImages calls useContext(TenantContext) internally. It MUST be
+  // called unconditionally here — before any early return — so the hook
+  // order is stable across renders (Rules of Hooks).
+  const pitchImages = usePitchImages(info?.pitchDeck);
+
   useEffect(() => {
     const accountType = userBasic?.accountType;
     if (!accountType) {
@@ -758,10 +766,6 @@ export function ProfileScreen({
   const targetFundraise = formatCurrencyINR(info?.financials?.targetFundraise);
   const valuation = formatCurrencyINR(info?.financials?.tentativeValuation);
   const totalFundRaised = formatCurrencyINR(info?.financials?.totalFundRaised);
-  // Pre-rendered PDF page images for the inline preview. Resolved against
-  // the tenant's CDN bases inside the hook so we don't need TenantContext
-  // here too.
-  const pitchImages = usePitchImages(info?.pitchDeck);
   const elevatorPitch = info?.pitchDeck?.elevatorPitch || '';
 
   const expertiseItems = isCorporateProfile
@@ -1412,20 +1416,30 @@ export function ProfileScreen({
         </SectionBlock>
       ) : null}
 
-      {info?.pitchDeck?.powerPitchUrl || info?.pitchDeck?.embedUrl ? (
-        <SectionBlock title="Video Pitch" primaryColor={primaryColor}>
-          <Pressable
-            onPress={() =>
-              openLink(info.pitchDeck?.powerPitchUrl || info.pitchDeck?.embedUrl)
-            }
-            style={[styles.linkButton, {borderColor: primaryColor}]}>
-            <Icon name="play-circle-outline" size={18} color={primaryColor} />
-            <Text style={[styles.linkButtonText, {color: primaryColor}]}>
-              Watch video pitch
-            </Text>
-          </Pressable>
-        </SectionBlock>
-      ) : null}
+      {(() => {
+        const videoUrl =
+          info?.pitchDeck?.uploadPitchUrl ||
+          info?.pitchDeck?.powerPitchUrl ||
+          info?.pitchDeck?.embedUrl ||
+          '';
+        if (!videoUrl) return null;
+        return (
+          <SectionBlock title="Video Pitch" primaryColor={primaryColor}>
+            {isDirectVideoUrl(videoUrl) ? (
+              <InlineVideoPlayer url={videoUrl} primaryColor={primaryColor} />
+            ) : (
+              <Pressable
+                onPress={() => openLink(videoUrl)}
+                style={[styles.videoPreviewBox, {borderColor: primaryColor}]}>
+                <Icon name="play-circle" size={48} color={primaryColor} />
+                <Text style={[styles.videoPreviewText, {color: primaryColor}]}>
+                  Tap to play your video pitch
+                </Text>
+              </Pressable>
+            )}
+          </SectionBlock>
+        );
+      })()}
 
       {/* Tenant-defined custom profile forms (e.g. "Program Office"),
           rendered read-only with the form title as the section header so
@@ -1530,6 +1544,47 @@ function PersonChip({
           </Pressable>
         ) : null}
       </View>
+    </View>
+  );
+}
+
+const isDirectVideoUrl = (url?: string | null) => {
+  if (!url) return false;
+  return /\.(mp4|m4v|mov|webm|mkv)(\?|#|$)/i.test(url);
+};
+
+function InlineVideoPlayer({
+  url,
+  primaryColor,
+}: {
+  url: string;
+  primaryColor: string;
+}) {
+  const [hasError, setHasError] = useState(false);
+
+  if (hasError) {
+    return (
+      <Pressable
+        onPress={() => Linking.openURL(url).catch(() => undefined)}
+        style={[styles.videoPlayerFallback, {borderColor: primaryColor}]}>
+        <Icon name="alert-circle-outline" size={28} color={primaryColor} />
+        <Text style={[styles.videoPlayerFallbackText, {color: primaryColor}]}>
+          Tap to open the video externally
+        </Text>
+      </Pressable>
+    );
+  }
+
+  return (
+    <View style={styles.videoPlayerWrap}>
+      <Video
+        source={{uri: url}}
+        style={styles.videoPlayer}
+        controls
+        resizeMode="contain"
+        paused
+        onError={() => setHasError(true)}
+      />
     </View>
   );
 }
@@ -1916,5 +1971,42 @@ const styles = StyleSheet.create({
     color: '#0f172a',
     fontSize: 16,
     fontWeight: '800',
+  },
+  videoPlayerWrap: {
+    backgroundColor: '#000000',
+    borderRadius: 10,
+    overflow: 'hidden',
+    width: '100%',
+    aspectRatio: 16 / 9,
+  },
+  videoPlayer: {
+    width: '100%',
+    height: '100%',
+  },
+  videoPlayerFallback: {
+    alignItems: 'center',
+    borderRadius: 10,
+    borderWidth: 1,
+    gap: 8,
+    justifyContent: 'center',
+    paddingVertical: 24,
+    width: '100%',
+  },
+  videoPlayerFallbackText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  videoPreviewBox: {
+    alignItems: 'center',
+    borderRadius: 10,
+    borderWidth: 1,
+    gap: 8,
+    justifyContent: 'center',
+    paddingVertical: 32,
+    width: '100%',
+  },
+  videoPreviewText: {
+    fontSize: 13,
+    fontWeight: '700',
   },
 });
