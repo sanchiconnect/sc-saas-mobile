@@ -111,7 +111,7 @@ export const connectService = {
     params.set('sortBy', sortBy);
     params.set('orderBy', orderBy);
     params.set('partnerId', 'null');
-    if (searchName.trim()) params.set('searchName', searchName.trim());
+    if (searchName.trim()) params.set('keyword', searchName.trim());
     if (role === 'investors' && investorType) {
       params.set('investorType', investorType);
     }
@@ -160,19 +160,17 @@ export const connectService = {
     }).filter(group => group.options.length > 0);
   },
 
-  // The user's saved profiles for a given role. Path:
-  //   GET api/v1/wishlist/{ownerId}/{singular}     (e.g. /wishlist/12/startup)
+  // The user's saved profiles. Path:
+  //   GET api/v1/wishlist/{ownerId}   (confirmed from web network tab)
   // `ownerId` is the signed-in user's numeric id. Returns the set of saved
   // USER uuids so the directory can mark cards as saved.
   async getWishlist(
     token: string,
     ownerId: string,
-    role: ConnectRoleKey,
   ): Promise<{savedUuids: Set<string>; items: DirectoryUser[]}> {
     const baseUrl = await resolveBaseUrl();
-    const {singular} = ROLE_API_FRAGMENT[role];
     const res = await requestJson<any>(
-      `${WISHLIST}/${ownerId}/${singular}`,
+      `${WISHLIST}/${ownerId}`,
       {method: 'GET', headers: getAuthHeader(token)},
       baseUrl,
     );
@@ -189,19 +187,16 @@ export const connectService = {
     return {savedUuids, items};
   },
 
-  // Save a member. The wishlist is keyed on the user uuid + account type
-  // (matching the per-type GET); exact mutation body is best-effort.
+  // Save a member. Confirmed from web network tab:
+  //   POST api/v1/wishlist/create/{userUuid}  with empty body {}
   async addToWishlist(token: string, target: DirectoryUser): Promise<unknown> {
     const baseUrl = await resolveBaseUrl();
     return requestJson(
-      WISHLIST,
+      `${WISHLIST}/create/${target.uuid}`,
       {
         method: 'POST',
         headers: getAuthHeader(token),
-        body: JSON.stringify({
-          userUUID: target.uuid,
-          accountType: target.accountType,
-        }),
+        body: JSON.stringify({}),
       },
       baseUrl,
     );
@@ -280,7 +275,7 @@ export const connectService = {
       {
         method: 'POST',
         headers: getAuthHeader(token),
-        body: JSON.stringify(userUuid),
+        body: JSON.stringify({}),
       },
       baseUrl,
     );

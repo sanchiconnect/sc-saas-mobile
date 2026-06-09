@@ -91,6 +91,7 @@ export function HomeScreen({
   // reload after a successful post.
   const [isComposerOpen, setIsComposerOpen] = useState(false);
   const [communityRefreshKey, setCommunityRefreshKey] = useState(0);
+  const [connectProfileActive, setConnectProfileActive] = useState(false);
 
   // Tell App.tsx to hide the floating feedback FAB while the user is inside
   // a chat thread — otherwise it overlaps the send button.
@@ -617,20 +618,22 @@ export function HomeScreen({
           pendingConnectionsCount={pendingConnectionsCount}
           avatarUrl={userAvatarUrl}
         />
-        <View style={styles.topBar}>
-          <Pressable
-            style={({pressed}) => [
-              styles.iconButton,
-              pressed && {opacity: 0.5, backgroundColor: '#e2e8f0'},
-            ]}
-            hitSlop={10}
-            onPress={() => setSelectedMenu({section: 'dashboard'})}
-            accessibilityRole="button"
-            accessibilityLabel="Back">
-            <Icon name="arrow-left" size={24} color="#475569" />
-          </Pressable>
-          <Text style={styles.topBarTitle}>Connect</Text>
-        </View>
+        {!connectProfileActive && (
+          <View style={styles.topBar}>
+            <Pressable
+              style={({pressed}) => [
+                styles.iconButton,
+                pressed && {opacity: 0.5, backgroundColor: '#e2e8f0'},
+              ]}
+              hitSlop={10}
+              onPress={() => setSelectedMenu({section: 'dashboard'})}
+              accessibilityRole="button"
+              accessibilityLabel="Back">
+              <Icon name="arrow-left" size={24} color="#475569" />
+            </Pressable>
+            <Text style={styles.topBarTitle}>Connect</Text>
+          </View>
+        )}
         {roleTabs.length === 0 ? (
           <View style={styles.connectEmpty}>
             <Icon name="account-search-outline" size={42} color="#cbd5e1" />
@@ -645,9 +648,7 @@ export function HomeScreen({
             initialRoleKey={initialRoleKey}
             primaryColor={primaryColor}
             logoBaseUrl={logoBaseUrl ?? undefined}
-            wishlistOwnerId={
-              session.user.id || summary?.userUuid || session.user.uuid || ''
-            }
+            onActiveProfileChange={setConnectProfileActive}
           />
         )}
       </View>
