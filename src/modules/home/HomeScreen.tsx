@@ -204,10 +204,13 @@ export function HomeScreen({
   const logoBaseUrl =
     globalSetting?.imgKitUrl || globalSetting?.assetsImgKitUrl;
   const logoPath = globalSetting?.logo;
-  const logoUri =
-    logoBaseUrl && logoPath
-      ? `${logoBaseUrl.replace(/\/$/, '')}/${logoPath.replace(/^\//, '')}`
-      : null;
+  const logoUri = logoPath
+    ? /^https?:\/\//i.test(logoPath)
+      ? logoPath
+      : logoBaseUrl
+        ? `${logoBaseUrl.replace(/\/$/, '')}/${logoPath.replace(/^\//, '')}`
+        : null
+    : null;
   // Resolve the user's avatar against the tenant imgKit URL. Already-absolute
   // values (http(s)://) pass through unchanged.
   const avatarPath = summary?.avatar;

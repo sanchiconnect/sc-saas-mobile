@@ -109,6 +109,19 @@ export function ConnectDirectoryScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialRoleKey]);
 
+  const openProfile = useCallback(
+    (item: DirectoryUser) => {
+      setActiveProfile(item);
+      onActiveProfileChange?.(true);
+    },
+    [onActiveProfileChange],
+  );
+
+  const closeProfile = useCallback(() => {
+    setActiveProfile(null);
+    onActiveProfileChange?.(false);
+  }, [onActiveProfileChange]);
+
   useEffect(() => {
     const onBack = () => {
       if (activeProfile) {
@@ -191,19 +204,6 @@ export function ConnectDirectoryScreen({
   };
 
   const investorToggle = roleKey === 'investors';
-
-  const openProfile = useCallback(
-    (item: DirectoryUser) => {
-      setActiveProfile(item);
-      onActiveProfileChange?.(true);
-    },
-    [onActiveProfileChange],
-  );
-
-  const closeProfile = useCallback(() => {
-    setActiveProfile(null);
-    onActiveProfileChange?.(false);
-  }, [onActiveProfileChange]);
 
   const renderCard = useCallback(
     ({item}: {item: DirectoryUser}) => (

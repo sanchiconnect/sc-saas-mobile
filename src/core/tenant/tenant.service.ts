@@ -1,4 +1,5 @@
 import {env} from '../config/env';
+import type {IFeatureUsers, IFeatures} from './tenantTypes';
 
 type ApiResponse<T = any> = {
   status_code?: number;
@@ -13,8 +14,10 @@ export type TenantVerifyResponse = ApiResponse<{
   customDomain: string | null;
   active: boolean;
   subscription_active: boolean;
-  features?: Record<string, boolean>;
-  users?: Record<string, boolean>;
+  // Verify-tenant may return basic boolean feature/user flags as an early gate
+  // before the full /settings response is loaded.
+  features?: Partial<IFeatures>;
+  users?: Partial<IFeatureUsers>;
 }>;
 
 export const fetchTenantsSetting = async (): Promise<TenantVerifyResponse> => {

@@ -66,10 +66,13 @@ export function AuthForm({
   const accent = theme?.primary || '#0f172a';
   const logoBaseUrl = globalSetting?.imgKitUrl || globalSetting?.assetsImgKitUrl;
   const logoPath = globalSetting?.logo;
-  const logoUri =
-    logoBaseUrl && logoPath
-      ? `${logoBaseUrl.replace(/\/$/, '')}/${logoPath.replace(/^\//, '')}`
-      : null;
+  const logoUri = logoPath
+    ? /^https?:\/\//i.test(logoPath)
+      ? logoPath
+      : logoBaseUrl
+        ? `${logoBaseUrl.replace(/\/$/, '')}/${logoPath.replace(/^\//, '')}`
+        : null
+    : null;
 
   // Surface backend messages via Toast. Inline status text under the form
   // looks amateur next to a real toast.

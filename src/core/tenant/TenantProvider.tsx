@@ -2,6 +2,7 @@ import React, {createContext, ReactNode, useEffect, useState} from 'react';
 
 import {fetchSettingStyle, fetchTenantsSetting} from './tenant.service';
 import {saveBaseUrl} from '../storage/tenantStorage';
+import type {IGlobalSetting} from './tenantTypes';
 
 type ThemeType = {
   primary: string;
@@ -17,24 +18,7 @@ type TenantContextType = {
   // Tenant web domain (customDomain preferred, else the default domain) from
   // /verify_tenant. Used to build shareable web links to in-app content.
   domain: string | null;
-  globalSetting?: {
-    brandName?: string;
-    logo?: string;
-    assetsImgKitUrl?: string;
-    s3Bucket?: string;
-    imgKitUrl?: string;
-    s3Url?: string;
-    users?: Record<string, any>;
-    features?: Record<string, any>;
-    startupMaxIndustries?: string | number;
-    startupMaxTechnologies?: string | number;
-    investorMaxIndustries?: string | number;
-    investorMaxInvestabilityMetrics?: string | number;
-    CorporateSizes?: Array<{name: string; value: string}>;
-    // Founder/leadership role enum exposed by /tenant settings — drives the
-    // Role dropdown in Edit Profile's Team section. Web reads the same key.
-    memberRoles?: Array<{name: string; value: string}>;
-  } | null;
+  globalSetting?: IGlobalSetting | null;
 };
 
 type Props = {
@@ -57,25 +41,53 @@ export const TenantProvider = ({children}: Props) => {
   const [globalSetting, setGlobalSetting] =
     useState<TenantContextType['globalSetting']>(null);
 
-  const settingInit = async (url: string) => {
+  const settingInit = async (
+    url: string,
+    verifyData?: {
+      active?: boolean;
+      subscription_active?: boolean;
+      customDomain?: string | null;
+    },
+  ) => {
     try {
       const res = await fetchSettingStyle(url);
       const branding = res?.data?.branding;
       const settingsData = res?.data || {};
       setGlobalSetting({
+        // Branding
         brandName: settingsData?.branding?.brandName,
-        assetsImgKitUrl: settingsData?.assetsImgKitUrl,
         logo: settingsData?.branding?.logo,
+
+        // CDN / storage
+        assetsImgKitUrl: settingsData?.assetsImgKitUrl,
         s3Bucket: settingsData?.s3Bucket,
         imgKitUrl: settingsData?.imgKitUrl,
         s3Url: settingsData?.s3Url,
-        users: settingsData?.users,
-        features: settingsData?.features,
+
+        // Feature flags (fully typed, cast from raw API object)
+        users: settingsData?.users ?? undefined,
+        features: settingsData?.features ?? undefined,
+
+        // Maintenance window
+        maintenance_mode: settingsData?.maintenance_mode ?? null,
+
+        // Tenant status — from verify_tenant, passed in as verifyData
+        active: verifyData?.active,
+        subscription_active:
+          verifyData?.subscription_active ??
+          settingsData?.subscription_active,
+        subscription_active_message:
+          settingsData?.subscription_active_message,
+        customDomain: verifyData?.customDomain,
+
+        // Config limits
         startupMaxIndustries: settingsData?.startupMaxIndustries,
         startupMaxTechnologies: settingsData?.startupMaxTechnologies,
         investorMaxIndustries: settingsData?.investorMaxIndustries,
         investorMaxInvestabilityMetrics:
           settingsData?.investorMaxInvestabilityMetrics,
+
+        // Tenant-configurable enums
         CorporateSizes: Array.isArray(settingsData?.CorporateSizes)
           ? settingsData.CorporateSizes
           : [],
@@ -106,7 +118,13 @@ export const TenantProvider = ({children}: Props) => {
         if (url) {
           setBaseUrl(url);
           await saveBaseUrl(url);
-          await settingInit(url);
+          // Pass verify_tenant fields through to settingInit so they are
+          // merged into globalSetting alongside the /settings response.
+          await settingInit(url, {
+            active: res?.data?.active,
+            subscription_active: res?.data?.subscription_active,
+            customDomain: res?.data?.customDomain,
+          });
         }
       } catch (error) {
         console.log('Tenant error', error);
