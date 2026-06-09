@@ -78,7 +78,14 @@ export function CommunityPostsList({
         const meta = res?.data?.meta;
         setTotalPages(meta?.totalPages ?? 1);
         setPage(meta?.currentPage ?? targetPage);
-        setPosts(prev => (mode === 'more' ? [...prev, ...items] : items));
+        setPosts(prev => {
+          if (mode !== 'more') return items;
+          // Dedupe by uuid: as new posts arrive the feed shifts, so a later
+          // page can re-return a post already on screen. Appending it blindly
+          // produces duplicate React keys.
+          const seen = new Set(prev.map(p => p.uuid));
+          return [...prev, ...items.filter(p => !seen.has(p.uuid))];
+        });
       } catch (e: any) {
         setError(e?.message || 'Unable to load community posts.');
       } finally {

@@ -13,6 +13,7 @@ import {radii, spacing, typography, withAlpha} from '../../../core/theme/colors'
 import {DashboardStat} from '../types';
 import {PostComposer} from './PostComposer';
 import {RecommendedSection} from './RecommendedSection';
+import {ResourcesSection} from '../../resources/components/ResourcesSection';
 
 // Search-scope chips, in display order. `userKey` matches the tenant.users.*
 // flag — chip is hidden if the tenant has disabled that role. Users can
@@ -299,6 +300,12 @@ export function DashboardContent({
         tenantUsers={tenantUsers}
         logoBaseUrl={logoBaseUrl}
         canToggleStatus={canToggleStatus}
+      />
+
+      <ResourcesSection
+        token={token}
+        logoBaseUrl={logoBaseUrl}
+        primaryColor={primaryColor}
       />
     </>
   );

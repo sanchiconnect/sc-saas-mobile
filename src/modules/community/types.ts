@@ -108,6 +108,8 @@ export type CommunityComment = {
   comment: string;
   createdAt: string;
   user: CommunityPostUser;
+  // Nested replies to this comment, returned inline by the comments endpoint.
+  replies?: CommunityReply[];
   // The backend may report nested-reply / reaction tallies per comment.
   totalReplies?: number;
   totalReactions?: number;

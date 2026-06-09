@@ -15,12 +15,13 @@ import {
 import {Icon} from '../../../core/components/Icon';
 import {Tooltip} from '../../../core/components/Tooltip';
 import {TenantContext} from '../../../core/tenant/TenantProvider';
+import {useToast} from '../../../core/toast/ToastProvider';
 import {radii, spacing, typography, withAlpha} from '../../../core/theme/colors';
 import {APPROVAL_REQUIRED_MESSAGE} from '../constants';
 import {communityService} from '../services/community.service';
 import {EditPostModal} from './EditPostModal';
 import {SharePostModal} from './SharePostModal';
-import type {CommunityComment, CommunityPost} from '../types';
+import type {CommunityComment, CommunityPost, CommunityReply} from '../types';
 
 // Greyed-out tint for footer actions in readOnly (guest) mode.
 const MUTED = '#cbd5e1';
@@ -126,6 +127,7 @@ export function CommunityPostCard({
   onDeleted,
 }: Props) {
   const {domain, theme} = useContext(TenantContext);
+  const toast = useToast();
   // Brand accent for the "reacted" (liked) state; falls back to a blue.
   const reactedColor = theme?.primary || '#2563eb';
   // Approval gate: a signed-in but unapproved user. Distinct from `readOnly`
@@ -164,6 +166,8 @@ export function CommunityPostCard({
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [replyText, setReplyText] = useState('');
   const [replyingPosting, setReplyingPosting] = useState(false);
+  // Which comments have their reply thread expanded (tap the count to toggle).
+  const [repliesShown, setRepliesShown] = useState<Record<string, boolean>>({});
   // Owner overflow menu (Edit / Delete) — open state + in-flight delete guard.
   const [menuOpen, setMenuOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -177,8 +181,10 @@ export function CommunityPostCard({
   const menuBtnRef = useRef<View>(null);
   const [menuAnchor, setMenuAnchor] = useState({top: 0, right: spacing.lg});
 
-  const loadComments = async () => {
-    setLoadingComments(true);
+  // `silent` refreshes the thread without flashing the loader — used to
+  // reconcile optimistic comment/reply updates with the server's truth.
+  const loadComments = async (silent = false) => {
+    if (!silent) setLoadingComments(true);
     try {
       const res = await communityService.listComments(token, post.uuid);
       const items = res?.data?.items ?? [];
@@ -190,7 +196,7 @@ export function CommunityPostCard({
     } catch {
       // Leave the thread empty; the user can collapse and retry.
     } finally {
-      setLoadingComments(false);
+      if (!silent) setLoadingComments(false);
     }
   };
 
@@ -275,8 +281,26 @@ export function CommunityPostCard({
     }
   };
 
-  const toggleReply = (commentUuid: string) => {
+  // Replies are shown by default; this collapses / re-expands a thread.
+  const toggleRepliesShown = (commentUuid: string) => {
+    setRepliesShown(prev => ({
+      ...prev,
+      [commentUuid]: !(prev[commentUuid] ?? true),
+    }));
+  };
+
+  // Open the reply composer for a comment. `mention` pre-fills the input when
+  // replying *to a reply*, so the target person is tagged (the backend stores
+  // all replies flat under the parent comment).
+  const toggleReply = (commentUuid: string, mention?: string) => {
     if (readOnly || locked) return;
+    if (mention) {
+      // Replying to a reply: open (don't toggle closed) and pre-fill the tag.
+      setReplyingTo(commentUuid);
+      setReplyText(`${mention} `);
+      setRepliesShown(prev => ({...prev, [commentUuid]: true}));
+      return;
+    }
     setReplyingTo(prev => (prev === commentUuid ? null : commentUuid));
     setReplyText('');
   };
@@ -286,24 +310,38 @@ export function CommunityPostCard({
     if (readOnly || locked || !trimmed || replyingPosting) return;
     setReplyingPosting(true);
     try {
-      await communityService.replyToComment(
+      const res = await communityService.replyToComment(
         token,
         post.uuid,
         commentUuid,
         trimmed,
       );
-      // Bump the parent comment's reply tally and close the composer.
+      // Append the new reply under its parent so it shows immediately. Prefer
+      // the server's echo; fall back to a local copy if the body is empty.
+      const newReply: CommunityReply =
+        (res?.data as CommunityReply) ?? {
+          uuid: `temp-${commentUuid}-${Date.now()}`,
+          comment: trimmed,
+          createdAt: new Date().toISOString(),
+          user: {uuid: currentUserUuid ?? '', name: 'You', avatar: null},
+        };
       setComments(prev =>
         prev.map(c =>
           c.uuid === commentUuid
-            ? {...c, totalReplies: (c.totalReplies ?? 0) + 1}
+            ? {...c, replies: [...(c.replies ?? []), newReply]}
             : c,
         ),
       );
+      // Make sure the freshly added reply is visible.
+      setRepliesShown(prev => ({...prev, [commentUuid]: true}));
       setReplyText('');
       setReplyingTo(null);
-    } catch {
-      // Keep the draft so the user can retry on failure.
+    } catch (e) {
+      // Surface the failure (keeps the draft) instead of silently reverting,
+      // so a rejected reply doesn't just vanish on the next refresh.
+      toast.error(
+        e instanceof Error ? e.message : 'Couldn’t post your reply.',
+      );
     } finally {
       setReplyingPosting(false);
     }
@@ -402,14 +440,15 @@ export function CommunityPostCard({
             <Image
               source={{uri: avatarUri}}
               style={styles.avatarImage}
-              resizeMode="cover"
+              // Logos are often wide/transparent — "contain" shows the whole
+              // mark instead of cropping it to fill the square.
+              resizeMode="contain"
             />
           ) : (
             <Text style={styles.avatarText}>
               {post.user.name.slice(0, 2).toUpperCase()}
             </Text>
           )}
-          <View style={styles.onlineDot} />
         </View>
 
         <View style={styles.headerCopy}>
@@ -695,6 +734,9 @@ export function CommunityPostCard({
           ) : (
             comments.map(c => {
               const cAvatar = resolveUrl(c.user?.avatar, logoBaseUrl);
+              const replyCount = c.replies?.length ?? c.totalReplies ?? 0;
+              // Default to expanded so replies are visible without a tap.
+              const repliesExpanded = repliesShown[c.uuid] ?? true;
               return (
                 <View key={c.uuid} style={styles.commentRow}>
                   <View style={styles.commentAvatar}>
@@ -721,19 +763,34 @@ export function CommunityPostCard({
                     </View>
                     <Text style={styles.commentText}>{c.comment}</Text>
 
-                    {/* Reply count + toggle */}
+                    {/* Reply count (tap to show/hide replies) + Reply */}
                     <View style={styles.commentActions}>
-                      <View style={styles.footerItem}>
+                      <Pressable
+                        style={styles.footerItem}
+                        onPress={() =>
+                          replyCount ? toggleRepliesShown(c.uuid) : undefined
+                        }
+                        disabled={!replyCount}
+                        hitSlop={8}
+                        accessibilityRole="button"
+                        accessibilityLabel={
+                          repliesExpanded ? 'Hide replies' : 'Show replies'
+                        }>
                         <Icon
-                          name="comment-outline"
+                          name={
+                            !replyCount
+                              ? 'comment-outline'
+                              : repliesExpanded
+                                ? 'chevron-up'
+                                : 'chevron-down'
+                          }
                           size={15}
                           color="#94a3b8"
                         />
                         <Text style={styles.commentActionText}>
-                          {c.totalReplies ?? 0} repl
-                          {(c.totalReplies ?? 0) === 1 ? 'y' : 'ies'}
+                          {replyCount} repl{replyCount === 1 ? 'y' : 'ies'}
                         </Text>
-                      </View>
+                      </Pressable>
                       <Pressable
                         onPress={() => toggleReply(c.uuid)}
                         hitSlop={8}
@@ -743,6 +800,70 @@ export function CommunityPostCard({
                         <Text style={styles.replyToggleText}>Reply</Text>
                       </Pressable>
                     </View>
+
+                    {/* Nested replies — visible by default, collapsible. */}
+                    {repliesExpanded && c.replies && c.replies.length ? (
+                      <View style={styles.replies}>
+                        {c.replies.map(r => {
+                          const rAvatar = resolveUrl(
+                            r.user?.avatar,
+                            logoBaseUrl,
+                          );
+                          return (
+                            <View key={r.uuid} style={styles.replyRow}>
+                              <View style={styles.replyAvatar}>
+                                {rAvatar ? (
+                                  <Image
+                                    source={{uri: rAvatar}}
+                                    style={styles.avatarImage}
+                                    resizeMode="cover"
+                                  />
+                                ) : (
+                                  <Text style={styles.replyAvatarText}>
+                                    {(r.user?.name ?? '?')
+                                      .slice(0, 2)
+                                      .toUpperCase()}
+                                  </Text>
+                                )}
+                              </View>
+                              <View style={styles.commentBody}>
+                                <View style={styles.commentMetaRow}>
+                                  <Text
+                                    style={styles.commentAuthor}
+                                    numberOfLines={1}>
+                                    {r.user?.name ?? 'Member'}
+                                  </Text>
+                                  <Text style={styles.commentTime}>
+                                    {timeAgo(r.createdAt)}
+                                  </Text>
+                                </View>
+                                <Text style={styles.commentText}>
+                                  {r.comment}
+                                </Text>
+                                <Pressable
+                                  onPress={() =>
+                                    toggleReply(
+                                      c.uuid,
+                                      `@${r.user?.name ?? 'Member'}`,
+                                    )
+                                  }
+                                  hitSlop={8}
+                                  accessibilityRole="button"
+                                  accessibilityLabel="Reply to this reply"
+                                  style={({pressed}) => [
+                                    styles.replyReplyBtn,
+                                    pressed && styles.sendPressed,
+                                  ]}>
+                                  <Text style={styles.replyToggleText}>
+                                    Reply
+                                  </Text>
+                                </Pressable>
+                              </View>
+                            </View>
+                          );
+                        })}
+                      </View>
+                    ) : null}
 
                     {/* Reply composer (only for the active comment) */}
                     {replyingTo === c.uuid ? (
@@ -925,17 +1046,19 @@ const styles = StyleSheet.create({
   },
   avatarWrap: {
     alignItems: 'center',
-    backgroundColor: '#f1f5f9',
+    backgroundColor: '#ffffff',
     borderColor: '#e2e8f0',
     borderRadius: radii.md,
     borderWidth: 1,
     height: 52,
     justifyContent: 'center',
+    overflow: 'hidden',
+    padding: 4,
     position: 'relative',
     width: 52,
   },
   avatarImage: {
-    borderRadius: radii.md,
+    borderRadius: radii.sm,
     height: '100%',
     width: '100%',
   },
@@ -943,17 +1066,6 @@ const styles = StyleSheet.create({
     color: '#475569',
     fontSize: typography.subhead,
     fontWeight: '800',
-  },
-  onlineDot: {
-    backgroundColor: '#16a34a',
-    borderColor: '#ffffff',
-    borderRadius: 999,
-    borderWidth: 2,
-    height: 12,
-    position: 'absolute',
-    right: -3,
-    top: -3,
-    width: 12,
   },
   headerCopy: {
     flex: 1,
@@ -1178,6 +1290,37 @@ const styles = StyleSheet.create({
     color: '#475569',
     fontSize: typography.small,
     fontWeight: '700',
+  },
+  replies: {
+    borderLeftColor: '#e2e8f0',
+    borderLeftWidth: 2,
+    gap: spacing.md,
+    marginTop: spacing.md,
+    paddingLeft: spacing.md,
+  },
+  replyRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  replyAvatar: {
+    alignItems: 'center',
+    backgroundColor: '#f1f5f9',
+    borderColor: '#e2e8f0',
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    height: 30,
+    justifyContent: 'center',
+    overflow: 'hidden',
+    width: 30,
+  },
+  replyAvatarText: {
+    color: '#475569',
+    fontSize: typography.small,
+    fontWeight: '800',
+  },
+  replyReplyBtn: {
+    alignSelf: 'flex-start',
+    marginTop: spacing.xs,
   },
   replyBar: {
     alignItems: 'center',
