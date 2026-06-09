@@ -24,6 +24,6 @@ export const useFeatureFlag = (
   if (!features) {
     return defaultValue;
   }
-  const value = features[name];
+  const value = features[name as keyof typeof features];
   return typeof value === 'boolean' ? value : defaultValue;
 };

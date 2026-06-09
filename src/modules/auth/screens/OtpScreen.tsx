@@ -69,10 +69,13 @@ export function OtpScreen({
 
   const logoBaseUrl = globalSetting?.imgKitUrl || globalSetting?.assetsImgKitUrl;
   const logoPath = globalSetting?.logo;
-  const logoUri =
-    logoBaseUrl && logoPath
-      ? `${logoBaseUrl.replace(/\/$/, '')}/${logoPath.replace(/^\//, '')}`
-      : null;
+  const logoUri = logoPath
+    ? /^https?:\/\//i.test(logoPath)
+      ? logoPath
+      : logoBaseUrl
+        ? `${logoBaseUrl.replace(/\/$/, '')}/${logoPath.replace(/^\//, '')}`
+        : null
+    : null;
 
   const handleChange = (value: string, index: number) => {
     if (!/^\d*$/.test(value)) return;

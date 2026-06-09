@@ -16,23 +16,14 @@ type Props = {
   user: DirectoryUser;
   primaryColor: string;
   logoBaseUrl?: string;
-  isSaved: boolean;
-  isSaving: boolean;
   onPress: () => void;
-  onToggleSave: () => void;
 };
 
-// A directory card mirroring the web "Startups/Investors/…" grid tile: a logo
-// header with the member name overlaid on a dark scrim, a bookmark toggle, and
-// a row of industry/stage chips beneath.
 function DirectoryCardBase({
   user,
   primaryColor,
   logoBaseUrl,
-  isSaved,
-  isSaving,
   onPress,
-  onToggleSave,
 }: Props) {
   const name = resolveName(user.raw);
   const logo = resolveLogo(user.raw, logoBaseUrl);
@@ -62,19 +53,6 @@ function DirectoryCardBase({
           {name}
         </Text>
 
-        <Pressable
-          onPress={onToggleSave}
-          disabled={isSaving}
-          hitSlop={8}
-          style={styles.saveBtn}
-          accessibilityRole="button"
-          accessibilityLabel={isSaved ? `Unsave ${name}` : `Save ${name}`}>
-          <Icon
-            name={isSaved ? 'bookmark' : 'bookmark-outline'}
-            size={18}
-            color={isSaved ? primaryColor : '#ffffff'}
-          />
-        </Pressable>
       </View>
 
       <View style={styles.body}>

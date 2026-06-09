@@ -133,10 +133,13 @@ export function SignupScreen({
 
   const logoBaseUrl = globalSetting?.imgKitUrl || globalSetting?.assetsImgKitUrl;
   const logoPath = globalSetting?.logo;
-  const logoUri =
-    logoBaseUrl && logoPath
-      ? `${logoBaseUrl.replace(/\/$/, '')}/${logoPath.replace(/^\//, '')}`
-      : null;
+  const logoUri = logoPath
+    ? /^https?:\/\//i.test(logoPath)
+      ? logoPath
+      : logoBaseUrl
+        ? `${logoBaseUrl.replace(/\/$/, '')}/${logoPath.replace(/^\//, '')}`
+        : null
+    : null;
 
   const roleLabel = formatRoleLabel(role);
   const isInvestor = role === 'investor';

@@ -233,10 +233,13 @@ export function SideMenu({
   const logoBaseUrl =
     globalSetting?.imgKitUrl || globalSetting?.assetsImgKitUrl;
   const logoPath = globalSetting?.logo;
-  const logoUri =
-    logoBaseUrl && logoPath
-      ? `${logoBaseUrl.replace(/\/$/, '')}/${logoPath.replace(/^\//, '')}`
-      : null;
+  const logoUri = logoPath
+    ? /^https?:\/\//i.test(logoPath)
+      ? logoPath
+      : logoBaseUrl
+        ? `${logoBaseUrl.replace(/\/$/, '')}/${logoPath.replace(/^\//, '')}`
+        : null
+    : null;
 
   const isDashboardActive = selectedMenu.section === 'dashboard';
 
@@ -251,7 +254,11 @@ export function SideMenu({
           <View style={styles.headerRow}>
             <View style={styles.logoWrap}>
               {logoUri ? (
-                <Image source={{uri: logoUri}} style={styles.logo} />
+                <Image
+                  source={{uri: logoUri}}
+                  style={styles.logo}
+                  resizeMode="contain"
+                />
               ) : (
                 <Text style={styles.brandName}>
                   {globalSetting?.brandName || ''}
@@ -277,18 +284,20 @@ export function SideMenu({
             accessibilityRole="button"
             accessibilityLabel="Open my profile"
             style={styles.profileRow}>
-            <View style={styles.avatarWrap}>
-              {avatarUrl ? (
-                <Image
-                  source={{uri: avatarUrl}}
-                  style={styles.avatarImage}
-                  resizeMode="cover"
-                />
-              ) : (
-                <Text style={styles.avatarText}>
-                  {session.user.fullName.slice(0, 2).toUpperCase()}
-                </Text>
-              )}
+            <View style={styles.avatarContainer}>
+              <View style={styles.avatarWrap}>
+                {avatarUrl ? (
+                  <Image
+                    source={{uri: avatarUrl}}
+                    style={styles.avatarImage}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <Text style={styles.avatarText}>
+                    {session.user.fullName.slice(0, 2).toUpperCase()}
+                  </Text>
+                )}
+              </View>
               <View style={styles.onlineDot} />
             </View>
 
@@ -536,13 +545,12 @@ const styles = StyleSheet.create({
   logoWrap: {
     alignItems: 'flex-start',
     flex: 1,
-    minHeight: 56,
+    minHeight: 64,
     justifyContent: 'center',
   },
   logo: {
-    height: 48,
-    resizeMode: 'contain',
-    width: 170,
+    height: 56,
+    width: 160,
   },
   brandName: {
     color: '#0f172a',
@@ -561,35 +569,39 @@ const styles = StyleSheet.create({
     marginBottom: 18,
     paddingHorizontal: 4,
   },
+  avatarContainer: {
+    height: 56,
+    position: 'relative',
+    width: 56,
+  },
   avatarWrap: {
     alignItems: 'center',
     backgroundColor: '#f1f5f9',
-    borderRadius: 16,
-    height: 52,
+    borderRadius: 8,
+    height: 56,
     justifyContent: 'center',
-    position: 'relative',
-    width: 52,
+    overflow: 'hidden',
+    width: 56,
   },
   avatarText: {
     color: '#475569',
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '800',
   },
   avatarImage: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 16,
+    width: 56,
+    height: 56,
   },
   onlineDot: {
     backgroundColor: '#16a34a',
     borderColor: '#ffffff',
     borderRadius: 999,
     borderWidth: 2,
-    height: 12,
+    top: -2,
+    height: 13,
     position: 'absolute',
     right: -2,
-    top: -2,
-    width: 12,
+    width: 13,
   },
   profileCopy: {
     flex: 1,

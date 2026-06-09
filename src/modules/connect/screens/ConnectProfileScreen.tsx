@@ -1,8 +1,9 @@
-import React, {useEffect, useMemo, useState} from 'react';
+import React, {useContext, useEffect, useState} from 'react';
 import {
   ActivityIndicator,
   Image,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -12,20 +13,23 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import Video from 'react-native-video';
 
 import {Icon} from '../../../core/components/Icon';
 import {colors, withAlpha} from '../../../core/theme/colors';
+import {TenantContext} from '../../../core/tenant/TenantProvider';
 import {useToast} from '../../../core/toast/ToastProvider';
 import {stripHtml} from '../../chat/utils';
+import {
+  PdfPagesCarousel,
+  getPitchImages,
+} from '../../profile/components/PdfPagesCarousel';
 import {connectService} from '../services/connect.service';
 import {
-  formatNumber,
   initials,
-  joinList,
   resolveAccountType,
   resolveCity,
   resolveCountry,
-  resolveHeadline,
   resolveLogo,
   resolveName,
 } from '../utils';
@@ -37,155 +41,356 @@ type Props = {
   user: DirectoryUser;
   primaryColor: string;
   logoBaseUrl?: string;
-  isSaved: boolean;
-  onToggleSave: () => void;
   onBack: () => void;
 };
 
 const DEFAULT_CONNECT_MESSAGE = "Hi, I'd love to connect.";
 
-// Role-keyed detail field sets — same shape the connections detail sheet uses,
-// reading from the (merged) profile payload.
-const fieldsFor = (
-  accountType: string,
-  d: Record<string, any>,
-): Array<{label: string; value: string}> => {
-  const t = accountType.toLowerCase();
-  if (t === 'startup') {
-    return [
-      {label: 'Funding Type', value: d.fundingType || 'N/A'},
-      {label: 'Business Model', value: joinList(d.businessModel)},
-      {label: 'Target fundraise (INR)', value: formatNumber(d.targetFundRaise)},
-      {
-        label: 'Tentative valuation (INR)',
-        value: formatNumber(d.tentativeValuation),
-      },
-      {label: 'Revenue (INR)', value: formatNumber(d.revenue)},
-      {label: 'Industries', value: joinList(d.startupIndustries || d.industries)},
-    ];
+// ─── small helpers ────────────────────────────────────────────────────────────
+
+const toNamedList = (value: unknown): string[] => {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return (value as any[])
+      .map(item => (typeof item === 'string' ? item : item?.name || ''))
+      .filter(Boolean);
   }
-  if (t === 'investor') {
-    return [
-      {label: 'Organization Type', value: d.organizationType || 'N/A'},
-      {label: 'Portfolio Size', value: formatNumber(d.portfolioSize)},
-      {label: 'Min Ticket (INR)', value: formatNumber(d.ticketSizeMin)},
-      {label: 'Max Ticket (INR)', value: formatNumber(d.ticketSizeMax)},
-      {label: 'Investment Stages', value: joinList(d.investmentStages)},
-      {label: 'Industries', value: joinList(d.sectoralInterests || d.industries)},
-    ];
+  if (typeof value === 'string') {
+    return value
+      .split(',')
+      .map(p => p.trim())
+      .filter(Boolean);
   }
-  if (t === 'corporate') {
-    return [
-      {label: 'Company Size', value: d.companySize || 'N/A'},
-      {label: 'Program Name', value: d.programName || 'N/A'},
-      {label: 'Industries', value: joinList(d.industries)},
-      {
-        label: 'Startups Supported',
-        value: formatNumber(d.totalStartupSupported),
-      },
-    ];
-  }
-  if (t === 'mentor') {
-    return [
-      {label: 'Designation', value: d.designation || 'N/A'},
-      {label: 'Experience (yrs)', value: formatNumber(d.experience)},
-      {label: 'Expertise', value: joinList(d.expertise || d.domains)},
-      {label: 'Industries', value: joinList(d.industries)},
-    ];
-  }
-  return [];
+  return [(value as any)?.name || ''].filter(Boolean);
 };
 
-// Read-only public profile for a directory member, with Save + Connect actions.
+const humanizeSnake = (value?: string | null): string => {
+  if (!value) return '';
+  return value.replace(/_/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase());
+};
+
+const formatCurrencyINR = (raw?: string | null): string | null => {
+  if (!raw) return null;
+  const numeric = Number(raw);
+  if (!Number.isFinite(numeric)) return raw;
+  return `INR ${numeric.toLocaleString('en-IN')}`;
+};
+
+const openLink = (url?: string | null) => {
+  if (!url) return;
+  Linking.openURL(url).catch(() => undefined);
+};
+
+const isDirectVideoUrl = (url?: string | null): boolean => {
+  if (!url) return false;
+  return /\.(mp4|m4v|mov|webm|mkv)(\?|#|$)/i.test(url);
+};
+
+// ─── sub-components ───────────────────────────────────────────────────────────
+
+function SectionCard({
+  title,
+  primaryColor,
+  children,
+}: {
+  title: string;
+  primaryColor: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <View style={sectionStyles.card}>
+      <View style={sectionStyles.heading}>
+        <View
+          style={[sectionStyles.dot, {backgroundColor: primaryColor}]}
+        />
+        <Text style={sectionStyles.title}>{title}</Text>
+      </View>
+      <View style={sectionStyles.body}>{children}</View>
+    </View>
+  );
+}
+
+function ChipList({items}: {items: string[]}) {
+  const filtered = items.filter(Boolean);
+  if (!filtered.length) return <Text style={sectionStyles.empty}>-</Text>;
+  return (
+    <View style={sectionStyles.chipsRow}>
+      {filtered.map(item => (
+        <View key={item} style={sectionStyles.chip}>
+          <Text style={sectionStyles.chipText}>{item}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function LabelRow({label, value}: {label: string; value: string}) {
+  return (
+    <View style={sectionStyles.labelRow}>
+      <Text style={sectionStyles.labelText}>{label}</Text>
+      <Text style={sectionStyles.valueText}>{value || '-'}</Text>
+    </View>
+  );
+}
+
+function PersonCard({
+  name,
+  sub,
+  linkedinUrl,
+  primaryColor,
+}: {
+  name: string;
+  sub?: string | null;
+  linkedinUrl?: string | null;
+  primaryColor: string;
+}) {
+  const abbr = initials(name) || '?';
+  return (
+    <View style={sectionStyles.personCard}>
+      <View
+        style={[
+          sectionStyles.personAvatar,
+          {backgroundColor: withAlpha(primaryColor, 0.12)},
+        ]}>
+        <Text style={[sectionStyles.personInitials, {color: primaryColor}]}>
+          {abbr}
+        </Text>
+      </View>
+      <View style={sectionStyles.personInfo}>
+        <Text style={sectionStyles.personName}>
+          {name}
+          {sub ? ` (${sub})` : ''}
+        </Text>
+        {linkedinUrl ? (
+          <Pressable onPress={() => openLink(linkedinUrl)}>
+            <Text style={[sectionStyles.personLink, {color: primaryColor}]}>
+              LinkedIn
+            </Text>
+          </Pressable>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
+function InlineVideoPlayer({
+  url,
+  primaryColor,
+}: {
+  url: string;
+  primaryColor: string;
+}) {
+  const [hasError, setHasError] = useState(false);
+
+  if (hasError) {
+    return (
+      <Pressable
+        onPress={() => Linking.openURL(url).catch(() => undefined)}
+        style={[sectionStyles.videoFallback, {borderColor: primaryColor}]}>
+        <Icon name="alert-circle-outline" size={28} color={primaryColor} />
+        <Text style={[sectionStyles.videoFallbackText, {color: primaryColor}]}>
+          Tap to open the video externally
+        </Text>
+      </Pressable>
+    );
+  }
+
+  return (
+    <View style={sectionStyles.videoWrap}>
+      <Video
+        source={{uri: url}}
+        style={sectionStyles.video}
+        controls
+        resizeMode="contain"
+        paused
+        onError={() => setHasError(true)}
+      />
+    </View>
+  );
+}
+
+// ─── main screen ─────────────────────────────────────────────────────────────
+
 export function ConnectProfileScreen({
   token,
   role,
   user,
   primaryColor,
   logoBaseUrl,
-  isSaved,
-  onToggleSave,
   onBack,
 }: Props) {
   const toast = useToast();
-  // Start from the search row so the header paints immediately, then merge the
-  // fuller profile payload once it loads.
+  const {baseUrl: tenantBaseUrl, globalSetting} = useContext(TenantContext);
+
   const [profile, setProfile] = useState<Record<string, any>>(user.raw);
   const [isLoading, setIsLoading] = useState(true);
   const [connectOpen, setConnectOpen] = useState(false);
   const [connectMessage, setConnectMessage] = useState(DEFAULT_CONNECT_MESSAGE);
   const [isSending, setIsSending] = useState(false);
-  // Relationship status drives the footer button. 'none' = can connect,
-  // 'pending' = request already out, 'connected' = already connected.
   const [connState, setConnState] = useState<ConnectionState>('none');
+  // Best-known user UUID for connection APIs — refined after full profile loads
+  // because search results sometimes only carry the profile/account UUID in
+  // `uuid`, while the actual user UUID lives in `profile.user[0].uuid`.
+  const [resolvedUuid, setResolvedUuid] = useState(user.uuid);
 
-  // On open: pull the full profile (keyed on the account/profile uuid), bump
-  // the view counter, and resolve the connection state (keyed on the user
-  // uuid) — all in parallel, each best-effort.
   useEffect(() => {
     let cancelled = false;
     setIsLoading(true);
 
-    connectService
-      .getPublicProfile(token, role, user.profileUuid)
-      .then(full => {
+    (async () => {
+      let uuid = user.uuid;
+      try {
+        const full = await connectService.getPublicProfile(
+          token,
+          role,
+          user.profileUuid,
+        );
         if (cancelled) return;
         if (full && typeof full === 'object') {
           setProfile(prev => ({...prev, ...full}));
+          const fromProfile =
+            full?.user?.[0]?.uuid ||
+            full?.user?.[0]?.userUUID ||
+            full?.userUUID ||
+            full?.userUuid;
+          if (fromProfile) {
+            uuid = fromProfile;
+            setResolvedUuid(fromProfile);
+          }
         }
-      })
-      .catch(() => {
-        // Non-fatal — we already have the search row to render from.
-      })
-      .finally(() => {
+      } catch {
+        // non-fatal — screen still renders from search row data
+      } finally {
         if (!cancelled) setIsLoading(false);
-      });
+      }
 
-    // Fire-and-forget view increment.
-    connectService.incrementViews(token, role, user.profileUuid);
+      connectService.incrementViews(token, role, user.profileUuid);
 
-    if (user.uuid) {
-      connectService
-        .checkConnectionState(token, user.uuid)
-        .then(state => {
-          if (!cancelled) setConnState(state);
-        })
-        .catch(() => {
-          // Leave as 'none' so the user can still attempt to connect.
-        });
-    }
+      if (uuid) {
+        connectService
+          .checkConnectionState(token, uuid)
+          .then(state => {
+            if (!cancelled) setConnState(state);
+          })
+          .catch(() => {});
+      }
+    })();
 
     return () => {
       cancelled = true;
     };
   }, [token, role, user.profileUuid, user.uuid]);
 
+  // ── derived display values ─────────────────────────────────────────────────
+
   const name = resolveName(profile);
-  const accountType = resolveAccountType(profile) || resolveAccountType(user.raw);
+  const accountType = (
+    resolveAccountType(profile) || resolveAccountType(user.raw)
+  ).toLowerCase();
   const logo = resolveLogo(profile, logoBaseUrl);
-  const headline = resolveHeadline(profile);
   const city = resolveCity(profile);
   const country = resolveCountry(profile);
-  const location = [city, country].filter(Boolean).join(', ');
-  const fields = useMemo(
-    () => fieldsFor(accountType || '', profile),
-    [accountType, profile],
-  );
+  const location = [
+    profile?.registeredCityR?.name || city,
+    profile?.registeredStateR?.name || profile?.registeredState,
+    profile?.registeredCountryR?.name || country,
+  ]
+    .filter(Boolean)
+    .join(', ');
+
   const about = stripHtml(
-    profile?.description || profile?.aboutUs || profile?.bio || '',
+    profile?.longDescription ||
+      profile?.briefDescription ||
+      profile?.aboutUs ||
+      profile?.shortDescription ||
+      profile?.description ||
+      '',
   );
+
+  const isPersonProfile =
+    accountType === 'mentor' ||
+    accountType === 'individual' ||
+    accountType === 'service_provider';
+  const isStartup = accountType === 'startup';
+  const isInvestor = accountType === 'investor';
+  const isCorporate = accountType === 'corporate';
+  const isPartner = accountType === 'partner';
+
+  const heroTagline = isPartner
+    ? profile?.tagline || profile?.shortDescription || ''
+    : profile?.pitchDeck?.elevatorPitch || profile?.elevatorPitch || '';
+
+  const socialLinks: Array<{key: string; url: string; icon: string; label: string}> =
+    [];
+  if (profile?.twitterUrl)
+    socialLinks.push({key: 'twitter', url: profile.twitterUrl, icon: 'twitter', label: 'Twitter'});
+  if (profile?.linkedinUrl)
+    socialLinks.push({key: 'linkedin', url: profile.linkedinUrl, icon: 'linkedin', label: 'LinkedIn'});
+  if (profile?.facebookUrl)
+    socialLinks.push({key: 'facebook', url: profile.facebookUrl, icon: 'facebook', label: 'Facebook'});
+  if (profile?.instagramUrl)
+    socialLinks.push({key: 'instagram', url: profile.instagramUrl, icon: 'instagram', label: 'Instagram'});
+  if (profile?.youtubeUrl)
+    socialLinks.push({key: 'youtube', url: profile.youtubeUrl, icon: 'youtube', label: 'YouTube'});
+
+  const cdnBases = [
+    globalSetting?.imgKitUrl,
+    globalSetting?.assetsImgKitUrl,
+    globalSetting?.s3Url,
+    tenantBaseUrl,
+  ];
+  const pitchImages = getPitchImages(profile?.pitchDeck, cdnBases);
+
+  const videoUrl =
+    profile?.pitchDeck?.uploadPitchUrl ||
+    profile?.pitchDeck?.powerPitchUrl ||
+    profile?.pitchDeck?.embedUrl ||
+    '';
+
+  const founders: any[] = Array.isArray(profile?.founders) ? profile.founders : [];
+  const advisoryBoards: any[] = Array.isArray(profile?.advisoryBoards)
+    ? profile.advisoryBoards
+    : [];
+
+  const startupBusinessModels = toNamedList(profile?.startupBusinessModels);
+  const startupIndustries = [
+    ...toNamedList(profile?.startupIndustries),
+    ...toNamedList(profile?.startupOtherIndustries),
+  ];
+  const startupTechnologies = [
+    ...toNamedList(profile?.startupTechnologies),
+    ...toNamedList(profile?.startupOtherTechnologies),
+  ];
+  const mentorshipAreas = toNamedList(profile?.mentorshipAreas);
+
+  const expertiseItems = isCorporate
+    ? toNamedList(profile?.connectionRequirements)
+    : toNamedList(profile?.domainAreas);
+  const industryItems = [
+    ...toNamedList(profile?.sectoralInterestSubCategoryIds),
+    ...toNamedList(profile?.sectoralInterestIds),
+    ...toNamedList(profile?.sectoralInterestOthers),
+  ];
+
+  const targetFundraise = formatCurrencyINR(profile?.financials?.targetFundraise);
+  const valuation = formatCurrencyINR(profile?.financials?.tentativeValuation);
+  const totalFundRaised = formatCurrencyINR(profile?.financials?.totalFundRaised);
+
+  // ── connect action ────────────────────────────────────────────────────────
 
   const handleSend = async () => {
     setIsSending(true);
     try {
-      await connectService.sendConnectRequest(token, user, connectMessage);
+      await connectService.sendConnectRequest(
+        token,
+        {...user, uuid: resolvedUuid},
+        connectMessage,
+      );
       setConnState('pending');
       setConnectOpen(false);
       toast.success(`Connection request sent to ${name}.`);
-      // Re-confirm status with the server (mirrors the web's follow-up
-      // check/request call after a send).
       connectService
-        .checkConnectionState(token, user.uuid)
+        .checkConnectionState(token, resolvedUuid)
         .then(setConnState)
         .catch(() => undefined);
     } catch (err) {
@@ -197,14 +402,13 @@ export function ConnectProfileScreen({
     }
   };
 
-  // Footer button presentation derived from the connection state.
   const connectDisabled = connState !== 'none';
   const connectLabel =
     connState === 'connected'
       ? 'Connected'
       : connState === 'pending'
         ? 'Request Sent'
-        : 'Connect';
+        : 'CONNECT';
   const connectIcon =
     connState === 'connected'
       ? 'account-check'
@@ -212,8 +416,11 @@ export function ConnectProfileScreen({
         ? 'check'
         : 'account-plus-outline';
 
+  // ── render ────────────────────────────────────────────────────────────────
+
   return (
     <View style={styles.page}>
+      {/* Top bar */}
       <View style={styles.topBar}>
         <Pressable
           style={({pressed}) => [
@@ -229,119 +436,527 @@ export function ConnectProfileScreen({
         <Text style={styles.topBarTitle} numberOfLines={1}>
           {name}
         </Text>
-        <Pressable
-          style={({pressed}) => [
-            styles.iconBtn,
-            pressed && {opacity: 0.5, backgroundColor: colors.border},
-          ]}
-          hitSlop={10}
-          onPress={onToggleSave}
-          accessibilityRole="button"
-          accessibilityLabel={isSaved ? 'Unsave profile' : 'Save profile'}>
-          <Icon
-            name={isSaved ? 'bookmark' : 'bookmark-outline'}
-            size={22}
-            color={isSaved ? primaryColor : '#475569'}
-          />
-        </Pressable>
       </View>
 
       <ScrollView
-        contentContainerStyle={styles.content}
+        contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}>
-        <View style={styles.hero}>
-          <View style={styles.avatarWrap}>
+
+        {/* ── Hero card ─────────────────────────────────────────────── */}
+        <View style={styles.heroCard}>
+          <View style={styles.heroRow}>
             {logo ? (
-              <Image source={{uri: logo}} style={styles.avatar} />
+              <Image source={{uri: logo}} style={styles.heroLogo} />
             ) : (
               <View
                 style={[
-                  styles.avatarFallback,
-                  {backgroundColor: withAlpha(primaryColor, 0.12)},
+                  styles.heroLogoFallback,
+                  {backgroundColor: withAlpha(primaryColor, 0.15)},
                 ]}>
-                <Text style={[styles.avatarInitials, {color: primaryColor}]}>
+                <Text
+                  style={[styles.heroLogoInitials, {color: primaryColor}]}>
                   {initials(name) || '?'}
                 </Text>
               </View>
             )}
+            <View style={styles.heroCopy}>
+              <Text style={styles.heroName}>{name}</Text>
+              {location ? (
+                <View style={styles.heroLocation}>
+                  <Icon
+                    name="map-marker-outline"
+                    size={13}
+                    color="#475569"
+                  />
+                  <Text style={styles.heroLocationText}>{location}</Text>
+                </View>
+              ) : null}
+              {profile?.yearOfIncorporation || profile?.establishmentYear ? (
+                <View style={styles.heroLocation}>
+                  <Icon name="calendar" size={13} color="#475569" />
+                  <Text style={styles.heroLocationText}>
+                    Estd.{' '}
+                    {profile.yearOfIncorporation || profile.establishmentYear}
+                  </Text>
+                </View>
+              ) : null}
+              {profile?.displayWebsite ? (
+                <Pressable
+                  onPress={() => openLink(profile.displayWebsite)}
+                  style={styles.heroLocation}>
+                  <Icon name="link-variant" size={13} color={primaryColor} />
+                  <Text
+                    style={[styles.heroWebsiteText, {color: primaryColor}]}
+                    numberOfLines={1}>
+                    Visit website
+                  </Text>
+                </Pressable>
+              ) : null}
+            </View>
           </View>
-          <Text style={styles.name}>{name}</Text>
-          {accountType ? (
-            <View
-              style={[
-                styles.typeChip,
-                {
-                  backgroundColor: withAlpha(primaryColor, 0.1),
-                  borderColor: withAlpha(primaryColor, 0.25),
-                },
-              ]}>
-              <Text style={[styles.typeChipText, {color: primaryColor}]}>
-                {accountType.replace(/_/g, ' ').toUpperCase()}
-              </Text>
-            </View>
+
+          {heroTagline ? (
+            <Text style={styles.heroTagline}>
+              {isPartner ? heroTagline : `"${heroTagline}"`}
+            </Text>
           ) : null}
-          {location ? (
-            <View style={styles.locationRow}>
-              <Icon name="map-marker-outline" size={14} color={colors.textMuted} />
-              <Text style={styles.locationText}>{location}</Text>
-            </View>
-          ) : null}
-          {headline ? <Text style={styles.headline}>{headline}</Text> : null}
         </View>
 
         {isLoading ? (
-          <View style={styles.loadingRow}>
-            <ActivityIndicator color={primaryColor} />
-          </View>
+          <ActivityIndicator
+            color={primaryColor}
+            style={styles.loadingSpinner}
+          />
         ) : null}
 
+        {/* ── About ─────────────────────────────────────────────────── */}
         {about ? (
-          <View style={styles.section}>
-            <Text style={styles.sectionLabel}>About</Text>
-            <View style={styles.aboutBox}>
-              <Text style={styles.aboutText}>{about}</Text>
-            </View>
+          <SectionCard title="About" primaryColor={primaryColor}>
+            <Text style={sectionStyles.valueText}>{about}</Text>
+          </SectionCard>
+        ) : null}
+
+        {/* ── Startup: Business Details ──────────────────────────────── */}
+        {isStartup &&
+        (startupBusinessModels.length ||
+          mentorshipAreas.length ||
+          startupIndustries.length ||
+          startupTechnologies.length) ? (
+          <SectionCard title="Business Details" primaryColor={primaryColor}>
+            {startupBusinessModels.length ? (
+              <View style={sectionStyles.labelRow}>
+                <Text style={sectionStyles.labelText}>Business Models</Text>
+                <ChipList items={startupBusinessModels} />
+              </View>
+            ) : null}
+            {mentorshipAreas.length ? (
+              <View style={sectionStyles.labelRow}>
+                <Text style={sectionStyles.labelText}>
+                  Looking mentorship for?
+                </Text>
+                <ChipList items={mentorshipAreas} />
+              </View>
+            ) : null}
+            {startupIndustries.length ? (
+              <View style={sectionStyles.labelRow}>
+                <Text style={sectionStyles.labelText}>Industry Domain</Text>
+                <ChipList items={startupIndustries} />
+              </View>
+            ) : null}
+            {startupTechnologies.length ? (
+              <View style={sectionStyles.labelRow}>
+                <Text style={sectionStyles.labelText}>Technology Domain</Text>
+                <ChipList items={startupTechnologies} />
+              </View>
+            ) : null}
+          </SectionCard>
+        ) : null}
+
+        {/* ── Mentor / Individual / ServiceProvider: Expertise ────────── */}
+        {isPersonProfile && (expertiseItems.length || industryItems.length) ? (
+          <SectionCard title="Details" primaryColor={primaryColor}>
+            {expertiseItems.length ? (
+              <View style={sectionStyles.labelRow}>
+                <Text style={sectionStyles.labelText}>Areas of expertise</Text>
+                <ChipList items={expertiseItems} />
+              </View>
+            ) : null}
+            {industryItems.length ? (
+              <View style={sectionStyles.labelRow}>
+                <Text style={sectionStyles.labelText}>
+                  Industries of interest
+                </Text>
+                <ChipList items={industryItems} />
+              </View>
+            ) : null}
+          </SectionCard>
+        ) : null}
+
+        {/* ── Investor: Investment Focus ─────────────────────────────── */}
+        {isInvestor && (expertiseItems.length || industryItems.length) ? (
+          <SectionCard title="Investment Focus" primaryColor={primaryColor}>
+            {expertiseItems.length ? (
+              <View style={sectionStyles.labelRow}>
+                <Text style={sectionStyles.labelText}>Investment focus</Text>
+                <ChipList items={expertiseItems} />
+              </View>
+            ) : null}
+            {industryItems.length ? (
+              <View style={sectionStyles.labelRow}>
+                <Text style={sectionStyles.labelText}>Sectors of interest</Text>
+                <ChipList items={industryItems} />
+              </View>
+            ) : null}
+          </SectionCard>
+        ) : null}
+
+        {/* ── Corporate: Details ────────────────────────────────────── */}
+        {isCorporate ? (
+          <SectionCard title="Details" primaryColor={primaryColor}>
+            <LabelRow
+              label="Company Size"
+              value={profile?.size || '-'}
+            />
+            <View style={sectionStyles.divider} />
+            <LabelRow
+              label="Name of Program"
+              value={profile?.programName || '-'}
+            />
+            <View style={sectionStyles.divider} />
+            <LabelRow
+              label="Total startups supported"
+              value={
+                profile?.totalSupported != null
+                  ? String(profile.totalSupported)
+                  : '-'
+              }
+            />
+            {industryItems.length ? (
+              <>
+                <View style={sectionStyles.divider} />
+                <View style={sectionStyles.labelRow}>
+                  <Text style={sectionStyles.labelText}>Industry Domain</Text>
+                  <ChipList items={industryItems} />
+                </View>
+              </>
+            ) : null}
+            {expertiseItems.length ? (
+              <>
+                <View style={sectionStyles.divider} />
+                <View style={sectionStyles.labelRow}>
+                  <Text style={sectionStyles.labelText}>
+                    Reason to connect with startups
+                  </Text>
+                  <ChipList items={expertiseItems} />
+                </View>
+              </>
+            ) : null}
+          </SectionCard>
+        ) : null}
+
+        {/* ── Partner: Details ──────────────────────────────────────── */}
+        {isPartner ? (
+          <SectionCard title="Details" primaryColor={primaryColor}>
+            <LabelRow
+              label="Partner Type"
+              value={humanizeSnake(profile?.partnerType) || '-'}
+            />
+            <View style={sectionStyles.divider} />
+            <LabelRow label="Location" value={location || '-'} />
+            {(() => {
+              const tagItems = [
+                ...toNamedList(profile?.tags),
+                ...toNamedList(profile?.partnerIndustries),
+                ...toNamedList(profile?.partnerOtherIndustries),
+                ...toNamedList(profile?.partnerTechnologies),
+                ...toNamedList(profile?.partnerOtherTechnologies),
+              ];
+              if (!tagItems.length) return null;
+              return (
+                <>
+                  <View style={sectionStyles.divider} />
+                  <View style={sectionStyles.labelRow}>
+                    <Text style={sectionStyles.labelText}>Tags</Text>
+                    <ChipList items={tagItems} />
+                  </View>
+                </>
+              );
+            })()}
+          </SectionCard>
+        ) : null}
+
+        {/* ── Funding card (startup / investor) ─────────────────────── */}
+        {(targetFundraise ||
+          valuation ||
+          profile?.financials?.fundingStage?.name) ? (
+          <View style={styles.fundingCard}>
+            {targetFundraise ? (
+              <View>
+                <Text style={styles.fundingLabel}>Raising</Text>
+                <Text style={styles.fundingAmount}>{targetFundraise}</Text>
+                {valuation ? (
+                  <Text style={styles.fundingMeta}>at {valuation} valuation</Text>
+                ) : null}
+              </View>
+            ) : null}
+            {profile?.financials?.fundingStage?.name ||
+            profile?.financials?.revenueStage ? (
+              <View style={styles.fundingMetaRow}>
+                {profile?.financials?.fundingStage?.name ? (
+                  <View style={styles.fundingMetaCol}>
+                    <Text style={styles.miniLabel}>Funding Stage</Text>
+                    <Text style={styles.miniValue}>
+                      {profile.financials.fundingStage.name}
+                    </Text>
+                  </View>
+                ) : null}
+                {profile?.financials?.revenueStage ? (
+                  <View style={styles.fundingMetaCol}>
+                    <Text style={styles.miniLabel}>Revenue Stage</Text>
+                    <Text style={styles.miniValue}>
+                      {humanizeSnake(profile.financials.revenueStage)}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
           </View>
         ) : null}
 
-        {fields.length > 0 ? (
-          <View style={styles.section}>
-            <Text style={styles.sectionLabel}>Details</Text>
-            <View style={styles.grid}>
-              {fields.map(f => (
-                <View key={f.label} style={styles.gridItem}>
-                  <Text style={styles.fieldLabel}>{f.label}</Text>
-                  <Text style={styles.fieldValue} numberOfLines={3}>
-                    {f.value}
-                  </Text>
-                </View>
+        {/* ── Social Links ──────────────────────────────────────────── */}
+        {socialLinks.length ? (
+          <SectionCard title="Social Links" primaryColor={primaryColor}>
+            <View style={sectionStyles.socialRow}>
+              {socialLinks.map(item => (
+                <Pressable
+                  key={item.key}
+                  onPress={() => openLink(item.url)}
+                  style={styles.socialChip}
+                  accessibilityRole="button"
+                  accessibilityLabel={item.label}>
+                  <Icon name={item.icon} size={22} color={primaryColor} />
+                </Pressable>
               ))}
             </View>
-          </View>
+          </SectionCard>
         ) : null}
+
+        {/* ── Programs ──────────────────────────────────────────────── */}
+        {(() => {
+          const programs: any[] = Array.isArray(profile?.programs)
+            ? profile.programs
+            : [];
+          const titles = programs
+            .map(
+              (p: any) =>
+                p?.programTitle ||
+                p?.name ||
+                (typeof p === 'string' ? p : ''),
+            )
+            .filter(Boolean);
+          if (!titles.length) return null;
+          return (
+            <SectionCard title="Programs" primaryColor={primaryColor}>
+              <ChipList items={titles} />
+            </SectionCard>
+          );
+        })()}
+
+        {/* ── Pitch Deck ────────────────────────────────────────────── */}
+        {(profile?.pitchDeck?.pitchDocument || pitchImages.length > 0) ? (
+          <SectionCard title="Pitch Deck" primaryColor={primaryColor}>
+            {connState === 'connected' ? (
+              <>
+                {profile?.pitchDeck?.pitchDocument ? (
+                  <View style={styles.pitchActionRow}>
+                    <Pressable
+                      onPress={() =>
+                        openLink(profile.pitchDeck?.pitchDocument)
+                      }
+                      style={[
+                        styles.fullScreenPill,
+                        {borderColor: primaryColor},
+                      ]}>
+                      <Icon name="fullscreen" size={14} color={primaryColor} />
+                      <Text
+                        style={[
+                          styles.fullScreenPillText,
+                          {color: primaryColor},
+                        ]}>
+                        Full Screen
+                      </Text>
+                    </Pressable>
+                  </View>
+                ) : null}
+                {pitchImages.length > 0 ? (
+                  <PdfPagesCarousel
+                    images={pitchImages}
+                    primaryColor={primaryColor}
+                    height={480}
+                  />
+                ) : profile?.pitchDeck?.pitchDocument ? (
+                  <Pressable
+                    onPress={() =>
+                      openLink(profile.pitchDeck?.pitchDocument)
+                    }
+                    style={[styles.linkButton, {borderColor: primaryColor}]}>
+                    <Icon
+                      name="file-document-outline"
+                      size={18}
+                      color={primaryColor}
+                    />
+                    <Text
+                      style={[styles.linkButtonText, {color: primaryColor}]}>
+                      {profile.pitchDeck?.fileName || 'Open pitch deck'}
+                    </Text>
+                  </Pressable>
+                ) : null}
+              </>
+            ) : (
+              <View style={styles.lockedCard}>
+                <Icon name="lock-outline" size={32} color="#94a3b8" />
+                <Text style={styles.lockedTitle}>
+                  Accessible only to connections
+                </Text>
+                <Pressable
+                  onPress={() => {
+                    setConnectMessage(DEFAULT_CONNECT_MESSAGE);
+                    setConnectOpen(true);
+                  }}
+                  style={[
+                    styles.lockedConnectBtn,
+                    {backgroundColor: primaryColor},
+                  ]}>
+                  <Text style={styles.lockedConnectBtnText}>CONNECT</Text>
+                </Pressable>
+              </View>
+            )}
+          </SectionCard>
+        ) : null}
+
+        {/* ── Video Pitch ───────────────────────────────────────────── */}
+        {videoUrl ? (
+          <SectionCard title="Video Pitch" primaryColor={primaryColor}>
+            {isDirectVideoUrl(videoUrl) ? (
+              <InlineVideoPlayer url={videoUrl} primaryColor={primaryColor} />
+            ) : (
+              <Pressable
+                onPress={() => openLink(videoUrl)}
+                style={[styles.videoPressable, {borderColor: primaryColor}]}>
+                <Icon name="play-circle" size={48} color={primaryColor} />
+                <Text style={[styles.videoPressableText, {color: primaryColor}]}>
+                  Tap to play video pitch
+                </Text>
+              </Pressable>
+            )}
+          </SectionCard>
+        ) : null}
+
+        {/* ── Team ──────────────────────────────────────────────────── */}
+        {founders.length > 0 ? (
+          <SectionCard title="Team" primaryColor={primaryColor}>
+            <View style={sectionStyles.peopleGrid}>
+              {founders.map((p: any) => (
+                <PersonCard
+                  key={p.uuid || p.name}
+                  name={p.name || 'Team member'}
+                  sub={p.role}
+                  linkedinUrl={p.linkedinUrl}
+                  primaryColor={primaryColor}
+                />
+              ))}
+            </View>
+          </SectionCard>
+        ) : null}
+
+        {/* ── Advisory Board ────────────────────────────────────────── */}
+        {advisoryBoards.length > 0 ? (
+          <SectionCard title="Advisory Board" primaryColor={primaryColor}>
+            <View style={sectionStyles.peopleGrid}>
+              {advisoryBoards.map((p: any) => (
+                <PersonCard
+                  key={p.uuid || p.name}
+                  name={p.name || 'Advisor'}
+                  linkedinUrl={p.linkedinUrl}
+                  primaryColor={primaryColor}
+                />
+              ))}
+            </View>
+          </SectionCard>
+        ) : null}
+
+        {/* ── Product Information ───────────────────────────────────── */}
+        {(profile?.productInformation?.productStage?.name ||
+          profile?.productInformation?.description) ? (
+          <SectionCard title="Product Information" primaryColor={primaryColor}>
+            {profile.productInformation?.productStage?.name ? (
+              <LabelRow
+                label="Product Stage"
+                value={profile.productInformation.productStage.name}
+              />
+            ) : null}
+            {profile.productInformation?.description ? (
+              <>
+                <View style={sectionStyles.divider} />
+                <LabelRow
+                  label="Company Brief"
+                  value={profile.productInformation.description}
+                />
+              </>
+            ) : null}
+          </SectionCard>
+        ) : null}
+
+        {/* ── Funding Details ───────────────────────────────────────── */}
+        {(totalFundRaised || profile?.financials?.pastFunding) ? (
+          <SectionCard title="Funding Details" primaryColor={primaryColor}>
+            {totalFundRaised ? (
+              <LabelRow
+                label="Total funding raised in previous round"
+                value={totalFundRaised}
+              />
+            ) : null}
+            {profile?.financials?.pastFunding ? (
+              <>
+                <View style={sectionStyles.divider} />
+                <LabelRow
+                  label="Previous Investors"
+                  value={profile.financials.pastFunding}
+                />
+              </>
+            ) : null}
+          </SectionCard>
+        ) : null}
+
+        {profile?.modifiedAt ? (
+          <Text style={styles.lastUpdated}>
+            Last updated:{' '}
+            {new Date(profile.modifiedAt).toLocaleDateString('en-US', {
+              month: 'short',
+              day: 'numeric',
+              year: 'numeric',
+            })}
+          </Text>
+        ) : null}
+
+        <View style={styles.scrollPad} />
       </ScrollView>
 
+      {/* Footer: Connected badge (no action) or Connect / Request Sent button */}
       <View style={styles.footer}>
-        <Pressable
-          disabled={connectDisabled}
-          onPress={() => {
-            setConnectMessage(DEFAULT_CONNECT_MESSAGE);
-            setConnectOpen(true);
-          }}
-          style={[
-            styles.connectBtn,
-            {
-              backgroundColor: connectDisabled
-                ? colors.borderStrong
-                : primaryColor,
-            },
-          ]}>
-          <Icon name={connectIcon} size={18} color="#ffffff" />
-          <Text style={styles.connectBtnText}>{connectLabel}</Text>
-        </Pressable>
+        {connState === 'connected' ? (
+          <View
+            style={[
+              styles.connectedBadge,
+              {backgroundColor: withAlpha(primaryColor, 0.12)},
+            ]}>
+            <Icon name="account-check" size={18} color={primaryColor} />
+            <Text style={[styles.connectedBadgeText, {color: primaryColor}]}>
+              Connected
+            </Text>
+          </View>
+        ) : (
+          <Pressable
+            disabled={connectDisabled}
+            onPress={() => {
+              setConnectMessage(DEFAULT_CONNECT_MESSAGE);
+              setConnectOpen(true);
+            }}
+            style={[
+              styles.connectBtn,
+              {
+                backgroundColor: connectDisabled
+                  ? colors.borderStrong
+                  : primaryColor,
+              },
+            ]}>
+            <Icon name={connectIcon} size={18} color="#ffffff" />
+            <Text style={styles.connectBtnText}>{connectLabel}</Text>
+          </Pressable>
+        )}
       </View>
 
-      {/* Connect-request modal — intro message + send. */}
+      {/* Connect-request modal */}
       <Modal
         transparent
         visible={connectOpen}
@@ -349,12 +964,6 @@ export function ConnectProfileScreen({
         onRequestClose={() => (isSending ? undefined : setConnectOpen(false))}>
         <KeyboardAvoidingView
           style={styles.modalOverlay}
-          // A React Native <Modal> on Android lives in its own dialog window
-          // that doesn't reliably honor the activity's adjustResize, so a
-          // centered card gets covered by the keyboard on real devices (it
-          // looked fine on the emulator). `height` actively shrinks the overlay
-          // so the card + Send/Cancel buttons stay above the keyboard; iOS uses
-          // the smoother `padding`.
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <Pressable
             style={styles.modalBackdrop}
@@ -404,6 +1013,146 @@ export function ConnectProfileScreen({
   );
 }
 
+// ─── section sub-styles (used inside sub-components) ─────────────────────────
+
+const sectionStyles = StyleSheet.create({
+  card: {
+    backgroundColor: '#ffffff',
+    borderRadius: 18,
+    marginHorizontal: 16,
+    marginTop: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+  },
+  heading: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    marginBottom: 12,
+  },
+  dot: {
+    borderRadius: 999,
+    height: 16,
+    marginRight: 10,
+    width: 4,
+  },
+  title: {
+    color: '#0f172a',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  body: {
+    gap: 10,
+  },
+  labelRow: {
+    gap: 6,
+  },
+  labelText: {
+    color: '#64748b',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  valueText: {
+    color: '#0f172a',
+    fontSize: 14,
+    fontWeight: '600',
+    lineHeight: 20,
+  },
+  empty: {
+    color: '#94a3b8',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  chipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  chip: {
+    backgroundColor: '#eff6ff',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  chipText: {
+    color: '#1e3a8a',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  divider: {
+    borderTopColor: '#e2e8f0',
+    borderTopWidth: 1,
+    borderStyle: 'dashed',
+    marginVertical: 4,
+  },
+  socialRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  peopleGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  personCard: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 10,
+    minWidth: '46%',
+    flex: 1,
+  },
+  personAvatar: {
+    alignItems: 'center',
+    borderRadius: 999,
+    height: 36,
+    justifyContent: 'center',
+    width: 36,
+  },
+  personInitials: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  personInfo: {
+    flex: 1,
+  },
+  personName: {
+    color: '#0f172a',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  personLink: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  videoWrap: {
+    aspectRatio: 16 / 9,
+    backgroundColor: '#000000',
+    borderRadius: 10,
+    overflow: 'hidden',
+    width: '100%',
+  },
+  video: {
+    height: '100%',
+    width: '100%',
+  },
+  videoFallback: {
+    alignItems: 'center',
+    borderRadius: 10,
+    borderWidth: 1,
+    gap: 8,
+    justifyContent: 'center',
+    paddingVertical: 24,
+    width: '100%',
+  },
+  videoFallbackText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+});
+
+// ─── page-level styles ────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
   page: {
     flex: 1,
@@ -416,7 +1165,8 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
     borderBottomWidth: 1,
     paddingHorizontal: 12,
-    paddingVertical: 12,
+    paddingVertical: 10,
+    gap: 8,
   },
   iconBtn: {
     width: 40,
@@ -430,127 +1180,222 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     color: colors.text,
-    marginHorizontal: 4,
   },
-  content: {
-    paddingBottom: 30,
+  scroll: {
+    paddingBottom: 16,
   },
-  hero: {
+  scrollPad: {
+    height: 8,
+  },
+  loadingSpinner: {
+    marginTop: 20,
+  },
+
+  // Hero card
+  heroCard: {
+    backgroundColor: '#e0e7ff',
+    borderRadius: 18,
+    margin: 16,
+    marginBottom: 0,
+    padding: 16,
+  },
+  heroRow: {
+    flexDirection: 'row',
+    gap: 14,
     alignItems: 'center',
-    backgroundColor: colors.surface,
-    paddingVertical: 24,
-    paddingHorizontal: 20,
-    borderBottomColor: colors.border,
-    borderBottomWidth: 1,
   },
-  avatarWrap: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    overflow: 'hidden',
-    marginBottom: 12,
+  heroLogo: {
+    width: 64,
+    height: 64,
+    borderRadius: 12,
+    backgroundColor: '#ffffff',
   },
-  avatar: {
-    width: 96,
-    height: 96,
-    resizeMode: 'cover',
-  },
-  avatarFallback: {
-    width: 96,
-    height: 96,
+  heroLogoFallback: {
+    width: 64,
+    height: 64,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarInitials: {
-    fontSize: 36,
-    fontWeight: '800',
-  },
-  name: {
+  heroLogoInitials: {
     fontSize: 22,
     fontWeight: '800',
-    color: colors.text,
-    textAlign: 'center',
   },
-  typeChip: {
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    marginTop: 8,
+  heroCopy: {
+    flex: 1,
   },
-  typeChipText: {
-    fontSize: 11,
+  heroName: {
+    color: '#0f172a',
+    fontSize: 18,
     fontWeight: '800',
-    letterSpacing: 0.5,
   },
-  locationRow: {
+  heroLocation: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    marginTop: 8,
+    marginTop: 4,
   },
-  locationText: {
+  heroLocationText: {
+    color: '#475569',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  heroWebsiteText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  heroTagline: {
+    color: '#334155',
     fontSize: 13,
-    color: colors.textMuted,
-  },
-  headline: {
-    fontSize: 14,
-    color: colors.textMuted,
-    textAlign: 'center',
+    fontStyle: 'italic',
     lineHeight: 20,
-    marginTop: 10,
+    marginTop: 14,
+    textAlign: 'center',
   },
-  loadingRow: {
-    paddingVertical: 16,
-    alignItems: 'center',
-  },
-  section: {
+
+  // Funding card
+  fundingCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 18,
+    gap: 16,
+    marginHorizontal: 16,
     marginTop: 16,
-    paddingHorizontal: 16,
+    padding: 16,
   },
-  sectionLabel: {
+  fundingLabel: {
+    color: '#64748b',
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  fundingAmount: {
+    color: '#0f172a',
+    fontSize: 22,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  fundingMeta: {
+    color: '#64748b',
+    fontSize: 13,
+    marginTop: 4,
+  },
+  fundingMetaRow: {
+    borderTopColor: '#e2e8f0',
+    borderTopWidth: 1,
+    flexDirection: 'row',
+    gap: 24,
+    paddingTop: 14,
+  },
+  fundingMetaCol: {
+    flex: 1,
+  },
+  miniLabel: {
+    color: '#64748b',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  miniValue: {
+    color: '#0f172a',
+    fontSize: 14,
+    fontWeight: '800',
+    marginTop: 4,
+  },
+
+  // Social chip
+  socialChip: {
+    alignItems: 'center',
+    backgroundColor: '#eef2ff',
+    borderRadius: 999,
+    height: 40,
+    justifyContent: 'center',
+    width: 40,
+  },
+
+  // Pitch deck: locked card
+  lockedCard: {
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    gap: 12,
+    paddingVertical: 32,
+  },
+  lockedTitle: {
+    color: '#475569',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  lockedConnectBtn: {
+    borderRadius: 10,
+    paddingHorizontal: 28,
+    paddingVertical: 12,
+    marginTop: 4,
+  },
+  lockedConnectBtnText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+
+  // Pitch deck: full-screen pill
+  pitchActionRow: {
+    alignItems: 'flex-end',
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginBottom: 8,
+  },
+  fullScreenPill: {
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  fullScreenPillText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  linkButton: {
+    alignItems: 'center',
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  linkButtonText: {
     fontSize: 13,
     fontWeight: '700',
-    color: colors.textMuted,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 10,
   },
-  aboutBox: {
-    backgroundColor: colors.surface,
-    borderRadius: 14,
-    padding: 14,
+
+  // Video pitch: non-direct URL tap button
+  videoPressable: {
+    alignItems: 'center',
+    borderRadius: 10,
+    borderWidth: 1,
+    gap: 8,
+    justifyContent: 'center',
+    paddingVertical: 32,
+    width: '100%',
   },
-  aboutText: {
-    fontSize: 14,
-    color: colors.text,
-    lineHeight: 21,
+  videoPressableText: {
+    fontSize: 13,
+    fontWeight: '700',
   },
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
+
+  // Last updated
+  lastUpdated: {
+    color: '#94a3b8',
+    fontSize: 12,
+    marginTop: 18,
+    paddingHorizontal: 20,
   },
-  gridItem: {
-    width: '47%',
-    flexGrow: 1,
-    backgroundColor: colors.surface,
-    borderRadius: 14,
-    padding: 14,
-  },
-  fieldLabel: {
-    fontSize: 11,
-    color: colors.textMuted,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
-    marginBottom: 6,
-  },
-  fieldValue: {
-    fontSize: 14,
-    color: colors.text,
-    fontWeight: '600',
-  },
+
+  // Footer
   footer: {
     padding: 14,
     backgroundColor: colors.surface,
@@ -570,6 +1415,20 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '800',
   },
+  connectedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 14,
+    paddingVertical: 15,
+  },
+  connectedBadgeText: {
+    fontSize: 16,
+    fontWeight: '800',
+  },
+
+  // Connect modal
   modalOverlay: {
     flex: 1,
     justifyContent: 'center',

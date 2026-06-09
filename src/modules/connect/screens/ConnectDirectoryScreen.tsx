@@ -37,8 +37,7 @@ type Props = {
   initialRoleKey?: ConnectRoleKey;
   primaryColor: string;
   logoBaseUrl?: string;
-  // Signed-in user's numeric id — the path param on GET api/v1/wishlist/{id}.
-  wishlistOwnerId: string;
+  onActiveProfileChange?: (active: boolean) => void;
 };
 
 const SORTS: DirectorySort[] = [
@@ -61,9 +60,9 @@ export function ConnectDirectoryScreen({
   initialRoleKey,
   primaryColor,
   logoBaseUrl,
-  wishlistOwnerId,
+  onActiveProfileChange,
 }: Props) {
-  const toast = useToast();
+  useToast(); // keep provider happy; no wishlist toasts needed currently
 
   const [roleKey, setRoleKey] = useState<ConnectRoleKey>(
     initialRoleKey && roles.some(r => r.key === initialRoleKey)
@@ -86,12 +85,6 @@ export function ConnectDirectoryScreen({
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Wishlist (saved profiles).
-  const [savedUuids, setSavedUuids] = useState<Set<string>>(new Set());
-  const [savedItems, setSavedItems] = useState<DirectoryUser[]>([]);
-  const [showSaved, setShowSaved] = useState(false);
-  const [savingUuid, setSavingUuid] = useState<string | null>(null);
-
   // Filter sheet + its option groups (loaded once, lazily).
   const [filterOpen, setFilterOpen] = useState(false);
   const [filterGroups, setFilterGroups] = useState<FilterGroup[]>([]);
@@ -109,41 +102,37 @@ export function ConnectDirectoryScreen({
     return () => clearTimeout(id);
   }, [searchInput]);
 
-  // Sync the active tab when the user picks a different Connect role from the
-  // side drawer. This screen stays mounted across drawer navigations, so only
-  // the `initialRoleKey` prop changes — the seeded `useState` above would
-  // otherwise keep showing the first role (and never fire the tapped role's
-  // search). A top-tab tap does NOT change initialRoleKey, so it isn't clobbered.
   useEffect(() => {
     if (initialRoleKey && roles.some(r => r.key === initialRoleKey)) {
       setRoleKey(initialRoleKey);
-      setShowSaved(false);
     }
-    // Intentionally keyed only on initialRoleKey — `roles` is a fresh array each
-    // render and would re-run this every render, clobbering top-tab selections.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialRoleKey]);
 
-  // Hardware back should step back through this screen's own internal
-  // navigation BEFORE HomeScreen's handler sends the user to the dashboard:
-  // profile detail → list, then saved view → directory. Returning true marks
-  // the event handled so the parent handler doesn't also fire. This listener
-  // is registered after HomeScreen's (child mounts later) so it runs first.
+  const openProfile = useCallback(
+    (item: DirectoryUser) => {
+      setActiveProfile(item);
+      onActiveProfileChange?.(true);
+    },
+    [onActiveProfileChange],
+  );
+
+  const closeProfile = useCallback(() => {
+    setActiveProfile(null);
+    onActiveProfileChange?.(false);
+  }, [onActiveProfileChange]);
+
   useEffect(() => {
     const onBack = () => {
       if (activeProfile) {
-        setActiveProfile(null);
-        return true;
-      }
-      if (showSaved) {
-        setShowSaved(false);
+        closeProfile();
         return true;
       }
       return false;
     };
     const sub = BackHandler.addEventListener('hardwareBackPress', onBack);
     return () => sub.remove();
-  }, [activeProfile, showSaved]);
+  }, [activeProfile, closeProfile]);
 
   const fetchPage = useCallback(
     async (targetPage: number, mode: 'replace' | 'append') => {
@@ -173,10 +162,7 @@ export function ConnectDirectoryScreen({
     [token, roleKey, search, sort, investorType, filters],
   );
 
-  // Reload from page 1 whenever the role, search, sort, investor type or
-  // filters change. Skipped while the saved view is showing.
   useEffect(() => {
-    if (showSaved) return;
     let cancelled = false;
     (async () => {
       setIsLoading(true);
@@ -187,41 +173,16 @@ export function ConnectDirectoryScreen({
     return () => {
       cancelled = true;
     };
-  }, [fetchPage, showSaved]);
-
-  // Load the wishlist once on mount so cards can show their saved state, and
-  // refresh it whenever the saved view is opened.
-  const loadWishlist = useCallback(async () => {
-    if (!wishlistOwnerId) return;
-    try {
-      const {savedUuids: ids, items: saved} = await connectService.getWishlist(
-        token,
-        wishlistOwnerId,
-        roleKey,
-      );
-      setSavedUuids(ids);
-      setSavedItems(saved);
-    } catch {
-      // Non-fatal — directory still works without saved state.
-    }
-  }, [token, wishlistOwnerId, roleKey]);
-
-  useEffect(() => {
-    loadWishlist();
-  }, [loadWishlist]);
+  }, [fetchPage]);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    if (showSaved) {
-      await loadWishlist();
-    } else {
-      await Promise.all([fetchPage(1, 'replace'), loadWishlist()]);
-    }
+    await fetchPage(1, 'replace');
     setIsRefreshing(false);
   };
 
   const handleEndReached = async () => {
-    if (showSaved || isLoadingMore || page >= totalPages) return;
+    if (isLoadingMore || page >= totalPages) return;
     setIsLoadingMore(true);
     await fetchPage(page + 1, 'append');
     setIsLoadingMore(false);
@@ -242,47 +203,6 @@ export function ConnectDirectoryScreen({
     }
   };
 
-  // Optimistic save/unsave with rollback on failure.
-  const toggleSave = useCallback(
-    async (user: DirectoryUser) => {
-      if (!user.uuid || savingUuid) return;
-      const wasSaved = savedUuids.has(user.uuid);
-      setSavingUuid(user.uuid);
-      setSavedUuids(prev => {
-        const next = new Set(prev);
-        if (wasSaved) next.delete(user.uuid);
-        else next.add(user.uuid);
-        return next;
-      });
-      try {
-        if (wasSaved) {
-          await connectService.removeFromWishlist(token, user, roleKey);
-          setSavedItems(prev => prev.filter(i => i.uuid !== user.uuid));
-        } else {
-          await connectService.addToWishlist(token, user);
-          setSavedItems(prev =>
-            prev.some(i => i.uuid === user.uuid) ? prev : [user, ...prev],
-          );
-        }
-      } catch (err) {
-        // Roll back the optimistic toggle.
-        setSavedUuids(prev => {
-          const next = new Set(prev);
-          if (wasSaved) next.add(user.uuid);
-          else next.delete(user.uuid);
-          return next;
-        });
-        toast.error(
-          err instanceof Error ? err.message : 'Could not update saved list.',
-        );
-      } finally {
-        setSavingUuid(null);
-      }
-    },
-    [token, roleKey, savedUuids, savingUuid, toast],
-  );
-
-  const data = showSaved ? savedItems : items;
   const investorToggle = roleKey === 'investors';
 
   const renderCard = useCallback(
@@ -291,13 +211,10 @@ export function ConnectDirectoryScreen({
         user={item}
         primaryColor={primaryColor}
         logoBaseUrl={logoBaseUrl}
-        isSaved={savedUuids.has(item.uuid)}
-        isSaving={savingUuid === item.uuid}
-        onPress={() => setActiveProfile(item)}
-        onToggleSave={() => toggleSave(item)}
+        onPress={() => openProfile(item)}
       />
     ),
-    [primaryColor, logoBaseUrl, savedUuids, savingUuid, toggleSave],
+    [primaryColor, logoBaseUrl, openProfile],
   );
 
   // Detail overlay takes over the whole section when a card is tapped.
@@ -309,9 +226,7 @@ export function ConnectDirectoryScreen({
         user={activeProfile}
         primaryColor={primaryColor}
         logoBaseUrl={logoBaseUrl}
-        isSaved={savedUuids.has(activeProfile.uuid)}
-        onToggleSave={() => toggleSave(activeProfile)}
-        onBack={() => setActiveProfile(null)}
+        onBack={closeProfile}
       />
     );
   }
@@ -325,14 +240,11 @@ export function ConnectDirectoryScreen({
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.tabsRow}>
           {roles.map(tab => {
-            const isActive = tab.key === roleKey && !showSaved;
+            const isActive = tab.key === roleKey;
             return (
               <Pressable
                 key={tab.key}
-                onPress={() => {
-                  setShowSaved(false);
-                  setRoleKey(tab.key);
-                }}
+                onPress={() => setRoleKey(tab.key)}
                 style={[
                   styles.tab,
                   isActive && {backgroundColor: primaryColor},
@@ -347,7 +259,7 @@ export function ConnectDirectoryScreen({
         </ScrollView>
       </View>
 
-      {/* Search + saved toggle. */}
+      {/* Search row. */}
       <View style={styles.searchRow}>
         <View style={styles.searchBox}>
           <Icon name="magnify" size={18} color={colors.textSubtle} />
@@ -366,28 +278,10 @@ export function ConnectDirectoryScreen({
             </Pressable>
           ) : null}
         </View>
-        <Pressable
-          onPress={() => setShowSaved(s => !s)}
-          style={[
-            styles.savedBtn,
-            showSaved && {
-              backgroundColor: withAlpha(primaryColor, 0.12),
-              borderColor: primaryColor,
-            },
-          ]}
-          accessibilityRole="button"
-          accessibilityLabel="Saved profiles">
-          <Icon
-            name={showSaved ? 'bookmark' : 'bookmark-outline'}
-            size={20}
-            color={showSaved ? primaryColor : colors.textMuted}
-          />
-        </Pressable>
       </View>
 
-      {/* Toolbar: filter + sort (hidden in saved view). */}
-      {!showSaved ? (
-        <View style={styles.toolbar}>
+      {/* Toolbar: filter + sort. */}
+      <View style={styles.toolbar}>
           <Pressable
             onPress={openFilters}
             style={[
@@ -418,11 +312,10 @@ export function ConnectDirectoryScreen({
             <Text style={styles.toolbarBtnText}>{sort.label}</Text>
             <Icon name="chevron-down" size={16} color={colors.textMuted} />
           </Pressable>
-        </View>
-      ) : null}
+      </View>
 
       {/* Investor org/individual segmented toggle. */}
-      {investorToggle && !showSaved ? (
+      {investorToggle ? (
         <View style={styles.segmentRow}>
           {(['organization', 'individual'] as InvestorType[]).map(t => {
             const isActive = investorType === t;
@@ -447,27 +340,27 @@ export function ConnectDirectoryScreen({
         </View>
       ) : null}
 
-      {error && !showSaved ? (
+      {error ? (
         <View style={styles.errorBanner}>
           <Icon name="alert-circle-outline" size={16} color={colors.danger} />
           <Text style={styles.errorText}>{error}</Text>
         </View>
       ) : null}
 
-      {isLoading && !showSaved ? (
+      {isLoading ? (
         <View style={styles.centered}>
           <ActivityIndicator size="large" color={primaryColor} />
         </View>
       ) : (
         <FlatList
-          data={data}
+          data={items}
           keyExtractor={(item, index) => item.uuid || String(index)}
           renderItem={renderCard}
           numColumns={2}
           columnWrapperStyle={styles.columnWrapper}
           contentContainerStyle={[
             styles.listContent,
-            data.length === 0 && styles.emptyContent,
+            items.length === 0 && styles.emptyContent,
           ]}
           refreshControl={
             <RefreshControl
@@ -489,17 +382,13 @@ export function ConnectDirectoryScreen({
           ListEmptyComponent={
             <View style={styles.emptyState}>
               <Icon
-                name={showSaved ? 'bookmark-outline' : 'account-search-outline'}
+                name="account-search-outline"
                 size={42}
                 color={colors.borderStrong}
               />
-              <Text style={styles.emptyTitle}>
-                {showSaved ? 'No saved profiles yet' : 'No results'}
-              </Text>
+              <Text style={styles.emptyTitle}>No results</Text>
               <Text style={styles.emptyBody}>
-                {showSaved
-                  ? 'Tap the bookmark on any profile to save it here.'
-                  : 'Try adjusting your search or filters.'}
+                Try adjusting your search or filters.
               </Text>
             </View>
           }
