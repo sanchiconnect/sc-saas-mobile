@@ -143,14 +143,12 @@ export const resolveLogo = (
   return `${baseUrl.replace(/\/$/, '')}/${raw.replace(/^\//, '')}`;
 };
 
-export const initials = (name: string): string =>
-  name
-    .split(' ')
-    .map(n => n[0])
-    .filter(Boolean)
-    .slice(0, 2)
-    .join('')
-    .toUpperCase();
+export const initials = (name: string): string => {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return '';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return parts.slice(0, 2).map(n => n[0]).join('').toUpperCase();
+};
 
 // "23400" → "23.4K". Mirrors the web numberFormatter used on funding figures.
 export const formatNumber = (value: unknown): string => {
