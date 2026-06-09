@@ -378,6 +378,39 @@ export function ConnectProfileScreen({
   const valuation = formatCurrencyINR(profile?.financials?.tentativeValuation);
   const totalFundRaised = formatCurrencyINR(profile?.financials?.totalFundRaised);
 
+  // ── investor-specific fields ───────────────────────────────────────────────
+  const investmentDetails: Record<string, any> = profile?.investmentDetails ?? {};
+  const investmentMechanisms = toNamedList(
+    investmentDetails.investmentMechanismIds ??
+    profile?.investmentMechanisms ??
+    profile?.investmentMechanismIds,
+  );
+  const investmentStageItems = toNamedList(
+    investmentDetails.investmentStageIds ??
+    profile?.investmentStages ??
+    profile?.investmentStageIds,
+  );
+  const investmentInstruments = toNamedList(
+    profile?.investmentInstruments ??
+    investmentDetails.investmentInstruments,
+  );
+  const investAbilityMetrics = toNamedList(
+    investmentDetails.investAbilityMetricsIds ??
+    profile?.investAbilityMetrics ??
+    profile?.investAbilityMetricsIds,
+  );
+  const investorBusinessModels = toNamedList(
+    investmentDetails.businessModelIds ??
+    profile?.businessModels ??
+    profile?.businessModel,
+  );
+  const portfolioSize: number | null =
+    profile?.portfolioSize != null ? Number(profile.portfolioSize) : null;
+  const ticketSizeMin = investmentDetails.ticketSizeMin ?? profile?.ticketSizeMin;
+  const ticketSizeMax = investmentDetails.ticketSizeMax ?? profile?.ticketSizeMax;
+  const tat = investmentDetails.turnAroundTime ?? profile?.turnAroundTime;
+  const keyInvestments: string = stripHtml(profile?.keyInvestments || '');
+
   // ── connect action ────────────────────────────────────────────────────────
 
   const handleSend = async () => {
@@ -494,6 +527,14 @@ export function ConnectProfileScreen({
                   </Text>
                 </Pressable>
               ) : null}
+              {isInvestor && tat ? (
+                <View style={styles.heroLocation}>
+                  <Icon name="clock-outline" size={13} color="#475569" />
+                  <Text style={styles.heroLocationText}>
+                    TAT: {tat} days
+                  </Text>
+                </View>
+              ) : null}
             </View>
           </View>
 
@@ -503,6 +544,33 @@ export function ConnectProfileScreen({
             </Text>
           ) : null}
         </View>
+
+        {/* ── Investor: Portfolio / Ticket Size overview ─────────────── */}
+        {isInvestor && (portfolioSize != null || ticketSizeMin || ticketSizeMax) ? (
+          <View style={styles.fundingCard}>
+            <View style={styles.fundingMetaRow}>
+              {portfolioSize != null ? (
+                <View style={styles.fundingMetaCol}>
+                  <Text style={styles.miniLabel}>Portfolio Size</Text>
+                  <Text style={styles.miniValue}>{portfolioSize}</Text>
+                </View>
+              ) : null}
+              {(ticketSizeMin || ticketSizeMax) ? (
+                <View style={styles.fundingMetaCol}>
+                  <Text style={styles.miniLabel}>Investment Ticket Size</Text>
+                  <Text style={styles.miniValue}>
+                    {[
+                      ticketSizeMin ? formatCurrencyINR(String(ticketSizeMin)) : null,
+                      ticketSizeMax ? formatCurrencyINR(String(ticketSizeMax)) : null,
+                    ]
+                      .filter(Boolean)
+                      .join(' – ')}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+          </View>
+        ) : null}
 
         {isLoading ? (
           <ActivityIndicator
@@ -574,21 +642,84 @@ export function ConnectProfileScreen({
           </SectionCard>
         ) : null}
 
-        {/* ── Investor: Investment Focus ─────────────────────────────── */}
-        {isInvestor && (expertiseItems.length || industryItems.length) ? (
-          <SectionCard title="Investment Focus" primaryColor={primaryColor}>
-            {expertiseItems.length ? (
+        {/* ── Investor: Investment Details ───────────────────────────── */}
+        {isInvestor && (
+          investmentMechanisms.length ||
+          investorBusinessModels.length ||
+          industryItems.length ||
+          expertiseItems.length ||
+          investmentInstruments.length ||
+          investmentStageItems.length ||
+          investAbilityMetrics.length
+        ) ? (
+          <SectionCard title="Investment Details" primaryColor={primaryColor}>
+            {investmentMechanisms.length ? (
               <View style={sectionStyles.labelRow}>
-                <Text style={sectionStyles.labelText}>Investment focus</Text>
-                <ChipList items={expertiseItems} />
+                <Text style={sectionStyles.labelText}>Investment Methodology</Text>
+                <ChipList items={investmentMechanisms} />
               </View>
+            ) : null}
+            {investorBusinessModels.length ? (
+              <>
+                {investmentMechanisms.length ? <View style={sectionStyles.divider} /> : null}
+                <View style={sectionStyles.labelRow}>
+                  <Text style={sectionStyles.labelText}>Business Models</Text>
+                  <ChipList items={investorBusinessModels} />
+                </View>
+              </>
             ) : null}
             {industryItems.length ? (
-              <View style={sectionStyles.labelRow}>
-                <Text style={sectionStyles.labelText}>Sectors of interest</Text>
-                <ChipList items={industryItems} />
-              </View>
+              <>
+                {(investmentMechanisms.length || investorBusinessModels.length) ? <View style={sectionStyles.divider} /> : null}
+                <View style={sectionStyles.labelRow}>
+                  <Text style={sectionStyles.labelText}>Industries</Text>
+                  <ChipList items={industryItems} />
+                </View>
+              </>
             ) : null}
+            {expertiseItems.length ? (
+              <>
+                {(investmentMechanisms.length || investorBusinessModels.length || industryItems.length) ? <View style={sectionStyles.divider} /> : null}
+                <View style={sectionStyles.labelRow}>
+                  <Text style={sectionStyles.labelText}>Investment Focus</Text>
+                  <ChipList items={expertiseItems} />
+                </View>
+              </>
+            ) : null}
+            {investmentInstruments.length ? (
+              <>
+                {(investmentMechanisms.length || investorBusinessModels.length || industryItems.length || expertiseItems.length) ? <View style={sectionStyles.divider} /> : null}
+                <View style={sectionStyles.labelRow}>
+                  <Text style={sectionStyles.labelText}>Investment Instrument</Text>
+                  <ChipList items={investmentInstruments} />
+                </View>
+              </>
+            ) : null}
+            {investmentStageItems.length ? (
+              <>
+                {(investmentMechanisms.length || investorBusinessModels.length || industryItems.length || expertiseItems.length || investmentInstruments.length) ? <View style={sectionStyles.divider} /> : null}
+                <View style={sectionStyles.labelRow}>
+                  <Text style={sectionStyles.labelText}>Investment Stages</Text>
+                  <ChipList items={investmentStageItems} />
+                </View>
+              </>
+            ) : null}
+            {investAbilityMetrics.length ? (
+              <>
+                {(investmentMechanisms.length || investorBusinessModels.length || industryItems.length || expertiseItems.length || investmentInstruments.length || investmentStageItems.length) ? <View style={sectionStyles.divider} /> : null}
+                <View style={sectionStyles.labelRow}>
+                  <Text style={sectionStyles.labelText}>Investability Metrics</Text>
+                  <ChipList items={investAbilityMetrics} />
+                </View>
+              </>
+            ) : null}
+          </SectionCard>
+        ) : null}
+
+        {/* ── Investor: Key Investments ──────────────────────────────── */}
+        {isInvestor && keyInvestments ? (
+          <SectionCard title="Key Investments" primaryColor={primaryColor}>
+            <Text style={sectionStyles.valueText}>{keyInvestments}</Text>
           </SectionCard>
         ) : null}
 
