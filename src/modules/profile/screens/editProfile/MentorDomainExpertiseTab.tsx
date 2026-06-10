@@ -9,6 +9,7 @@ import {
   MultiSelectField,
   MultiSelectOption,
 } from './MultiSelectField';
+import {ProfileTabCard} from './ProfileTabCard';
 
 export type SecondaryTabHandle = {
   triggerSave: () => Promise<void>;
@@ -230,11 +231,10 @@ function MentorDomainExpertiseTab({
   }));
 
   return (
-    <View style={styles.card}>
-      <Text style={styles.title}>Domain Expertise</Text>
-      <Text style={styles.subtitle}>
-        The domains you can mentor in. Select your areas of expertise below.
-      </Text>
+    <ProfileTabCard
+      title="Domain Expertise"
+      subtitle="The domains you can mentor in. Select your areas of expertise below."
+    >
 
       {/* ── 1. Domain Areas ── */}
       {domainAreaOptions.length > 0 ? (
@@ -393,38 +393,11 @@ function MentorDomainExpertiseTab({
         </>
       ) : null}
 
-    </View>
+    </ProfileTabCard>
   );
 });
 
 const styles = StyleSheet.create({
-  card: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 20,
-    gap: 16,
-    marginBottom: 24,
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#0f172a',
-  },
-  subtitle: {
-    fontSize: 13,
-    color: '#64748b',
-    lineHeight: 18,
-  },
-  message: {
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  messageSuccess: {
-    color: '#15803d',
-  },
-  messageError: {
-    color: '#dc2626',
-  },
   otherToggleRow: {
     alignItems: 'center',
     flexDirection: 'row',

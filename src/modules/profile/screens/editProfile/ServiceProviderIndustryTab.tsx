@@ -1,10 +1,10 @@
 import React, {forwardRef, useEffect, useImperativeHandle, useRef, useState} from 'react';
-import {StyleSheet, Text, View} from 'react-native';
 
 import {useToast} from '../../../../core/toast/ToastProvider';
 import {authService} from '../../../auth/services/auth.service';
 
 import {MultiSelectField, MultiSelectOption} from './MultiSelectField';
+import {ProfileTabCard} from './ProfileTabCard';
 import type {SecondaryTabHandle} from './MentorDomainExpertiseTab';
 
 type Props = {
@@ -67,11 +67,10 @@ function ServiceProviderIndustryTab({
   }));
 
   return (
-    <View style={styles.card}>
-      <Text style={styles.title}>Industry / Vertical Focus</Text>
-      <Text style={styles.subtitle}>
-        Which sectors do you actively serve?
-      </Text>
+    <ProfileTabCard
+      title="Industry / Vertical Focus"
+      subtitle="Which sectors do you actively serve?"
+    >
 
       <MultiSelectField
         label="Industries"
@@ -83,26 +82,7 @@ function ServiceProviderIndustryTab({
         onChange={setIndustries}
         initiallyExpanded
       />
-    </View>
+    </ProfileTabCard>
   );
 });
 
-const styles = StyleSheet.create({
-  card: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 20,
-    gap: 16,
-    marginBottom: 24,
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#0f172a',
-  },
-  subtitle: {
-    fontSize: 13,
-    color: '#64748b',
-    lineHeight: 18,
-  },
-});

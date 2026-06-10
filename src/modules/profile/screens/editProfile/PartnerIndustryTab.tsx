@@ -5,6 +5,7 @@ import {useToast} from '../../../../core/toast/ToastProvider';
 import {authService} from '../../../auth/services/auth.service';
 
 import {MultiSelectField, MultiSelectOption} from './MultiSelectField';
+import {ProfileTabCard} from './ProfileTabCard';
 import type {SecondaryTabHandle} from './MentorDomainExpertiseTab';
 
 type Props = {
@@ -101,11 +102,10 @@ function PartnerIndustryTab({
   }));
 
   return (
-    <View style={styles.card}>
-      <Text style={styles.title}>Industry / Technology</Text>
-      <Text style={styles.subtitle}>
-        The sectors and tech areas your partnership covers.
-      </Text>
+    <ProfileTabCard
+      title="Industry / Technology"
+      subtitle="The sectors and tech areas your partnership covers."
+    >
 
       <MultiSelectField
         label="Industries"
@@ -169,28 +169,11 @@ function PartnerIndustryTab({
           autoCapitalize="words"
         />
       ) : null}
-    </View>
+    </ProfileTabCard>
   );
 });
 
 const styles = StyleSheet.create({
-  card: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 20,
-    gap: 16,
-    marginBottom: 24,
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#0f172a',
-  },
-  subtitle: {
-    fontSize: 13,
-    color: '#64748b',
-    lineHeight: 18,
-  },
   toggleRow: {
     alignItems: 'center',
     flexDirection: 'row',

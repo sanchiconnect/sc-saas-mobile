@@ -9,6 +9,7 @@ import {
   MultiSelectField,
   MultiSelectOption,
 } from './MultiSelectField';
+import {ProfileTabCard} from './ProfileTabCard';
 
 import type {SecondaryTabHandle} from './MentorDomainExpertiseTab';
 
@@ -212,11 +213,10 @@ function InvestorInvestmentsTab({
   }));
 
   return (
-    <View style={styles.card}>
-      <Text style={styles.title}>Investment Details</Text>
-      <Text style={styles.subtitle}>
-        How you invest — ticket sizes, mechanisms, sectors, stages.
-      </Text>
+    <ProfileTabCard
+      title="Investment Details"
+      subtitle="How you invest — ticket sizes, mechanisms, sectors, stages."
+    >
 
       <View style={styles.row}>
         <View style={{flex: 1}}>
@@ -394,28 +394,11 @@ function InvestorInvestmentsTab({
         />
       ) : null}
 
-    </View>
+    </ProfileTabCard>
   );
 });
 
 const styles = StyleSheet.create({
-  card: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 20,
-    gap: 16,
-    marginBottom: 24,
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#0f172a',
-  },
-  subtitle: {
-    fontSize: 13,
-    color: '#64748b',
-    lineHeight: 18,
-  },
   row: {
     flexDirection: 'row',
     gap: 12,

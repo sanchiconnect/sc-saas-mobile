@@ -1,5 +1,4 @@
-import React, {forwardRef, useEffect, useImperativeHandle, useRef, useState} from 'react';
-import {StyleSheet, Text, View} from 'react-native';
+import React, {forwardRef, useEffect, useImperativeHandle, useRef} from 'react';
 
 import {AppTextField} from '../../../../core/components/AppTextField';
 import {useToast} from '../../../../core/toast/ToastProvider';
@@ -13,6 +12,7 @@ import {
 } from '../../../../core/form/validators';
 import {authService} from '../../../auth/services/auth.service';
 
+import {ProfileTabCard} from './ProfileTabCard';
 import type {SecondaryTabHandle} from './MentorDomainExpertiseTab';
 
 type Props = {
@@ -38,9 +38,8 @@ const EMPTY: FormState = {
 };
 
 export const InvestorRepresentativeTab = forwardRef<SecondaryTabHandle, Props>(
-function InvestorRepresentativeTab({token, primaryColor, onSaveSuccess}: Props, ref) {
+function InvestorRepresentativeTab({token, onSaveSuccess}: Props, ref) {
   const toast = useToast();
-  const [loading, setLoading] = useState(true);
 
   const form = useFormValidation<FormState>({
     initial: EMPTY,
@@ -56,7 +55,6 @@ function InvestorRepresentativeTab({token, primaryColor, onSaveSuccess}: Props, 
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
     authService
       .getInvestorRepresentative(token)
       .then(res => {
@@ -71,14 +69,8 @@ function InvestorRepresentativeTab({token, primaryColor, onSaveSuccess}: Props, 
           linkedinUrl: String(data.linkedinUrl || ''),
         });
       })
-      .catch(() => {
-        if (!cancelled) {
-          // No representative on file yet — keep empty form.
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+      .catch(() => {})
+      .finally(() => {});
     return () => {
       cancelled = true;
     };
@@ -110,12 +102,10 @@ function InvestorRepresentativeTab({token, primaryColor, onSaveSuccess}: Props, 
   }));
 
   return (
-    <View style={styles.card}>
-      <Text style={styles.title}>Representative Details</Text>
-      <Text style={styles.subtitle}>
-        The point-of-contact at your organisation. Shown to startups when you
-        connect with them.
-      </Text>
+    <ProfileTabCard
+      title="Representative Details"
+      subtitle="The point-of-contact at your organisation. Shown to startups when you connect with them."
+    >
 
       <AppTextField
         label="Full Name"
@@ -163,26 +153,7 @@ function InvestorRepresentativeTab({token, primaryColor, onSaveSuccess}: Props, 
         onBlur={() => form.setTouched('linkedinUrl')}
       />
 
-    </View>
+    </ProfileTabCard>
   );
 });
 
-const styles = StyleSheet.create({
-  card: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 20,
-    gap: 14,
-    marginBottom: 24,
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#0f172a',
-  },
-  subtitle: {
-    fontSize: 13,
-    color: '#64748b',
-    lineHeight: 18,
-  },
-});

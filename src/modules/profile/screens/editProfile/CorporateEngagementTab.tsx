@@ -10,6 +10,7 @@ import {
   MultiSelectField,
   MultiSelectOption,
 } from './MultiSelectField';
+import {ProfileTabCard} from './ProfileTabCard';
 
 import type {SecondaryTabHandle} from './MentorDomainExpertiseTab';
 export type {SecondaryTabHandle};
@@ -93,11 +94,10 @@ function CorporateEngagementTab({
   }));
 
   return (
-    <View style={styles.card}>
-      <Text style={styles.title}>Engagement</Text>
-      <Text style={styles.subtitle}>
-        How your organisation engages with startups on the platform.
-      </Text>
+    <ProfileTabCard
+      title="Engagement"
+      subtitle="How your organisation engages with startups on the platform."
+    >
 
       <View>
         <Text style={styles.fieldLabel}>
@@ -184,28 +184,11 @@ function CorporateEngagementTab({
         />
       ) : null}
 
-    </View>
+    </ProfileTabCard>
   );
 });
 
 const styles = StyleSheet.create({
-  card: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 20,
-    gap: 16,
-    marginBottom: 24,
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#0f172a',
-  },
-  subtitle: {
-    fontSize: 13,
-    color: '#64748b',
-    lineHeight: 18,
-  },
   fieldLabel: {
     fontSize: 14,
     fontWeight: '600',
