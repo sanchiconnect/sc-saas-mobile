@@ -151,7 +151,7 @@ function App() {
                 setShowWelcomePopup(false);
                 setJustSignedUp(false);
               }}
-              initialSection={justSignedUp ? 'edit-profile' : undefined}
+              initialSection={undefined}
               onSuppressFeedbackFab={setFeedbackFabSuppressed}
             />
           ) : (

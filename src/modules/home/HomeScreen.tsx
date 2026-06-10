@@ -831,10 +831,20 @@ export function HomeScreen({
             </Text>
             <Pressable
               style={[styles.popupAction, {backgroundColor: primaryColor}]}
+              onPress={() => {
+                setSelectedMenu({section: 'edit-profile'});
+                onCloseWelcomePopup();
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Complete Profile">
+              <Text style={styles.popupActionText}>Complete Profile</Text>
+            </Pressable>
+            <Pressable
+              style={styles.popupDismiss}
               onPress={onCloseWelcomePopup}
               accessibilityRole="button"
-              accessibilityLabel="Continue">
-              <Text style={styles.popupActionText}>Continue</Text>
+              accessibilityLabel="Dismiss">
+              <Text style={[styles.popupDismissText, {color: primaryColor}]}>Dismiss</Text>
             </Pressable>
           </View>
         </View>
@@ -1057,6 +1067,15 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 15,
     fontWeight: '700',
+  },
+  popupDismiss: {
+    alignItems: 'center',
+    marginTop: 10,
+    paddingVertical: 8,
+  },
+  popupDismissText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
   loadingPage: {
     flex: 1,
