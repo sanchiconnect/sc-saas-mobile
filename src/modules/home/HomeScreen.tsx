@@ -653,6 +653,7 @@ export function HomeScreen({
             logoBaseUrl={logoBaseUrl ?? undefined}
             onActiveProfileChange={setConnectProfileActive}
             isApproved={Boolean(summary?.isApproved)}
+            currentUserId={session.user.id}
           />
         )}
       </View>

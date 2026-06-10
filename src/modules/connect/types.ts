@@ -29,17 +29,18 @@ export const ROLE_ENDPOINT_SEGMENT: Record<ConnectRoleKey, string> = {
 };
 
 // Plural + singular path fragments used by the role-specific detail endpoints:
-//   GET api/v1/{plural}/public/{singular}-information/{profileUuid}
+//   GET api/v1/{plural}/public/{profileInfoPath}/{profileUuid}
 //   GET api/v1/forms-management/profile/data/{singular}/{profileUuid}
 //   GET api/v1/{plural}/increment_views/{profileUuid}
 //   GET api/v1/wishlist/{ownerId}/{singular}
-// Confirmed for startups; the rest follow the same convention.
+// `profileInfoPath` overrides the default `${singular}-information` segment when
+// the backend uses a different path (e.g. investors use "profile").
 export const ROLE_API_FRAGMENT: Record<
   ConnectRoleKey,
-  {plural: string; singular: string}
+  {plural: string; singular: string; profileInfoPath?: string}
 > = {
   startups: {plural: 'startups', singular: 'startup'},
-  investors: {plural: 'investors', singular: 'investor'},
+  investors: {plural: 'investors', singular: 'investor', profileInfoPath: 'profile'},
   corporates: {plural: 'corporates', singular: 'corporate'},
   mentors: {plural: 'mentors', singular: 'mentor'},
   'service-providers': {

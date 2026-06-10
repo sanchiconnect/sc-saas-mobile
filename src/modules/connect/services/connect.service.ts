@@ -228,10 +228,11 @@ export const connectService = {
     profileUuid: string,
   ): Promise<Record<string, any>> {
     const baseUrl = await resolveBaseUrl();
-    const {plural, singular} = ROLE_API_FRAGMENT[role];
+    const {plural, singular, profileInfoPath} = ROLE_API_FRAGMENT[role];
+    const infoPath = profileInfoPath ?? `${singular}-information`;
     const [info, forms] = await Promise.all([
       requestJson<any>(
-        `api/v1/${plural}/public/${singular}-information/${profileUuid}`,
+        `api/v1/${plural}/public/${infoPath}/${profileUuid}`,
         {method: 'GET', headers: getAuthHeader(token)},
         baseUrl,
       ).catch(() => null),
@@ -303,6 +304,31 @@ export const connectService = {
       return 'pending';
     }
     return 'none';
+  },
+
+  // Profile-view tracking for the platform analytics dashboard.
+  //   POST api/v1/users/profile-views/increment
+  //   {profileUUID, profileType, userId}
+  async incrementProfileViews(
+    token: string,
+    profileUuid: string,
+    profileType: string,
+    userId: string | number,
+  ): Promise<void> {
+    const baseUrl = await resolveBaseUrl();
+    await requestJson(
+      'api/v1/users/profile-views/increment',
+      {
+        method: 'POST',
+        headers: getAuthHeader(token),
+        body: JSON.stringify({
+          profileUUID: profileUuid,
+          profileType,
+          userId: typeof userId === 'string' ? Number(userId) || userId : userId,
+        }),
+      },
+      baseUrl,
+    ).catch(() => undefined);
   },
 
   // Send a connection request. Confirmed:
