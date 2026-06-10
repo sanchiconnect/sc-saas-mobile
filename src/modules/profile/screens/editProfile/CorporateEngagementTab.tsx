@@ -1,9 +1,9 @@
-import React, {useEffect, useState} from 'react';
+import React, {forwardRef, useEffect, useImperativeHandle, useRef, useState} from 'react';
 import {Pressable, StyleSheet, Text, View} from 'react-native';
 
-import {AppButton} from '../../../../core/components/AppButton';
 import {AppTextField} from '../../../../core/components/AppTextField';
 import {Icon} from '../../../../core/components/Icon';
+import {useToast} from '../../../../core/toast/ToastProvider';
 import {authService} from '../../../auth/services/auth.service';
 
 import {
@@ -11,13 +11,15 @@ import {
   MultiSelectOption,
 } from './MultiSelectField';
 
+import type {SecondaryTabHandle} from './MentorDomainExpertiseTab';
+export type {SecondaryTabHandle};
+
 type Props = {
   token: string;
   primaryColor: string;
   initialData: Record<string, any> | null;
-  // Reasons-to-connect options sourced from globalSettings.features in the
-  // frontend. If the tenant hasn't configured a list, we render an empty array.
   reasonOptions: MultiSelectOption[];
+  onSaveSuccess?: () => void;
 };
 
 type FormState = {
@@ -47,26 +49,22 @@ const seedForm = (data: Record<string, any> | null): FormState => ({
     : [],
 });
 
-export function CorporateEngagementTab({
+export const CorporateEngagementTab = forwardRef<SecondaryTabHandle, Props>(
+function CorporateEngagementTab({
   token,
   primaryColor,
   initialData,
   reasonOptions,
-}: Props) {
+  onSaveSuccess,
+}: Props, ref) {
+  const toast = useToast();
   const [form, setForm] = useState<FormState>(() => seedForm(initialData));
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<{
-    text: string;
-    tone: 'success' | 'error';
-  } | null>(null);
 
   useEffect(() => {
     setForm(seedForm(initialData));
   }, [initialData]);
 
   const onSave = async () => {
-    setMessage(null);
-    setSaving(true);
     try {
       await authService.updateCorporateEngagement(token, {
         hasInternalInnovationProgram: form.hasInternalInnovationProgram,
@@ -77,22 +75,22 @@ export function CorporateEngagementTab({
           ? Number(form.totalSupported || 0)
           : 0,
         connectWithStartups: form.connectWithStartups,
-        // Frontend sends as comma-separated string.
         connectionRequirements: form.connectionRequirements.join(','),
       });
-      setMessage({text: 'Engagement details saved.', tone: 'success'});
+      toast.success('Engagement details saved.');
+      onSaveSuccess?.();
     } catch (error) {
-      setMessage({
-        text:
-          error instanceof Error
-            ? error.message
-            : 'Could not save engagement details.',
-        tone: 'error',
-      });
-    } finally {
-      setSaving(false);
+      toast.error(
+        error instanceof Error ? error.message : 'Could not save engagement details.',
+      );
     }
   };
+
+  const saveRef = useRef(onSave);
+  saveRef.current = onSave;
+  useImperativeHandle(ref, () => ({
+    triggerSave: () => saveRef.current(),
+  }));
 
   return (
     <View style={styles.card}>
@@ -186,28 +184,9 @@ export function CorporateEngagementTab({
         />
       ) : null}
 
-      {message ? (
-        <Text
-          style={[
-            styles.message,
-            message.tone === 'success'
-              ? styles.messageSuccess
-              : styles.messageError,
-          ]}>
-          {message.text}
-        </Text>
-      ) : null}
-
-      <AppButton
-        label={saving ? 'Saving…' : 'Save'}
-        disabled={saving}
-        loading={saving}
-        onPress={onSave}
-        style={{backgroundColor: primaryColor}}
-      />
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   card: {
@@ -268,15 +247,5 @@ const styles = StyleSheet.create({
     flex: 1,
     color: '#0f172a',
     fontSize: 14,
-  },
-  message: {
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  messageSuccess: {
-    color: '#15803d',
-  },
-  messageError: {
-    color: '#dc2626',
   },
 });

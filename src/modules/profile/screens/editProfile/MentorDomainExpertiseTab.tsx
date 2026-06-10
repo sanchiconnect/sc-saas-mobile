@@ -1,14 +1,18 @@
-import React, {useContext, useEffect, useState} from 'react';
+import React, {forwardRef, useContext, useEffect, useImperativeHandle, useMemo, useRef, useState} from 'react';
 import {StyleSheet, Switch, Text, TextInput, View} from 'react-native';
 
-import {AppButton} from '../../../../core/components/AppButton';
 import {TenantContext} from '../../../../core/tenant/TenantProvider';
+import {useToast} from '../../../../core/toast/ToastProvider';
 import {authService} from '../../../auth/services/auth.service';
 
 import {
   MultiSelectField,
   MultiSelectOption,
 } from './MultiSelectField';
+
+export type SecondaryTabHandle = {
+  triggerSave: () => Promise<void>;
+};
 
 type Props = {
   token: string;
@@ -17,10 +21,11 @@ type Props = {
   industryOptions: MultiSelectOption[];
   technologyOptions: MultiSelectOption[];
   domainAreaOptions: MultiSelectOption[];
-  // Caps come from tenant config (globalSettings.mentorMaxIndustries, etc.).
   maxIndustries?: number;
   maxTechnologies?: number;
   maxDomainAreas?: number;
+  onSaveSuccess?: () => void;
+  onValidChange?: (valid: boolean) => void;
 };
 
 const seedSelected = (
@@ -37,7 +42,8 @@ const seedSelected = (
     .filter((id: number) => Number.isFinite(id));
 };
 
-export function MentorDomainExpertiseTab({
+export const MentorDomainExpertiseTab = forwardRef<SecondaryTabHandle, Props>(
+function MentorDomainExpertiseTab({
   token,
   primaryColor,
   initialData,
@@ -47,50 +53,37 @@ export function MentorDomainExpertiseTab({
   maxIndustries = 5,
   maxTechnologies = 5,
   maxDomainAreas = 5,
-}: Props) {
+  onSaveSuccess,
+  onValidChange,
+}: Props, ref) {
   const {globalSetting} = useContext(TenantContext);
+  const toast = useToast();
   const features = globalSetting?.features || {};
   const subIndustriesEnabled = Boolean(features.enable_sub_industries);
-  // Mentor new layout: parent mentorship-areas carry nested children. When on,
-  // payload splits leaf vs parent IDs (domainAreas + domainAreasPrimary).
-  const newDomainAreaLayout = Boolean(
-    features.mentorship_areas_new_layout,
-  );
+  const newDomainAreaLayout = Boolean(features.mentorship_areas_new_layout);
 
   const [industries, setIndustries] = useState<Array<number | string>>([]);
-  const [industrySubCategories, setIndustrySubCategories] = useState<
-    Array<number | string>
-  >([]);
+  const [industrySubCategories, setIndustrySubCategories] = useState<Array<number | string>>([]);
   const [othersActive, setOthersActive] = useState(false);
   const [othersText, setOthersText] = useState('');
   const [technologies, setTechnologies] = useState<Array<number | string>>([]);
+  // domainAreas: flat selections (old layout) or leaf selections (new layout)
   const [domainAreas, setDomainAreas] = useState<Array<number | string>>([]);
-  const [domainAreasPrimary, setDomainAreasPrimary] = useState<
-    Array<number | string>
-  >([]);
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<{
-    text: string;
-    tone: 'success' | 'error';
-  } | null>(null);
+  // domainAreasPrimary: parent selections (new layout only)
+  const [domainAreasPrimary, setDomainAreasPrimary] = useState<Array<number | string>>([]);
 
   useEffect(() => {
     setIndustries(
       seedSelected(initialData, 'sectoralInterestIds', 'sectoralInterests'),
     );
     setIndustrySubCategories(
-      seedSelected(
-        initialData,
-        'sectoralInterestSubIds',
-        'sectoralInterestSub',
-      ),
+      seedSelected(initialData, 'sectoralInterestSubIds', 'sectoralInterestSub'),
     );
     const others = Array.isArray(initialData?.sectoralInterestOthers)
       ? initialData.sectoralInterestOthers
       : [];
     setOthersActive(others.length > 0);
     setOthersText(others.join(','));
-
     setTechnologies(seedSelected(initialData, 'technologies', 'technologyIds'));
     setDomainAreas(seedSelected(initialData, 'domainAreas', 'domainAreaIds'));
     setDomainAreasPrimary(
@@ -98,9 +91,108 @@ export function MentorDomainExpertiseTab({
     );
   }, [initialData]);
 
+  // Show Technologies block only when a domain area with "Technology" in its
+  // name is currently selected — mirrors Angular's isTechSelectedInDomain.
+  const isTechSelectedInDomain = useMemo(() => {
+    if (newDomainAreaLayout) {
+      // New layout: check if any selected leaf has "technology" in its name
+      for (const opt of domainAreaOptions) {
+        if (!domainAreasPrimary.includes(opt.id)) { continue; }
+        for (const leaf of opt.domainAreas ?? []) {
+          if (
+            domainAreas.includes(leaf.id) &&
+            leaf.name.toLowerCase().includes('technology')
+          ) {
+            return true;
+          }
+        }
+      }
+      return false;
+    }
+    // Old layout: check if any selected domain area option has "technology"
+    return domainAreaOptions.some(
+      opt =>
+        domainAreas.includes(opt.id) &&
+        opt.name.toLowerCase().includes('technology'),
+    );
+  }, [domainAreaOptions, domainAreas, domainAreasPrimary, newDomainAreaLayout]);
+
+  // Tab is valid when all required fields are filled — mirrors Angular saveButtonDisabled.
+  const isValid = useMemo(() => {
+    // At least one domain area must be selected
+    const hasDomainArea = newDomainAreaLayout
+      ? domainAreasPrimary.length > 0
+      : domainAreas.length > 0;
+    if (!hasDomainArea) { return false; }
+
+    if (newDomainAreaLayout) {
+      // Every selected parent that has sub-domains must have at least one leaf selected
+      const parentsMissingLeaf = domainAreaOptions.some(opt => {
+        if (!domainAreasPrimary.includes(opt.id)) { return false; }
+        if (!opt.domainAreas?.length) { return false; }
+        return !opt.domainAreas.some(leaf => domainAreas.includes(leaf.id));
+      });
+      if (parentsMissingLeaf) { return false; }
+
+      // If technology domain is selected, at least one technology must be chosen
+      if (isTechSelectedInDomain && technologies.length === 0) { return false; }
+    }
+
+    // At least one industry is required when options are available
+    if (industryOptions.length > 0 && industries.length === 0) { return false; }
+
+    return true;
+  }, [
+    newDomainAreaLayout,
+    domainAreasPrimary,
+    domainAreas,
+    domainAreaOptions,
+    isTechSelectedInDomain,
+    technologies,
+    industryOptions,
+    industries,
+  ]);
+
+  useEffect(() => {
+    onValidChange?.(isValid);
+  }, [isValid, onValidChange]);
+
+  // Leaf options visible under the currently selected parent domain areas
+  const visibleDomainLeaves = useMemo(() => {
+    const leaves: Array<{id: number; name: string}> = [];
+    const seen = new Set<number>();
+    domainAreaOptions
+      .filter(opt => domainAreasPrimary.includes(opt.id))
+      .forEach(opt => {
+        opt.domainAreas?.forEach(leaf => {
+          if (!seen.has(leaf.id)) {
+            seen.add(leaf.id);
+            leaves.push(leaf);
+          }
+        });
+      });
+    return leaves;
+  }, [domainAreaOptions, domainAreasPrimary]);
+
+  // Industry sub-category options visible under currently selected industries
+  const visibleIndustrySubs = useMemo(() => {
+    if (!subIndustriesEnabled) { return []; }
+    const subs: Array<{id: number; name: string}> = [];
+    const seen = new Set<number>();
+    industryOptions
+      .filter(opt => industries.includes(opt.id))
+      .forEach(opt => {
+        opt.industrySubCategoryDomains?.forEach(sub => {
+          if (!seen.has(sub.id)) {
+            seen.add(sub.id);
+            subs.push(sub);
+          }
+        });
+      });
+    return subs;
+  }, [industryOptions, industries, subIndustriesEnabled]);
+
   const onSave = async () => {
-    setMessage(null);
-    setSaving(true);
     try {
       const otherList = othersActive
         ? othersText
@@ -113,210 +205,197 @@ export function MentorDomainExpertiseTab({
         sectoralInterestIds: industries.map(Number),
         sectoralInterestSubIds: industrySubCategories.map(Number),
         sectoralInterestOthers: otherList,
-        technologies: technologies.map(Number),
+        // Send empty array if "Technology" domain is not selected
+        technologies: isTechSelectedInDomain ? technologies.map(Number) : [],
         domainAreas: domainAreas.map(Number),
       };
       if (newDomainAreaLayout) {
-        // New layout sends parent category IDs separately. Old layout
-        // omits this key entirely.
         payload.domainAreasPrimary = domainAreasPrimary.map(Number);
       }
 
       await authService.updateProfile(token, payload, 'mentor');
-      setMessage({text: 'Domain expertise saved.', tone: 'success'});
+      toast.success('Domain expertise saved.');
+      onSaveSuccess?.();
     } catch (error) {
-      setMessage({
-        text:
-          error instanceof Error
-            ? error.message
-            : 'Could not save domain expertise.',
-        tone: 'error',
-      });
-    } finally {
-      setSaving(false);
+      toast.error(
+        error instanceof Error ? error.message : 'Could not save domain expertise.',
+      );
     }
   };
+
+  const saveRef = useRef(onSave);
+  saveRef.current = onSave;
+  useImperativeHandle(ref, () => ({
+    triggerSave: () => saveRef.current(),
+  }));
 
   return (
     <View style={styles.card}>
       <Text style={styles.title}>Domain Expertise</Text>
       <Text style={styles.subtitle}>
-        The industries, technologies and domain areas you can mentor in.
+        The domains you can mentor in. Select your areas of expertise below.
       </Text>
 
-      <MultiSelectField
-        label="Industries"
-        hint={`Select up to ${maxIndustries}`}
-        options={industryOptions}
-        selected={industries}
-        primaryColor={primaryColor}
-        max={maxIndustries}
-        onChange={next => {
-          // Drop sub-category picks whose parent industry was deselected.
-          const visibleSubs = new Set<number>();
-          industryOptions
-            .filter(opt => next.includes(opt.id))
-            .forEach(opt => {
-              opt.industrySubCategoryDomains?.forEach(sub =>
-                visibleSubs.add(sub.id),
-              );
-            });
-          setIndustries(next);
-          setIndustrySubCategories(prev =>
-            prev.filter(id => visibleSubs.has(Number(id))),
-          );
-        }}
-      />
-
-      {subIndustriesEnabled
-        ? (() => {
-            const subs: Array<{id: number; name: string}> = [];
-            const seen = new Set<number>();
-            industryOptions
-              .filter(opt => industries.includes(opt.id))
-              .forEach(opt => {
-                opt.industrySubCategoryDomains?.forEach(sub => {
-                  if (!seen.has(sub.id)) {
-                    seen.add(sub.id);
-                    subs.push(sub);
-                  }
-                });
-              });
-            if (subs.length === 0) return null;
-            return (
-              <MultiSelectField
-                label="Industry sub-categories"
-                hint="Pick the sub-areas inside your chosen industries."
-                options={subs}
-                selected={industrySubCategories}
-                primaryColor={primaryColor}
-                onChange={setIndustrySubCategories}
-              />
-            );
-          })()
-        : null}
-
-      <View style={styles.otherToggleRow}>
-        <Text style={styles.otherToggleLabel}>Add other industries</Text>
-        <Switch
-          value={othersActive}
-          onValueChange={val => {
-            setOthersActive(val);
-            if (!val) setOthersText('');
-          }}
-          trackColor={{false: '#cbd5e1', true: `${primaryColor}55`}}
-          thumbColor={othersActive ? primaryColor : '#f1f5f9'}
-        />
-      </View>
-      {othersActive ? (
-        <TextInput
-          style={styles.otherInput}
-          value={othersText}
-          onChangeText={setOthersText}
-          placeholder="Separate multiple entries with commas"
-          placeholderTextColor="#94a3b8"
-          autoCapitalize="words"
-        />
-      ) : null}
-
-      <MultiSelectField
-        label="Technologies"
-        hint={`Select up to ${maxTechnologies}`}
-        options={technologyOptions}
-        selected={technologies}
-        primaryColor={primaryColor}
-        max={maxTechnologies}
-        onChange={setTechnologies}
-      />
-
+      {/* ── 1. Domain Areas ── */}
       {domainAreaOptions.length > 0 ? (
         newDomainAreaLayout ? (
-          // New layout: parent categories + nested specialisations.
           <>
             <MultiSelectField
-              label="Mentorship Areas"
-              hint={`Select up to ${maxDomainAreas}`}
+              label="I am interested in providing mentorship to startups in the following domains:"
+              required
+              hint={`Select maximum ${maxDomainAreas} options`}
               options={domainAreaOptions}
               selected={domainAreasPrimary}
               primaryColor={primaryColor}
               max={maxDomainAreas}
               onChange={next => {
-                // Drop leaf picks whose parent was deselected.
-                const visibleLeaves = new Set<number>();
+                // Prune leaf picks whose parent was deselected
+                const stillVisible = new Set<number>();
                 domainAreaOptions
                   .filter(opt => next.includes(opt.id))
-                  .forEach(opt => {
-                    opt.domainAreas?.forEach(leaf =>
-                      visibleLeaves.add(leaf.id),
-                    );
-                  });
+                  .forEach(opt =>
+                    opt.domainAreas?.forEach(leaf => stillVisible.add(leaf.id)),
+                  );
                 setDomainAreasPrimary(next);
-                setDomainAreas(prev =>
-                  prev.filter(id => visibleLeaves.has(Number(id))),
+                const prunedLeaves = domainAreas.filter(id =>
+                  stillVisible.has(Number(id)),
                 );
+                setDomainAreas(prunedLeaves);
+                // Clear tech if technology leaf is no longer reachable
+                const techLeafStillVisible = [...stillVisible].some(id => {
+                  for (const opt of domainAreaOptions) {
+                    if (opt.domainAreas?.find(l => l.id === id && l.name.toLowerCase().includes('technology'))) {
+                      return true;
+                    }
+                  }
+                  return false;
+                });
+                if (!techLeafStillVisible) { setTechnologies([]); }
               }}
             />
-            {(() => {
-              const leaves: Array<{id: number; name: string}> = [];
-              const seen = new Set<number>();
-              domainAreaOptions
-                .filter(opt => domainAreasPrimary.includes(opt.id))
-                .forEach(opt => {
-                  opt.domainAreas?.forEach(leaf => {
-                    if (!seen.has(leaf.id)) {
-                      seen.add(leaf.id);
-                      leaves.push(leaf);
-                    }
-                  });
-                });
-              if (leaves.length === 0) return null;
-              return (
-                <MultiSelectField
-                  label="Specialisations"
-                  hint="Pick the specific areas inside your selected categories."
-                  options={leaves}
-                  selected={domainAreas}
-                  primaryColor={primaryColor}
-                  onChange={setDomainAreas}
-                />
-              );
-            })()}
+            {visibleDomainLeaves.length > 0 ? (
+              <MultiSelectField
+                label="Specialisations"
+                hint="Pick the specific areas inside your selected categories."
+                options={visibleDomainLeaves}
+                selected={domainAreas}
+                primaryColor={primaryColor}
+                onChange={next => {
+                  setDomainAreas(next);
+                  // Clear tech if technology leaf was deselected
+                  const techLeaf = visibleDomainLeaves.find(l =>
+                    l.name.toLowerCase().includes('technology'),
+                  );
+                  if (techLeaf && !next.includes(techLeaf.id)) {
+                    setTechnologies([]);
+                  }
+                }}
+              />
+            ) : null}
           </>
         ) : (
           <MultiSelectField
-            label="Domain Areas"
-            hint={`Select up to ${maxDomainAreas}`}
+            label="I am interested in providing mentorship to startups in the following domains:"
+            required
+            hint={`Select maximum ${maxDomainAreas} options`}
             options={domainAreaOptions}
             selected={domainAreas}
             primaryColor={primaryColor}
             max={maxDomainAreas}
-            onChange={setDomainAreas}
+            onChange={next => {
+              // Clear tech if the "Technology" domain area was deselected
+              const techOpt = domainAreaOptions.find(opt =>
+                opt.name.toLowerCase().includes('technology'),
+              );
+              if (techOpt && !next.includes(techOpt.id)) {
+                setTechnologies([]);
+              }
+              setDomainAreas(next);
+            }}
           />
         )
       ) : null}
 
-      {message ? (
-        <Text
-          style={[
-            styles.message,
-            message.tone === 'success'
-              ? styles.messageSuccess
-              : styles.messageError,
-          ]}>
-          {message.text}
-        </Text>
+      {/* ── 2. Technologies (only when "Technology" domain area is selected) ── */}
+      {isTechSelectedInDomain ? (
+        <MultiSelectField
+          label="Technologies"
+          required
+          hint={`Select up to ${maxTechnologies}`}
+          options={technologyOptions}
+          selected={technologies}
+          primaryColor={primaryColor}
+          max={maxTechnologies}
+          onChange={setTechnologies}
+        />
       ) : null}
 
-      <AppButton
-        label={saving ? 'Saving…' : 'Save'}
-        disabled={saving}
-        loading={saving}
-        onPress={onSave}
-        style={{backgroundColor: primaryColor}}
-      />
+      {/* ── 3. Industry specialisation (always shown when options available) ── */}
+      {industryOptions.length > 0 ? (
+        <>
+          <MultiSelectField
+            label="Industry specialisation"
+            required
+            hint={`Select maximum ${maxIndustries} options`}
+            options={industryOptions}
+            selected={industries}
+            primaryColor={primaryColor}
+            max={maxIndustries}
+            onChange={next => {
+              const visibleSubs = new Set<number>();
+              industryOptions
+                .filter(opt => next.includes(opt.id))
+                .forEach(opt =>
+                  opt.industrySubCategoryDomains?.forEach(sub =>
+                    visibleSubs.add(sub.id),
+                  ),
+                );
+              setIndustries(next);
+              setIndustrySubCategories(prev =>
+                prev.filter(id => visibleSubs.has(Number(id))),
+              );
+            }}
+          />
+
+          {visibleIndustrySubs.length > 0 ? (
+            <MultiSelectField
+              label="Industry sub-categories"
+              hint="Pick the sub-areas inside your chosen industries."
+              options={visibleIndustrySubs}
+              selected={industrySubCategories}
+              primaryColor={primaryColor}
+              onChange={setIndustrySubCategories}
+            />
+          ) : null}
+
+          <View style={styles.otherToggleRow}>
+            <Text style={styles.otherToggleLabel}>Add other industries</Text>
+            <Switch
+              value={othersActive}
+              onValueChange={val => {
+                setOthersActive(val);
+                if (!val) { setOthersText(''); }
+              }}
+              trackColor={{false: '#cbd5e1', true: `${primaryColor}55`}}
+              thumbColor={othersActive ? primaryColor : '#f1f5f9'}
+            />
+          </View>
+          {othersActive ? (
+            <TextInput
+              style={styles.otherInput}
+              value={othersText}
+              onChangeText={setOthersText}
+              placeholder="Separate multiple entries with commas"
+              placeholderTextColor="#94a3b8"
+              autoCapitalize="words"
+            />
+          ) : null}
+        </>
+      ) : null}
+
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   card: {

@@ -249,6 +249,9 @@ export interface IGlobalSetting {
   startupMaxTechnologies?: string | number;
   investorMaxIndustries?: string | number;
   investorMaxInvestabilityMetrics?: string | number;
+  mentorMaxDomainAreas?: string | number;
+  mentorMaxIndustries?: string | number;
+  mentorMaxTechnologies?: string | number;
 
   // Tenant-configurable enums
   CorporateSizes?: Array<{name: string; value: string}>;

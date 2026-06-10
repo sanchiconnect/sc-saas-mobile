@@ -86,6 +86,9 @@ export const TenantProvider = ({children}: Props) => {
         investorMaxIndustries: settingsData?.investorMaxIndustries,
         investorMaxInvestabilityMetrics:
           settingsData?.investorMaxInvestabilityMetrics,
+        mentorMaxDomainAreas: settingsData?.mentorMaxDomainAreas,
+        mentorMaxIndustries: settingsData?.mentorMaxIndustries,
+        mentorMaxTechnologies: settingsData?.mentorMaxTechnologies,
 
         // Tenant-configurable enums
         CorporateSizes: Array.isArray(settingsData?.CorporateSizes)

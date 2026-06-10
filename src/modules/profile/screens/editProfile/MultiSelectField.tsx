@@ -17,6 +17,7 @@ export type MultiSelectOption = {
 type Props = {
   label: string;
   hint?: string;
+  required?: boolean;
   options: MultiSelectOption[];
   selected: Array<number | string>;
   primaryColor: string;
@@ -31,6 +32,7 @@ type Props = {
 export function MultiSelectField({
   label,
   hint,
+  required = false,
   options,
   selected,
   primaryColor,
@@ -69,7 +71,10 @@ export function MultiSelectField({
         style={styles.header}
         onPress={() => setExpanded(prev => !prev)}>
         <View style={{flex: 1}}>
-          <Text style={styles.label}>{label}</Text>
+          <Text style={styles.label}>
+            {label}
+            {required ? <Text style={styles.required}> *</Text> : null}
+          </Text>
           {hint ? <Text style={styles.hint}>{hint}</Text> : null}
           {!expanded ? <Text style={styles.summary}>{summary}</Text> : null}
         </View>
@@ -136,6 +141,10 @@ const styles = StyleSheet.create({
   label: {
     color: '#0f172a',
     fontSize: 15,
+    fontWeight: '600',
+  },
+  required: {
+    color: '#dc2626',
     fontWeight: '600',
   },
   hint: {

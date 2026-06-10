@@ -1,4 +1,4 @@
-import React, {useContext, useEffect, useState} from 'react';
+import React, {useContext, useEffect, useImperativeHandle, useState} from 'react';
 import {
   Alert,
   Image,
@@ -12,7 +12,6 @@ import {
 import {launchImageLibrary} from 'react-native-image-picker';
 import {pick, types} from '@react-native-documents/picker';
 
-import {AppButton} from '../../../../core/components/AppButton';
 import {AppTextField} from '../../../../core/components/AppTextField';
 import {Icon} from '../../../../core/components/Icon';
 import {useFormValidation} from '../../../../core/form/useFormValidation';
@@ -224,10 +223,10 @@ const ROLE_FIELDS: Record<RoleKey, FieldConfig[]> = {
   ],
   mentor: [
     {key: 'name', label: 'Full Name', required: true},
+    {key: 'currentOrganization', label: 'Current Organization'},
+    {key: 'designation', label: 'Designation'},
     {key: 'shortDescription', label: 'Headline', required: true},
     {key: 'briefDescription', label: 'About you', multiline: true, required: true},
-    {key: 'designation', label: 'Designation'},
-    {key: 'currentOrganization', label: 'Current Organization'},
     {
       key: 'registeredCountryId',
       label: 'Country',
@@ -496,13 +495,19 @@ const resolveRoleKey = (
   return null;
 };
 
+export type RoleBasicInfoTabHandle = {
+  triggerSubmit: () => void;
+};
+
 type Props = {
   accountType: string;
   investorSubtype: InvestorSubtype;
   initialData: Record<string, any> | null;
   primaryColor: string;
-  isSaving?: boolean;
   onSave: (payload: Record<string, any>) => Promise<void> | void;
+  // Called whenever the form's required-field validity changes so the parent
+  // can gate its shared SAVE button — same pattern as startup's isActiveTabValid().
+  onValidityChange?: (isValid: boolean) => void;
   // Dropdown option lists keyed by `dropdownSource`. Parent fetches these
   // (e.g. organization_types from /api/v1/public/global/custom/...).
   dropdownData?: DropdownDataMap;
@@ -516,18 +521,19 @@ type Props = {
   industryOptions?: MultiSelectOption[];
 };
 
-export function RoleBasicInfoTab({
+export const RoleBasicInfoTab = React.forwardRef<RoleBasicInfoTabHandle, Props>(
+function RoleBasicInfoTab({
   accountType,
   investorSubtype,
   initialData,
   primaryColor,
-  isSaving = false,
   onSave,
+  onValidityChange,
   dropdownData = {},
   token,
   onLogoUploaded,
   industryOptions = [],
-}: Props) {
+}: Props, ref) {
   const roleKey = resolveRoleKey(accountType, investorSubtype);
   const fields = roleKey ? ROLE_FIELDS[roleKey] : [];
 
@@ -535,6 +541,19 @@ export function RoleBasicInfoTab({
     initial: seedValues(fields, initialData),
     validators: buildValidators(fields),
   });
+
+  // Recompute required-field validity whenever form values change and notify
+  // parent so it can gate the shared SAVE button — mirrors startup's
+  // isActiveTabValid() pattern.
+  const requiredFields = fields.filter(f => f.required);
+  const isFormValid = requiredFields.every(f => {
+    const val = form.values[f.key];
+    return val !== undefined && val !== null && String(val).trim() !== '';
+  });
+  useEffect(() => {
+    onValidityChange?.(isFormValid);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isFormValid]);
 
   // Tracks which dropdown picker is open. null = none.
   const [activeDropdown, setActiveDropdown] = useState<FieldConfig | null>(
@@ -896,6 +915,28 @@ export function RoleBasicInfoTab({
     return option?.name || '';
   };
 
+  useImperativeHandle(ref, () => ({
+    triggerSubmit: () =>
+      form.handleSubmit(values => {
+        const otherList = otherIndustriesActive
+          ? otherIndustriesText.split(',').map(s => s.trim()).filter(Boolean)
+          : [];
+        const corporateExtras =
+          isCorporate && industriesSectionEnabled
+            ? {
+                sectoralInterestIds: selectedIndustryIds.map(Number),
+                sectoralInterestSubIds: selectedSubCategoryIds.map(Number),
+                sectoralInterestOthers: otherList,
+              }
+            : {};
+        onSave({
+          ...buildPayload(values),
+          askForConnectionDocument: askForConnDoc,
+          ...corporateExtras,
+        });
+      }),
+  }));
+
   return (
     <View style={styles.card}>
       <Text style={styles.title}>Basic Information</Text>
@@ -1130,35 +1171,6 @@ export function RoleBasicInfoTab({
         </View>
       ) : null}
 
-      <AppButton
-        label={isSaving ? 'Saving…' : 'Save'}
-        disabled={isSaving}
-        loading={isSaving}
-        onPress={() =>
-          form.handleSubmit(values => {
-            const otherList = otherIndustriesActive
-              ? otherIndustriesText
-                  .split(',')
-                  .map(s => s.trim())
-                  .filter(Boolean)
-              : [];
-            const corporateExtras =
-              isCorporate && industriesSectionEnabled
-                ? {
-                    sectoralInterestIds: selectedIndustryIds.map(Number),
-                    sectoralInterestSubIds: selectedSubCategoryIds.map(Number),
-                    sectoralInterestOthers: otherList,
-                  }
-                : {};
-            onSave({
-              ...buildPayload(values),
-              askForConnectionDocument: askForConnDoc,
-              ...corporateExtras,
-            });
-          })
-        }
-        style={{backgroundColor: primaryColor}}
-      />
 
       {activeDropdown ? (
         <Picker
@@ -1199,7 +1211,7 @@ export function RoleBasicInfoTab({
       ) : null}
     </View>
   );
-}
+});
 
 const seedValues = (
   fields: FieldConfig[],

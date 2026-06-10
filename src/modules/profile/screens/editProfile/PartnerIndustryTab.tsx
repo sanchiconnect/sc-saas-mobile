@@ -1,10 +1,11 @@
-import React, {useEffect, useState} from 'react';
+import React, {forwardRef, useEffect, useImperativeHandle, useRef, useState} from 'react';
 import {StyleSheet, Switch, Text, TextInput, View} from 'react-native';
 
-import {AppButton} from '../../../../core/components/AppButton';
+import {useToast} from '../../../../core/toast/ToastProvider';
 import {authService} from '../../../auth/services/auth.service';
 
 import {MultiSelectField, MultiSelectOption} from './MultiSelectField';
+import type {SecondaryTabHandle} from './MentorDomainExpertiseTab';
 
 type Props = {
   token: string;
@@ -12,6 +13,7 @@ type Props = {
   initialData: Record<string, any> | null;
   industryOptions: MultiSelectOption[];
   technologyOptions: MultiSelectOption[];
+  onSaveSuccess?: () => void;
 };
 
 const seedIds = (
@@ -41,32 +43,26 @@ const seedOthers = (
   return {active: false, text: ''};
 };
 
-export function PartnerIndustryTab({
+export const PartnerIndustryTab = forwardRef<SecondaryTabHandle, Props>(
+function PartnerIndustryTab({
   token,
   primaryColor,
   initialData,
   industryOptions,
   technologyOptions,
-}: Props) {
+  onSaveSuccess,
+}: Props, ref) {
+  const toast = useToast();
   const [industries, setIndustries] = useState<Array<number | string>>([]);
   const [technologies, setTechnologies] = useState<Array<number | string>>([]);
   const [otherIndustriesActive, setOtherIndustriesActive] = useState(false);
   const [otherIndustriesText, setOtherIndustriesText] = useState('');
   const [otherTechActive, setOtherTechActive] = useState(false);
   const [otherTechText, setOtherTechText] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<{
-    text: string;
-    tone: 'success' | 'error';
-  } | null>(null);
 
   useEffect(() => {
-    setIndustries(
-      seedIds(initialData, 'industryDomainIds', 'partnerIndustries'),
-    );
-    setTechnologies(
-      seedIds(initialData, 'technologyDomainIds', 'partnerTechnologies'),
-    );
+    setIndustries(seedIds(initialData, 'industryDomainIds', 'partnerIndustries'));
+    setTechnologies(seedIds(initialData, 'technologyDomainIds', 'partnerTechnologies'));
     const oi = seedOthers(initialData, 'otherIndustryDomains');
     setOtherIndustriesActive(oi.active);
     setOtherIndustriesText(oi.text);
@@ -76,41 +72,33 @@ export function PartnerIndustryTab({
   }, [initialData]);
 
   const onSave = async () => {
-    setMessage(null);
-    setSaving(true);
     try {
       const splitCsv = (raw: string) =>
-        raw
-          .split(',')
-          .map(s => s.trim())
-          .filter(Boolean);
+        raw.split(',').map(s => s.trim()).filter(Boolean);
       await authService.updateProfile(
         token,
         {
           industryDomainIds: industries.map(Number),
           technologyDomainIds: technologies.map(Number),
-          otherIndustryDomains: otherIndustriesActive
-            ? splitCsv(otherIndustriesText)
-            : [],
-          otherTechnologyDomains: otherTechActive
-            ? splitCsv(otherTechText)
-            : [],
+          otherIndustryDomains: otherIndustriesActive ? splitCsv(otherIndustriesText) : [],
+          otherTechnologyDomains: otherTechActive ? splitCsv(otherTechText) : [],
         },
         'partner',
       );
-      setMessage({text: 'Industries and technologies saved.', tone: 'success'});
+      toast.success('Industries and technologies saved.');
+      onSaveSuccess?.();
     } catch (error) {
-      setMessage({
-        text:
-          error instanceof Error
-            ? error.message
-            : 'Could not save industries.',
-        tone: 'error',
-      });
-    } finally {
-      setSaving(false);
+      toast.error(
+        error instanceof Error ? error.message : 'Could not save industries.',
+      );
     }
   };
+
+  const saveRef = useRef(onSave);
+  saveRef.current = onSave;
+  useImperativeHandle(ref, () => ({
+    triggerSave: () => saveRef.current(),
+  }));
 
   return (
     <View style={styles.card}>
@@ -134,7 +122,7 @@ export function PartnerIndustryTab({
           value={otherIndustriesActive}
           onValueChange={val => {
             setOtherIndustriesActive(val);
-            if (!val) setOtherIndustriesText('');
+            if (!val) { setOtherIndustriesText(''); }
           }}
           trackColor={{false: '#cbd5e1', true: `${primaryColor}55`}}
           thumbColor={otherIndustriesActive ? primaryColor : '#f1f5f9'}
@@ -165,7 +153,7 @@ export function PartnerIndustryTab({
           value={otherTechActive}
           onValueChange={val => {
             setOtherTechActive(val);
-            if (!val) setOtherTechText('');
+            if (!val) { setOtherTechText(''); }
           }}
           trackColor={{false: '#cbd5e1', true: `${primaryColor}55`}}
           thumbColor={otherTechActive ? primaryColor : '#f1f5f9'}
@@ -181,29 +169,9 @@ export function PartnerIndustryTab({
           autoCapitalize="words"
         />
       ) : null}
-
-      {message ? (
-        <Text
-          style={[
-            styles.message,
-            message.tone === 'success'
-              ? styles.messageSuccess
-              : styles.messageError,
-          ]}>
-          {message.text}
-        </Text>
-      ) : null}
-
-      <AppButton
-        label={saving ? 'Saving…' : 'Save'}
-        disabled={saving}
-        loading={saving}
-        onPress={onSave}
-        style={{backgroundColor: primaryColor}}
-      />
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   card: {
@@ -242,15 +210,5 @@ const styles = StyleSheet.create({
     fontSize: 15,
     paddingHorizontal: 12,
     paddingVertical: 10,
-  },
-  message: {
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  messageSuccess: {
-    color: '#15803d',
-  },
-  messageError: {
-    color: '#dc2626',
   },
 });

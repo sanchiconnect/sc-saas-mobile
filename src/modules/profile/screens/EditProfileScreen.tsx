@@ -35,7 +35,7 @@ import {InvestorRepresentativeTab} from './editProfile/InvestorRepresentativeTab
 import {MentorDomainExpertiseTab} from './editProfile/MentorDomainExpertiseTab';
 import {Picker} from './editProfile/Picker';
 import {PartnerIndustryTab} from './editProfile/PartnerIndustryTab';
-import {RoleBasicInfoTab} from './editProfile/RoleBasicInfoTab';
+import {RoleBasicInfoTab, RoleBasicInfoTabHandle} from './editProfile/RoleBasicInfoTab';
 import {ServiceProviderIndustryTab} from './editProfile/ServiceProviderIndustryTab';
 import {YourPitchDeck} from './editProfile/YourPitchDeck';
 import {
@@ -391,6 +391,11 @@ export function EditProfileScreen({
     useState<Array<{id: number; name: string}>>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  // Tracks whether the role-specific basic info form's required fields are all
+  // filled. Updated by RoleBasicInfoTab via onValidityChange — mirrors the
+  // startup isActiveTabValid() gating so the shared SAVE button behaves
+  // identically for every role.
+  const [roleFormValid, setRoleFormValid] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [picker, setPicker] = useState<PickerKind | null>(null);
   const [countryOptions, setCountryOptions] = useState<Country[]>(COUNTRIES);
@@ -431,6 +436,7 @@ export function EditProfileScreen({
   // footer SAVE button drive the active custom form's save() imperatively
   // so we don't need a separate in-card Save inside each tab.
   const customFormRefs = useRef<Record<string, CustomFormTabHandle | null>>({});
+  const roleBasicTabRef = useRef<RoleBasicInfoTabHandle>(null);
   // {id, name} lookup for business models + product stages — fetched from
   // /global/custom so we can resolve the form's stored names to the numeric
   // IDs the sub-resource PATCHes require.
@@ -1090,7 +1096,7 @@ export function EditProfileScreen({
   // their own completeness via [[customFormStatuses]].
   const isActiveTabValid = () => {
     if (activeTab === 'basic') {
-      if (accountType && accountType !== 'startup') return true;
+      if (accountType && accountType !== 'startup') return roleFormValid;
       if (!basicInfo.companyName?.trim()) return false;
       if (!basicInfo.companySize) return false;
       if (basicInfo.isIncorporated === null) return false;
@@ -1172,6 +1178,14 @@ export function EditProfileScreen({
   };
 
   const handleSave = async () => {
+    // For non-startup role basic info — SAVE is already disabled when
+    // required fields are empty (roleFormValid gates the button identically to
+    // startup). Delegate to the tab's form so it builds the role-specific
+    // payload and calls onSave, which handles isSaving + toast.
+    if (activeTab === 'basic' && accountType && accountType !== 'startup') {
+      roleBasicTabRef.current?.triggerSubmit();
+      return;
+    }
     if (!isActiveTabValid()) {
       toast.error('Please fill all required fields.');
       return;
@@ -1912,11 +1926,12 @@ export function EditProfileScreen({
             />
           ) : (
             <RoleBasicInfoTab
+              ref={roleBasicTabRef}
               accountType={accountType}
               investorSubtype={investorSubtype}
               initialData={startupInfo}
+              onValidityChange={setRoleFormValid}
               primaryColor={primaryColor}
-              isSaving={isSaving}
               token={token}
               onLogoUploaded={() => loadProfile({silent: true})}
               industryOptions={industryOptions}
@@ -2307,7 +2322,6 @@ export function EditProfileScreen({
             : '';
           const saveDisabled =
             isSaving ||
-            (accountType ? accountType !== 'startup' : false) ||
             (activeTab !== 'basic' &&
               activeTab !== 'industry' &&
               activeTab !== 'financials' &&

@@ -1,8 +1,8 @@
-import React, {useEffect, useState} from 'react';
+import React, {forwardRef, useEffect, useImperativeHandle, useRef, useState} from 'react';
 import {StyleSheet, Text, View} from 'react-native';
 
-import {AppButton} from '../../../../core/components/AppButton';
 import {AppTextField} from '../../../../core/components/AppTextField';
+import {useToast} from '../../../../core/toast/ToastProvider';
 import {useFormValidation} from '../../../../core/form/useFormValidation';
 import {
   combine,
@@ -13,9 +13,12 @@ import {
 } from '../../../../core/form/validators';
 import {authService} from '../../../auth/services/auth.service';
 
+import type {SecondaryTabHandle} from './MentorDomainExpertiseTab';
+
 type Props = {
   token: string;
   primaryColor: string;
+  onSaveSuccess?: () => void;
 };
 
 type FormState = {
@@ -34,13 +37,10 @@ const EMPTY: FormState = {
   linkedinUrl: '',
 };
 
-export function InvestorRepresentativeTab({token, primaryColor}: Props) {
+export const InvestorRepresentativeTab = forwardRef<SecondaryTabHandle, Props>(
+function InvestorRepresentativeTab({token, primaryColor, onSaveSuccess}: Props, ref) {
+  const toast = useToast();
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<{
-    text: string;
-    tone: 'success' | 'error';
-  } | null>(null);
 
   const form = useFormValidation<FormState>({
     initial: EMPTY,
@@ -86,8 +86,6 @@ export function InvestorRepresentativeTab({token, primaryColor}: Props) {
   }, [token]);
 
   const submitNetwork = async (values: FormState) => {
-    setMessage(null);
-    setSaving(true);
     try {
       await authService.updateInvestorRepresentative(token, {
         personName: values.personName.trim(),
@@ -96,19 +94,20 @@ export function InvestorRepresentativeTab({token, primaryColor}: Props) {
         email: values.email.trim(),
         linkedinUrl: values.linkedinUrl.trim(),
       });
-      setMessage({text: 'Representative details saved.', tone: 'success'});
+      toast.success('Representative details saved.');
+      onSaveSuccess?.();
     } catch (error) {
-      setMessage({
-        text:
-          error instanceof Error
-            ? error.message
-            : 'Could not save representative details.',
-        tone: 'error',
-      });
-    } finally {
-      setSaving(false);
+      toast.error(
+        error instanceof Error ? error.message : 'Could not save representative details.',
+      );
     }
   };
+
+  const saveRef = useRef(() => form.handleSubmit(submitNetwork));
+  saveRef.current = () => form.handleSubmit(submitNetwork);
+  useImperativeHandle(ref, () => ({
+    triggerSave: () => { saveRef.current(); return Promise.resolve(); },
+  }));
 
   return (
     <View style={styles.card}>
@@ -164,28 +163,9 @@ export function InvestorRepresentativeTab({token, primaryColor}: Props) {
         onBlur={() => form.setTouched('linkedinUrl')}
       />
 
-      {message ? (
-        <Text
-          style={[
-            styles.message,
-            message.tone === 'success'
-              ? styles.messageSuccess
-              : styles.messageError,
-          ]}>
-          {message.text}
-        </Text>
-      ) : null}
-
-      <AppButton
-        label={loading ? 'Loading…' : saving ? 'Saving…' : 'Save'}
-        disabled={loading || saving}
-        loading={saving}
-        onPress={() => form.handleSubmit(submitNetwork)}
-        style={{backgroundColor: primaryColor}}
-      />
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   card: {
@@ -204,15 +184,5 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#64748b',
     lineHeight: 18,
-  },
-  message: {
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  messageSuccess: {
-    color: '#15803d',
-  },
-  messageError: {
-    color: '#dc2626',
   },
 });

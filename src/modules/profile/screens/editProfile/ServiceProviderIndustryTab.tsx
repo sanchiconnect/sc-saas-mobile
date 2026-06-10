@@ -1,18 +1,19 @@
-import React, {useEffect, useState} from 'react';
+import React, {forwardRef, useEffect, useImperativeHandle, useRef, useState} from 'react';
 import {StyleSheet, Text, View} from 'react-native';
 
-import {AppButton} from '../../../../core/components/AppButton';
+import {useToast} from '../../../../core/toast/ToastProvider';
 import {authService} from '../../../auth/services/auth.service';
 
 import {MultiSelectField, MultiSelectOption} from './MultiSelectField';
+import type {SecondaryTabHandle} from './MentorDomainExpertiseTab';
 
 type Props = {
   token: string;
   primaryColor: string;
   initialData: Record<string, any> | null;
   industryOptions: MultiSelectOption[];
-  // Cap from tenant config; defaults to the frontend's hard cap of 5.
   maxIndustries?: number;
+  onSaveSuccess?: () => void;
 };
 
 const seedIndustryIds = (
@@ -27,46 +28,43 @@ const seedIndustryIds = (
     .filter((id: number) => Number.isFinite(id));
 };
 
-export function ServiceProviderIndustryTab({
+export const ServiceProviderIndustryTab = forwardRef<SecondaryTabHandle, Props>(
+function ServiceProviderIndustryTab({
   token,
   primaryColor,
   initialData,
   industryOptions,
   maxIndustries = 5,
-}: Props) {
+  onSaveSuccess,
+}: Props, ref) {
+  const toast = useToast();
   const [industries, setIndustries] = useState<Array<number | string>>([]);
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<{
-    text: string;
-    tone: 'success' | 'error';
-  } | null>(null);
 
   useEffect(() => {
     setIndustries(seedIndustryIds(initialData));
   }, [initialData]);
 
   const onSave = async () => {
-    setMessage(null);
-    setSaving(true);
     try {
       await authService.updateProfile(
         token,
         {sectoralInterestIds: industries.map(Number)},
         'service_provider',
       );
-      setMessage({text: 'Industries saved.', tone: 'success'});
+      toast.success('Industries saved.');
+      onSaveSuccess?.();
     } catch (error) {
-      setMessage({
-        text:
-          error instanceof Error
-            ? error.message
-            : 'Could not save industries.',
-        tone: 'error',
-      });
-    } finally {
-      setSaving(false);
+      toast.error(
+        error instanceof Error ? error.message : 'Could not save industries.',
+      );
     }
   };
+
+  const saveRef = useRef(onSave);
+  saveRef.current = onSave;
+  useImperativeHandle(ref, () => ({
+    triggerSave: () => saveRef.current(),
+  }));
 
   return (
     <View style={styles.card}>
@@ -85,29 +83,9 @@ export function ServiceProviderIndustryTab({
         onChange={setIndustries}
         initiallyExpanded
       />
-
-      {message ? (
-        <Text
-          style={[
-            styles.message,
-            message.tone === 'success'
-              ? styles.messageSuccess
-              : styles.messageError,
-          ]}>
-          {message.text}
-        </Text>
-      ) : null}
-
-      <AppButton
-        label={saving ? 'Saving…' : 'Save'}
-        disabled={saving}
-        loading={saving}
-        onPress={onSave}
-        style={{backgroundColor: primaryColor}}
-      />
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   card: {
@@ -126,15 +104,5 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#64748b',
     lineHeight: 18,
-  },
-  message: {
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  messageSuccess: {
-    color: '#15803d',
-  },
-  messageError: {
-    color: '#dc2626',
   },
 });

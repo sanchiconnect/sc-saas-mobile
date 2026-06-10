@@ -46,6 +46,7 @@ import {MyMeetingsScreen} from '../meetings/screens/MyMeetingsScreen';
 import {CreatePostModal} from '../community/components/CreatePostModal';
 import {CommunityWallScreen} from '../community/screens/CommunityWallScreen';
 import {EditProfileScreen} from '../profile/screens/EditProfileScreen';
+import {RoleEditProfileScreen} from '../profile/screens/RoleEditProfileScreen';
 import {TicketsScreen} from '../tickets/screens/TicketsScreen';
 import {dashboardService} from './services/dashboard.service';
 import {AppMenuSelection, AppSection, DashboardSummary, MenuItem} from './types';
@@ -302,6 +303,7 @@ export function HomeScreen({
   }
 
   if (selectedMenu.section === 'edit-profile') {
+    const isStartup = summary?.accountType === 'startup';
     return (
       <View style={styles.page}>
         <SideMenu
@@ -319,17 +321,25 @@ export function HomeScreen({
           avatarUrl={userAvatarUrl}
         />
 
-        <EditProfileScreen
-          token={session.token}
-          onBack={() => setSelectedMenu({section: 'dashboard'})}
-          onPreview={() => setSelectedMenu({section: 'profile'})}
-          // Refresh the dashboard summary (profile-completion ring + stats)
-          // immediately after each save, so the ring shows the new % without
-          // the user having to navigate away and back.
-          onProfileUpdated={() => {
-            loadSummary(session.token).catch(() => {});
-          }}
-        />
+        {isStartup ? (
+          <EditProfileScreen
+            token={session.token}
+            onBack={() => setSelectedMenu({section: 'dashboard'})}
+            onPreview={() => setSelectedMenu({section: 'profile'})}
+            onProfileUpdated={() => {
+              loadSummary(session.token).catch(() => {});
+            }}
+          />
+        ) : (
+          <RoleEditProfileScreen
+            token={session.token}
+            onBack={() => setSelectedMenu({section: 'dashboard'})}
+            onPreview={() => setSelectedMenu({section: 'profile'})}
+            onProfileUpdated={() => {
+              loadSummary(session.token).catch(() => {});
+            }}
+          />
+        )}
       </View>
     );
   }

@@ -1,14 +1,16 @@
-import React, {useEffect, useState} from 'react';
+import React, {forwardRef, useEffect, useImperativeHandle, useRef, useState} from 'react';
 import {StyleSheet, Switch, Text, TextInput, View} from 'react-native';
 
-import {AppButton} from '../../../../core/components/AppButton';
 import {AppTextField} from '../../../../core/components/AppTextField';
+import {useToast} from '../../../../core/toast/ToastProvider';
 import {authService} from '../../../auth/services/auth.service';
 
 import {
   MultiSelectField,
   MultiSelectOption,
 } from './MultiSelectField';
+
+import type {SecondaryTabHandle} from './MentorDomainExpertiseTab';
 
 type Props = {
   token: string;
@@ -20,9 +22,9 @@ type Props = {
   preferenceOptions: MultiSelectOption[];
   abilityMetricOptions: MultiSelectOption[];
   businessModelOptions: MultiSelectOption[];
-  // Cap on investability metrics from globalSettings.investorMaxInvestabilityMetrics.
   maxAbilityMetrics?: number;
   maxIndustries?: number;
+  onSaveSuccess?: () => void;
 };
 
 type Form = {
@@ -108,7 +110,8 @@ const seedForm = (data: Record<string, any> | null): Form => {
   };
 };
 
-export function InvestorInvestmentsTab({
+export const InvestorInvestmentsTab = forwardRef<SecondaryTabHandle, Props>(
+function InvestorInvestmentsTab({
   token,
   primaryColor,
   initialData,
@@ -120,13 +123,10 @@ export function InvestorInvestmentsTab({
   businessModelOptions,
   maxAbilityMetrics = 7,
   maxIndustries = 5,
-}: Props) {
+  onSaveSuccess,
+}: Props, ref) {
+  const toast = useToast();
   const [form, setForm] = useState<Form>(() => seedForm(initialData));
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<{
-    text: string;
-    tone: 'success' | 'error';
-  } | null>(null);
   // Inline field-level errors. Mirrors the useFormValidation pattern but
   // kept lightweight here since the shape includes multi-selects we don't
   // currently route through the hook.
@@ -168,17 +168,12 @@ export function InvestorInvestmentsTab({
   }, [initialData]);
 
   const onSave = async () => {
-    setMessage(null);
     setSubmitted(true);
     if (hasErrors) {
-      setMessage({
-        text: 'Please complete the highlighted fields.',
-        tone: 'error',
-      });
+      toast.error('Please complete the highlighted fields.');
       return;
     }
 
-    setSaving(true);
     try {
       const otherList = form.otherIndustriesActive
         ? form.otherIndustriesText
@@ -201,19 +196,20 @@ export function InvestorInvestmentsTab({
         investAbilityMetricsIds: form.abilityMetrics.map(Number),
         businessModelIds: form.businessModels.map(Number),
       });
-      setMessage({text: 'Investment details saved.', tone: 'success'});
+      toast.success('Investment details saved.');
+      onSaveSuccess?.();
     } catch (error) {
-      setMessage({
-        text:
-          error instanceof Error
-            ? error.message
-            : 'Could not save investment details.',
-        tone: 'error',
-      });
-    } finally {
-      setSaving(false);
+      toast.error(
+        error instanceof Error ? error.message : 'Could not save investment details.',
+      );
     }
   };
+
+  const saveRef = useRef(onSave);
+  saveRef.current = onSave;
+  useImperativeHandle(ref, () => ({
+    triggerSave: () => saveRef.current(),
+  }));
 
   return (
     <View style={styles.card}>
@@ -398,28 +394,9 @@ export function InvestorInvestmentsTab({
         />
       ) : null}
 
-      {message ? (
-        <Text
-          style={[
-            styles.message,
-            message.tone === 'success'
-              ? styles.messageSuccess
-              : styles.messageError,
-          ]}>
-          {message.text}
-        </Text>
-      ) : null}
-
-      <AppButton
-        label={saving ? 'Saving…' : 'Save'}
-        disabled={saving}
-        loading={saving}
-        onPress={onSave}
-        style={{backgroundColor: primaryColor}}
-      />
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   card: {
@@ -442,16 +419,6 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     gap: 12,
-  },
-  message: {
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  messageSuccess: {
-    color: '#15803d',
-  },
-  messageError: {
-    color: '#dc2626',
   },
   otherToggleRow: {
     alignItems: 'center',
