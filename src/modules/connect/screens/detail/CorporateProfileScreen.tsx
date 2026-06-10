@@ -22,6 +22,12 @@ import {resolveName} from '../../utils';
 // Response keys specific to the corporate profile endpoint:
 //   GET /api/v1/corporates/public/corporate-information/{uuid}
 //   GET /api/v1/forms-management/profile/data/corporate/{uuid}
+//
+// Web-verified field names (angular template):
+//   companyName, companyLogo, size, programName, totalSupported,
+//   connectionRequirements (comma-separated string), briefDescription,
+//   sectoralInterestIds[], sectoralInterestOthers[],
+//   registeredCityR.name, registeredStateR.name, registeredCountryR.name
 
 type Props = DetailScreenProps;
 
@@ -40,23 +46,36 @@ export function CorporateProfileScreen({
   const name = resolveName(profile);
 
   // ── corporate-specific field mapping ─────────────────────────────────────
+
   const companySize = profile?.size || profile?.companySize || '';
-  const programName = profile?.programName || '';
-  const totalSupported =
-    profile?.totalSupported != null ? String(profile.totalSupported) : '';
 
-  // Connection requirements = why they want to work with startups
-  const connectionRequirements = toNamedList(profile?.connectionRequirements);
+  // "Headquartered in" = city + state + country (matches web `get headquaters()`)
+  const headquarters = [
+    profile?.registeredCityR?.name,
+    profile?.registeredStateR?.name,
+    profile?.registeredCountryR?.name,
+  ]
+    .filter(Boolean)
+    .join(', ');
 
+  // Industries: top-level sectoralInterestIds (objects with .name) + sectoralInterestOthers (strings)
   const industries = [
-    ...toNamedList(profile?.sectoralInterestSubCategoryIds),
     ...toNamedList(profile?.sectoralInterestIds),
     ...toNamedList(profile?.sectoralInterestOthers),
   ];
 
+  const programName = profile?.programName || '';
+  const totalSupported =
+    profile?.totalSupported != null ? String(profile.totalSupported) : '';
+
+  // connectionRequirements is a comma-separated string on corporate (web: .split(','))
+  // toNamedList already handles both string (splits on comma) and array
+  const connectionRequirements = toNamedList(profile?.connectionRequirements);
+
+  // About: web uses briefDescription (falls back through standard chain)
   const about = stripHtml(
-    profile?.longDescription ||
-      profile?.briefDescription ||
+    profile?.briefDescription ||
+      profile?.longDescription ||
       profile?.aboutUs ||
       profile?.shortDescription ||
       profile?.description ||
@@ -64,6 +83,9 @@ export function CorporateProfileScreen({
   );
 
   const socialLinks = resolveSocialLinks(profile);
+
+  const hasTopCard = Boolean(companySize || headquarters || industries.length > 0);
+  const hasProgramCard = Boolean(programName || totalSupported || connectionRequirements.length > 0);
 
   return (
     <ProfileShell
@@ -83,39 +105,41 @@ export function CorporateProfileScreen({
         <ActivityIndicator color={primaryColor} style={styles.spinner} />
       ) : null}
 
-      {about ? (
-        <SectionCard title="About" primaryColor={primaryColor}>
-          <Text style={sStyles.valueText}>{about}</Text>
-        </SectionCard>
-      ) : null}
-
-      {(companySize || programName || totalSupported || connectionRequirements.length > 0 || industries.length > 0) ? (
-        <SectionCard title="Details" primaryColor={primaryColor}>
+      {/* Row 1: Company Size | Headquartered in | Industry Domain */}
+      {hasTopCard ? (
+        <SectionCard title="Company Details" primaryColor={primaryColor}>
           {companySize ? <LabelRow label="Company Size" value={companySize} /> : null}
-          {programName ? (
+          {headquarters ? (
             <>
               {companySize ? <Divider /> : null}
-              <LabelRow label="Name of Program" value={programName} />
-            </>
-          ) : null}
-          {totalSupported ? (
-            <>
-              {(companySize || programName) ? <Divider /> : null}
-              <LabelRow label="Total startups supported" value={totalSupported} />
+              <LabelRow label="Headquartered in" value={headquarters} />
             </>
           ) : null}
           {industries.length > 0 ? (
             <>
-              {(companySize || programName || totalSupported) ? <Divider /> : null}
+              {(companySize || headquarters) ? <Divider /> : null}
               <View style={sStyles.labelRow}>
                 <Text style={sStyles.labelText}>Industry Domain</Text>
                 <ChipList items={industries} />
               </View>
             </>
           ) : null}
+        </SectionCard>
+      ) : null}
+
+      {/* Row 2: Name of Program | Total startups supported | Reason to connect */}
+      {hasProgramCard ? (
+        <SectionCard title="Program & Engagement" primaryColor={primaryColor}>
+          {programName ? <LabelRow label="Name of Program" value={programName} /> : null}
+          {totalSupported ? (
+            <>
+              {programName ? <Divider /> : null}
+              <LabelRow label="Total startups supported" value={totalSupported} />
+            </>
+          ) : null}
           {connectionRequirements.length > 0 ? (
             <>
-              {(companySize || programName || totalSupported || industries.length > 0) ? <Divider /> : null}
+              {(programName || totalSupported) ? <Divider /> : null}
               <View style={sStyles.labelRow}>
                 <Text style={sStyles.labelText}>Reason to connect with startups</Text>
                 <ChipList items={connectionRequirements} />
@@ -125,6 +149,7 @@ export function CorporateProfileScreen({
         </SectionCard>
       ) : null}
 
+      {/* Social Links */}
       {socialLinks.length > 0 ? (
         <SectionCard title="Social Links" primaryColor={primaryColor}>
           <View style={sStyles.socialRow}>
@@ -138,6 +163,13 @@ export function CorporateProfileScreen({
               </Pressable>
             ))}
           </View>
+        </SectionCard>
+      ) : null}
+
+      {/* About */}
+      {about ? (
+        <SectionCard title="About" primaryColor={primaryColor}>
+          <Text style={sStyles.valueText}>{about}</Text>
         </SectionCard>
       ) : null}
 

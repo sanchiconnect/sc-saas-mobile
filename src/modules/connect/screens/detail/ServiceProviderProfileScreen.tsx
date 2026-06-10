@@ -4,7 +4,6 @@ import {ActivityIndicator, Pressable, StyleSheet, Text, View} from 'react-native
 import {Icon} from '../../../../core/components/Icon';
 import {stripHtml} from '../../../chat/utils';
 import {
-  ChipList,
   DetailScreenProps,
   Divider,
   LabelRow,
@@ -14,7 +13,6 @@ import {
   openLink,
   resolveSocialLinks,
   sStyles,
-  toNamedList,
 } from '../../components/profile/SharedProfileUI';
 import {useProfileDetail} from '../../hooks/useProfileDetail';
 import {resolveName} from '../../utils';
@@ -22,6 +20,11 @@ import {resolveName} from '../../utils';
 // Response keys specific to the service-provider profile endpoint:
 //   GET /api/v1/service-providers/public/service-provider-information/{uuid}
 //   GET /api/v1/forms-management/profile/data/service-provider/{uuid}
+//
+// Web-verified field names (angular template):
+//   name, avatar, website (in hero),
+//   providerCategory.name, providerType.name,
+//   briefDescription, facebookUrl, linkedinUrl, twitterUrl, youtubeUrl, instagramUrl
 
 type Props = DetailScreenProps;
 
@@ -40,18 +43,20 @@ export function ServiceProviderProfileScreen({
   const name = resolveName(profile);
 
   // ── service-provider-specific field mapping ───────────────────────────────
-  const serviceTypes = toNamedList(profile?.serviceTypes);
-  const specializations = toNamedList(profile?.specializations);
-  const industries = [
-    ...toNamedList(profile?.sectoralInterestSubCategoryIds),
-    ...toNamedList(profile?.sectoralInterestIds),
-    ...toNamedList(profile?.sectoralInterestOthers),
-  ];
-  const connectionRequirements = toNamedList(profile?.connectionRequirements);
 
+  // Web uses `website` field (not displayWebsite)
+  const website = profile?.website || profile?.displayWebsite || profile?.websiteUrl || '';
+
+  // Basic Details
+  const providerCategory: string =
+    profile?.providerCategory?.name || profile?.providerCategory || '';
+  const providerType: string =
+    profile?.providerType?.name || profile?.providerType || '';
+
+  // About: web uses briefDescription
   const about = stripHtml(
-    profile?.longDescription ||
-      profile?.briefDescription ||
+    profile?.briefDescription ||
+      profile?.longDescription ||
       profile?.aboutUs ||
       profile?.shortDescription ||
       profile?.description ||
@@ -72,62 +77,38 @@ export function ServiceProviderProfileScreen({
       isApproved={isApproved}
       onBack={onBack}>
 
-      <ProfileHero profile={profile} primaryColor={primaryColor} logoBaseUrl={logoBaseUrl} />
+      {/* Hero — website shown as child since field is `website` not `displayWebsite` */}
+      <ProfileHero profile={profile} primaryColor={primaryColor} logoBaseUrl={logoBaseUrl}>
+        {website ? (
+          <Pressable onPress={() => openLink(website)} style={styles.websiteRow}>
+            <Icon name="link-variant" size={13} color={primaryColor} />
+            <Text style={[styles.websiteText, {color: primaryColor}]} numberOfLines={1}>
+              {website}
+            </Text>
+          </Pressable>
+        ) : null}
+      </ProfileHero>
 
       {isLoading ? (
         <ActivityIndicator color={primaryColor} style={styles.spinner} />
       ) : null}
 
-      {about ? (
-        <SectionCard title="About" primaryColor={primaryColor}>
-          <Text style={sStyles.valueText}>{about}</Text>
-        </SectionCard>
-      ) : null}
-
-      {(serviceTypes.length > 0 || specializations.length > 0 || industries.length > 0 || connectionRequirements.length > 0) ? (
-        <SectionCard title="Services" primaryColor={primaryColor}>
-          {serviceTypes.length > 0 ? (
-            <View style={sStyles.labelRow}>
-              <Text style={sStyles.labelText}>Service Types</Text>
-              <ChipList items={serviceTypes} />
-            </View>
+      {/* Basic Details: Provider Category + Provider Type */}
+      {(providerCategory || providerType) ? (
+        <SectionCard title="Basic Details" primaryColor={primaryColor}>
+          {providerCategory ? (
+            <LabelRow label="Provider Category" value={providerCategory} />
           ) : null}
-          {specializations.length > 0 ? (
+          {providerType ? (
             <>
-              {serviceTypes.length > 0 ? <Divider /> : null}
-              <View style={sStyles.labelRow}>
-                <Text style={sStyles.labelText}>Specializations</Text>
-                <ChipList items={specializations} />
-              </View>
-            </>
-          ) : null}
-          {industries.length > 0 ? (
-            <>
-              {(serviceTypes.length > 0 || specializations.length > 0) ? <Divider /> : null}
-              <View style={sStyles.labelRow}>
-                <Text style={sStyles.labelText}>Industry Domain</Text>
-                <ChipList items={industries} />
-              </View>
-            </>
-          ) : null}
-          {connectionRequirements.length > 0 ? (
-            <>
-              {(serviceTypes.length > 0 || specializations.length > 0 || industries.length > 0) ? <Divider /> : null}
-              <View style={sStyles.labelRow}>
-                <Text style={sStyles.labelText}>Looking to connect with</Text>
-                <ChipList items={connectionRequirements} />
-              </View>
+              {providerCategory ? <Divider /> : null}
+              <LabelRow label="Provider Type" value={providerType} />
             </>
           ) : null}
         </SectionCard>
       ) : null}
 
-      {profile?.website ? (
-        <SectionCard title="Website" primaryColor={primaryColor}>
-          <LabelRow label="Website" value={profile.website} />
-        </SectionCard>
-      ) : null}
-
+      {/* Social Links */}
       {socialLinks.length > 0 ? (
         <SectionCard title="Social Links" primaryColor={primaryColor}>
           <View style={sStyles.socialRow}>
@@ -141,6 +122,13 @@ export function ServiceProviderProfileScreen({
               </Pressable>
             ))}
           </View>
+        </SectionCard>
+      ) : null}
+
+      {/* About */}
+      {about ? (
+        <SectionCard title="About" primaryColor={primaryColor}>
+          <Text style={sStyles.valueText}>{about}</Text>
         </SectionCard>
       ) : null}
 
@@ -160,4 +148,6 @@ export function ServiceProviderProfileScreen({
 
 const styles = StyleSheet.create({
   spinner: {marginTop: 20},
+  websiteRow: {flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4},
+  websiteText: {fontSize: 12, fontWeight: '600', flex: 1},
 });

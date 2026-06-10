@@ -51,7 +51,9 @@ export function useProfileDetail(
         if (!cancelled) setIsLoading(false);
       }
 
-      connectService.incrementViews(token, role, user.profileUuid);
+      if (role !== 'program-office-team') {
+        connectService.incrementViews(token, role, user.profileUuid);
+      }
       connectionsService.listActive(token, {page: 1, limit: 500}).catch(() => undefined);
 
       if (currentUserId) {

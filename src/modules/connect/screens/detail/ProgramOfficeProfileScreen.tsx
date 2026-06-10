@@ -17,11 +17,22 @@ import {
   toNamedList,
 } from '../../components/profile/SharedProfileUI';
 import {useProfileDetail} from '../../hooks/useProfileDetail';
-import {resolveName} from '../../utils';
+import {initials, resolveName} from '../../utils';
+import {withAlpha} from '../../../../core/theme/colors';
 
 // Response keys specific to the program-office-team profile endpoint:
 //   GET /api/v1/program-office-team/public/program-office-team-information/{uuid}
 //   GET /api/v1/forms-management/profile/data/program-office-team/{uuid}
+//
+// Web-verified field names (angular template):
+//   name, avatar,
+//   department (Role/Department),
+//   designation,
+//   keyInterestAreas (Headline),
+//   technologies[] (only if domainAreas includes "technology"),
+//   partnerDetails { name, partnerType, avatar } (Associated with),
+//   shortDescription ("Who should reach out to you?"),
+//   briefDescription (About)
 
 type Props = DetailScreenProps;
 
@@ -39,22 +50,28 @@ export function ProgramOfficeProfileScreen({
 
   const name = resolveName(profile);
 
-  // ── program-office-team-specific field mapping ────────────────────────────
-  const designation = profile?.designation || profile?.jobTitle || '';
-  const expertise = toNamedList(profile?.expertiseAreas || profile?.domainAreas);
-  const industries = [
-    ...toNamedList(profile?.sectoralInterestSubCategoryIds),
-    ...toNamedList(profile?.sectoralInterestIds),
-    ...toNamedList(profile?.sectoralInterestOthers),
-  ];
-  const responsibilities = toNamedList(profile?.responsibilities);
+  // ── program-office-specific field mapping ─────────────────────────────────
 
+  const department = profile?.department || '';
+  const designation = profile?.designation || '';
+  const headline = profile?.keyInterestAreas || '';
+
+  // Technology preference — only if a domain area contains "technology"
+  const domainNames = toNamedList(profile?.domainAreas).map(s => s.toLowerCase());
+  const hasTechDomain = domainNames.some(d => d.includes('technology'));
+  const technologies = hasTechDomain ? toNamedList(profile?.technologies) : [];
+
+  // Associated with: partner organization this person belongs to
+  const partnerDetails = profile?.partnerDetails || null;
+
+  // "Who should reach out to you?" — shortDescription
+  const whoShouldReach = stripHtml(profile?.shortDescription || '');
+
+  // About — briefDescription
   const about = stripHtml(
-    profile?.longDescription ||
-      profile?.briefDescription ||
+    profile?.briefDescription ||
+      profile?.longDescription ||
       profile?.aboutUs ||
-      profile?.bio ||
-      profile?.shortDescription ||
       profile?.description ||
       '',
   );
@@ -79,53 +96,73 @@ export function ProgramOfficeProfileScreen({
         <ActivityIndicator color={primaryColor} style={styles.spinner} />
       ) : null}
 
-      {designation ? (
-        <View style={styles.designationCard}>
-          <Text style={styles.designation}>{designation}</Text>
-        </View>
-      ) : null}
+      {/* Role card: Associated with + Department + Designation + Headline */}
+      {(partnerDetails || department || designation || headline) ? (
+        <SectionCard title="Details" primaryColor={primaryColor}>
 
-      {about ? (
-        <SectionCard title="About" primaryColor={primaryColor}>
-          <Text style={sStyles.valueText}>{about}</Text>
-        </SectionCard>
-      ) : null}
-
-      {(expertise.length > 0 || responsibilities.length > 0 || industries.length > 0) ? (
-        <SectionCard title="Expertise & Responsibilities" primaryColor={primaryColor}>
-          {expertise.length > 0 ? (
-            <View style={sStyles.labelRow}>
-              <Text style={sStyles.labelText}>Areas of Expertise</Text>
-              <ChipList items={expertise} />
+          {/* Associated with: partner org (web: partnerDetails) */}
+          {partnerDetails ? (
+            <View style={styles.partnerRow}>
+              {partnerDetails.avatar ? (
+                <View style={styles.partnerAvatar}>
+                  {/* Simple initials fallback — avoid heavy image import */}
+                  <Text style={[styles.partnerInitials, {color: primaryColor}]}>
+                    {initials(partnerDetails.name || '?') || '?'}
+                  </Text>
+                </View>
+              ) : (
+                <View style={[styles.partnerAvatar, {backgroundColor: withAlpha(primaryColor, 0.15)}]}>
+                  <Text style={[styles.partnerInitials, {color: primaryColor}]}>
+                    {initials(partnerDetails.name || '?') || '?'}
+                  </Text>
+                </View>
+              )}
+              <View style={styles.partnerInfo}>
+                <Text style={styles.partnerLabel}>Associated with</Text>
+                <Text style={styles.partnerName}>{partnerDetails.name}</Text>
+                {partnerDetails.partnerType ? (
+                  <Text style={styles.partnerType}>
+                    {String(partnerDetails.partnerType).replace(/\b\w/g, c => c.toUpperCase())}
+                  </Text>
+                ) : null}
+              </View>
             </View>
           ) : null}
-          {responsibilities.length > 0 ? (
+
+          {department ? (
             <>
-              {expertise.length > 0 ? <Divider /> : null}
-              <View style={sStyles.labelRow}>
-                <Text style={sStyles.labelText}>Responsibilities</Text>
-                <ChipList items={responsibilities} />
-              </View>
+              {partnerDetails ? <Divider /> : null}
+              <LabelRow label="Role / Department" value={department} />
             </>
           ) : null}
-          {industries.length > 0 ? (
+
+          {designation ? (
             <>
-              {(expertise.length > 0 || responsibilities.length > 0) ? <Divider /> : null}
+              {(partnerDetails || department) ? <Divider /> : null}
+              <LabelRow label="Designation" value={designation} />
+            </>
+          ) : null}
+
+          {headline ? (
+            <>
+              {(partnerDetails || department || designation) ? <Divider /> : null}
+              <LabelRow label="Headline" value={headline} />
+            </>
+          ) : null}
+
+          {technologies.length > 0 ? (
+            <>
+              {(partnerDetails || department || designation || headline) ? <Divider /> : null}
               <View style={sStyles.labelRow}>
-                <Text style={sStyles.labelText}>Industry Domain</Text>
-                <ChipList items={industries} />
+                <Text style={sStyles.labelText}>Technology preference</Text>
+                <ChipList items={technologies} />
               </View>
             </>
           ) : null}
         </SectionCard>
       ) : null}
 
-      {profile?.programName ? (
-        <SectionCard title="Program" primaryColor={primaryColor}>
-          <LabelRow label="Name of Program" value={profile.programName} />
-        </SectionCard>
-      ) : null}
-
+      {/* Social Links */}
       {socialLinks.length > 0 ? (
         <SectionCard title="Social Links" primaryColor={primaryColor}>
           <View style={sStyles.socialRow}>
@@ -139,6 +176,20 @@ export function ProgramOfficeProfileScreen({
               </Pressable>
             ))}
           </View>
+        </SectionCard>
+      ) : null}
+
+      {/* Who should reach out to you? (web: shortDescription) */}
+      {whoShouldReach ? (
+        <SectionCard title="Who should reach out to you?" primaryColor={primaryColor}>
+          <Text style={sStyles.valueText}>{whoShouldReach}</Text>
+        </SectionCard>
+      ) : null}
+
+      {/* About (web: briefDescription) */}
+      {about ? (
+        <SectionCard title="About" primaryColor={primaryColor}>
+          <Text style={sStyles.valueText}>{about}</Text>
         </SectionCard>
       ) : null}
 
@@ -158,16 +209,40 @@ export function ProgramOfficeProfileScreen({
 
 const styles = StyleSheet.create({
   spinner: {marginTop: 20},
-  designationCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 14,
-    marginHorizontal: 16,
-    marginTop: 12,
-    padding: 14,
+  partnerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
-  designation: {
+  partnerAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#e0e7ff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  partnerInitials: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  partnerInfo: {
+    flex: 1,
+  },
+  partnerLabel: {
+    color: '#64748b',
+    fontSize: 11,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  partnerName: {
     color: '#0f172a',
     fontSize: 14,
     fontWeight: '700',
+  },
+  partnerType: {
+    color: '#475569',
+    fontSize: 12,
+    marginTop: 1,
   },
 });

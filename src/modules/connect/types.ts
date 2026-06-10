@@ -24,7 +24,7 @@ export const ROLE_ENDPOINT_SEGMENT: Record<ConnectRoleKey, string> = {
   mentors: 'mentors',
   'service-providers': 'service-providers',
   partners: 'partners',
-  'program-office-team': 'program-offices',
+  'program-office-team': 'program-office-members',
   individuals: 'individuals',
 };
 
@@ -49,8 +49,9 @@ export const ROLE_API_FRAGMENT: Record<
   },
   partners: {plural: 'partners', singular: 'partner'},
   'program-office-team': {
-    plural: 'program-offices',
-    singular: 'program-office',
+    plural: 'program_office_members',
+    singular: 'program_office',
+    profileInfoPath: 'program-office-member-information',
   },
   individuals: {plural: 'individuals', singular: 'individual'},
 };
