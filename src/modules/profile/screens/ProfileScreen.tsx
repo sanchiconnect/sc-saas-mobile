@@ -139,6 +139,31 @@ type StartupInfo = {
   founders?: Founder[];
   advisoryBoards?: AdvisoryBoardMember[];
   modifiedAt?: string;
+  // Investor-specific
+  portfolioSize?: number | null;
+  keyInvestments?: string | null;
+  representative?: {
+    uuid?: string;
+    personName?: string;
+    designation?: string;
+    email?: string;
+    mobileNumber?: string | number;
+    linkedinUrl?: string;
+  } | null;
+  investmentDetails?: {
+    uuid?: string;
+    ticketSizeMin?: number | null;
+    ticketSizeMax?: number | null;
+    turnAroundTime?: number | null;
+    investmentMechanismIds?: NamedRecord[];
+    investmentPreferenceIds?: NamedRecord[];
+    investmentStageIds?: NamedRecord[];
+    sectoralInterestIds?: NamedRecord[];
+    sectoralInterestOthers?: string[];
+    sectoralInterestSubCategoryIds?: NamedRecord[];
+    investAbilityMetricsIds?: NamedRecord[];
+    businessModelIds?: NamedRecord[];
+  } | null;
 };
 
 const resolveAssetUri = (
@@ -774,8 +799,11 @@ export function ProfileScreen({
   const industryItems = [
     ...toNamedList(info?.sectoralInterestSubCategoryIds),
     ...toNamedList(info?.sectoralInterestIds),
+    // Investor sectors are nested inside investmentDetails in the API response
+    ...toNamedList(info?.investmentDetails?.sectoralInterestIds),
     ...toNamedList(info?.sectoralInterestOthers),
-  ];
+    ...toNamedList(info?.investmentDetails?.sectoralInterestOthers),
+  ].filter((v, i, a) => a.indexOf(v) === i); // deduplicate
   const expertiseLabel = isCorporateProfile
     ? 'Connection requirements'
     : isInvestorProfile
@@ -1221,6 +1249,113 @@ export function ProfileScreen({
             <Text style={styles.placeholderText}>-</Text>
           )}
         </View>
+      ) : null}
+
+      {/* ── Investor: Portfolio & Key Investments ─────────────────────── */}
+      {isInvestorProfile && (info?.portfolioSize != null || info?.keyInvestments) ? (
+        <SectionBlock title="Portfolio" primaryColor={primaryColor}>
+          {info?.portfolioSize != null ? (
+            <LabelRow
+              label="Portfolio Size"
+              value={`${info.portfolioSize} ${info.portfolioSize === 1 ? 'company' : 'companies'}`}
+            />
+          ) : null}
+          {info?.keyInvestments ? (
+            <View style={styles.labelRow}>
+              <Text style={styles.labelText}>Key Investments</Text>
+              <Text style={styles.valueText}>{info.keyInvestments}</Text>
+            </View>
+          ) : null}
+        </SectionBlock>
+      ) : null}
+
+      {/* ── Investor: Investment Details ───────────────────────────────── */}
+      {isInvestorProfile && info?.investmentDetails ? (() => {
+        const inv = info.investmentDetails;
+        const hasTicketSize = inv.ticketSizeMin != null || inv.ticketSizeMax != null;
+        const fmt = (n?: number | null) =>
+          n != null ? `INR ${n.toLocaleString('en-IN')}` : '';
+        return (
+          <SectionBlock title="Investment Details" primaryColor={primaryColor}>
+            {hasTicketSize ? (
+              <View style={styles.labelRow}>
+                <Text style={styles.labelText}>Ticket Size</Text>
+                <View style={{flexDirection: 'row', gap: 12}}>
+                  {inv.ticketSizeMin != null ? (
+                    <View style={styles.investorMetaChip}>
+                      <Text style={styles.miniLabel}>Min</Text>
+                      <Text style={styles.miniValue}>{fmt(inv.ticketSizeMin)}</Text>
+                    </View>
+                  ) : null}
+                  {inv.ticketSizeMax != null ? (
+                    <View style={styles.investorMetaChip}>
+                      <Text style={styles.miniLabel}>Max</Text>
+                      <Text style={styles.miniValue}>{fmt(inv.ticketSizeMax)}</Text>
+                    </View>
+                  ) : null}
+                </View>
+              </View>
+            ) : null}
+            {inv.turnAroundTime != null ? (
+              <LabelRow
+                label="Turn Around Time"
+                value={`${inv.turnAroundTime} days`}
+              />
+            ) : null}
+            <ChipGroup
+              label="Using instruments"
+              items={toNamedList(inv.investmentMechanismIds)}
+            />
+            <ChipGroup
+              label="We prefer to"
+              items={toNamedList(inv.investmentPreferenceIds)}
+            />
+            <ChipGroup
+              label="Stage"
+              items={toNamedList(inv.investmentStageIds)}
+            />
+            <ChipGroup
+              label="Investability Metrics"
+              items={toNamedList(inv.investAbilityMetricsIds)}
+            />
+            <ChipGroup
+              label="We invest in"
+              items={toNamedList(inv.businessModelIds)}
+            />
+          </SectionBlock>
+        );
+      })() : null}
+
+      {/* ── Investor: Representative Details ───────────────────────────── */}
+      {isInvestorProfile && info?.representative?.personName ? (
+        <SectionBlock title="Representative Details" primaryColor={primaryColor}>
+          <LabelRow
+            label="Represented by"
+            value={info.representative.personName}
+          />
+          {info.representative.designation ? (
+            <LabelRow label="Designation" value={info.representative.designation} />
+          ) : null}
+          {info.representative.email ? (
+            <LabelRow label="Email" value={info.representative.email} />
+          ) : null}
+          {info.representative.mobileNumber ? (
+            <LabelRow
+              label="Mobile"
+              value={String(info.representative.mobileNumber)}
+            />
+          ) : null}
+          {info.representative.linkedinUrl ? (
+            <View style={styles.labelRow}>
+              <Text style={styles.labelText}>LinkedIn</Text>
+              <Pressable onPress={() => openLink(info.representative!.linkedinUrl!)}>
+                <Text style={[styles.valueText, {color: primaryColor}]}>
+                  {info.representative.linkedinUrl}
+                </Text>
+              </Pressable>
+            </View>
+          ) : null}
+        </SectionBlock>
       ) : null}
 
       {targetFundraise || valuation || info?.financials?.fundingStage?.name ? (
@@ -1830,6 +1965,14 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     lineHeight: 20,
+  },
+  investorMetaChip: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
   },
   chipGroup: {
     gap: 8,

@@ -1,6 +1,7 @@
 import React, {useContext, useEffect, useRef, useState} from 'react';
 import {
   ActivityIndicator,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -129,6 +130,7 @@ type Props = {
 export function RoleEditProfileScreen({
   token,
   onBack,
+  onPreview,
   onProfileUpdated,
   initialAccountType,
 }: Props) {
@@ -148,6 +150,11 @@ export function RoleEditProfileScreen({
   const [isSaving, setIsSaving] = useState(false);
   const [backendCompletion, setBackendCompletion] = useState<number | null>(null);
   const [completionForms, setCompletionForms] = useState<Record<string, CompletionForm> | null>(null);
+  const [canRequestApproval, setCanRequestApproval] = useState(false);
+  const [isApprovalRequested, setIsApprovalRequested] = useState(false);
+  const [isApproved, setIsApproved] = useState(false);
+  const [showApprovalModal, setShowApprovalModal] = useState(false);
+  const [isSubmittingApproval, setIsSubmittingApproval] = useState(false);
 
   // ── tab navigation ────────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<string>('basic');
@@ -337,12 +344,16 @@ export function RoleEditProfileScreen({
       .getProfileCompletion(token, accountType, investorSubtype)
       .then(res => {
         if (cancelled) return;
-        const num = Number(res?.data?.percentage ?? res?.percentage);
+        const d = res?.data ?? res ?? {};
+        const num = Number(d.percentage);
         if (Number.isFinite(num)) setBackendCompletion(num);
-        const forms = res?.data?.forms;
+        const forms = d.forms;
         if (forms && typeof forms === 'object') {
           setCompletionForms(forms as Record<string, CompletionForm>);
         }
+        setCanRequestApproval(Boolean(d.canRequestApproval));
+        setIsApprovalRequested(Boolean(d.isApprovalRequested));
+        setIsApproved(Boolean(d.isApproved));
       })
       .catch(() => {});
     return () => {
@@ -503,6 +514,25 @@ export function RoleEditProfileScreen({
     return true;
   };
 
+  const handleRequestApproval = async () => {
+    if (!accountType) return;
+    setIsSubmittingApproval(true);
+    try {
+      await authService.requestApproval(token, accountType);
+      setShowApprovalModal(false);
+      setIsApprovalRequested(true);
+      setCanRequestApproval(false);
+      toast.success('Profile submitted for approval!');
+      onProfileUpdated?.();
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : 'Could not submit for approval.',
+      );
+    } finally {
+      setIsSubmittingApproval(false);
+    }
+  };
+
   const handleSave = async () => {
     if (activeTab === 'basic') {
       roleBasicTabRef.current?.triggerSubmit();
@@ -604,12 +634,15 @@ export function RoleEditProfileScreen({
       authService
         .getProfileCompletion(token, accountType, investorSubtype)
         .then(res => {
-          const num = Number(res?.data?.percentage ?? res?.percentage);
+          const d = res?.data ?? res ?? {};
+          const num = Number(d.percentage);
           if (Number.isFinite(num)) setBackendCompletion(num);
-          const forms = res?.data?.forms;
+          const forms = d.forms;
           if (forms && typeof forms === 'object') {
             setCompletionForms(forms as Record<string, CompletionForm>);
           }
+          setCanRequestApproval(Boolean(d.canRequestApproval));
+          setIsApprovalRequested(Boolean(d.isApprovalRequested));
         })
         .catch(() => {});
     }
@@ -630,6 +663,18 @@ export function RoleEditProfileScreen({
               {Math.round(profileCompletion)}%
             </Text>
           </View>
+          {canRequestApproval && !isApprovalRequested ? (
+            <Pressable
+              style={[styles.submitHeaderBtn, {backgroundColor: colors.success}]}
+              onPress={() => setShowApprovalModal(true)}
+              accessibilityRole="button">
+              <Text style={styles.submitHeaderBtnLabel}>SUBMIT</Text>
+            </Pressable>
+          ) : isApprovalRequested && !isApproved ? (
+            <View style={[styles.submitHeaderBtn, {backgroundColor: '#64748b'}]}>
+              <Text style={styles.submitHeaderBtnLabel}>PENDING</Text>
+            </View>
+          ) : null}
         </View>
 
         {/* Progress bar */}
@@ -909,6 +954,56 @@ export function RoleEditProfileScreen({
           </View>
         ) : null}
       </View>
+
+      {/* ── Profile Approval Modal ───────────────────────────────────────── */}
+      <Modal
+        visible={showApprovalModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowApprovalModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={[styles.modalIconWrap, {borderColor: colors.success}]}>
+              <Text style={[styles.modalCheckmark, {color: colors.success}]}>✓</Text>
+            </View>
+            <Text style={styles.modalTitle}>
+              Awesome! your profile is ready to go live.
+            </Text>
+            <Text style={styles.modalSubtitle}>
+              Submit to start connecting with the community.
+            </Text>
+            <View style={styles.modalButtons}>
+              <AppButton
+                label={isSubmittingApproval ? 'Submitting…' : 'Submit'}
+                loading={isSubmittingApproval}
+                disabled={isSubmittingApproval}
+                onPress={handleRequestApproval}
+                style={{flex: 1, backgroundColor: primaryColor}}
+                labelStyle={styles.modalBtnLabel}
+              />
+              {onPreview ? (
+                <AppButton
+                  label="Preview"
+                  disabled={isSubmittingApproval}
+                  onPress={() => {
+                    setShowApprovalModal(false);
+                    onPreview();
+                  }}
+                  style={[styles.modalPreviewBtn, {flex: 1}]}
+                  labelStyle={styles.modalBtnLabel}
+                />
+              ) : null}
+              <AppButton
+                label="Cancel"
+                disabled={isSubmittingApproval}
+                onPress={() => setShowApprovalModal(false)}
+                style={[styles.modalCancelBtn, {flex: 1}]}
+                labelStyle={styles.modalBtnLabel}
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -997,4 +1092,74 @@ const styles = StyleSheet.create({
   navButton: {backgroundColor: '#f1f5f9'},
   navButtonLabel: {color: '#475569', fontSize: 13, fontWeight: '700'},
   actionButtonLabel: {fontSize: 13, fontWeight: '700'},
+  submitHeaderBtn: {
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  submitHeaderBtnLabel: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  modalCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    padding: 28,
+    alignItems: 'center',
+    width: '100%',
+    maxWidth: 400,
+    gap: 12,
+  },
+  modalIconWrap: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    borderWidth: 3,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  modalCheckmark: {
+    fontSize: 36,
+    fontWeight: '700',
+    lineHeight: 44,
+  },
+  modalTitle: {
+    color: '#0f172a',
+    fontSize: 18,
+    fontWeight: '700',
+    textAlign: 'center',
+    lineHeight: 26,
+  },
+  modalSubtitle: {
+    color: '#475569',
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 8,
+    width: '100%',
+  },
+  modalPreviewBtn: {
+    backgroundColor: '#0f172a',
+  },
+  modalCancelBtn: {
+    backgroundColor: '#94a3b8',
+  },
+  modalBtnLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
 });
