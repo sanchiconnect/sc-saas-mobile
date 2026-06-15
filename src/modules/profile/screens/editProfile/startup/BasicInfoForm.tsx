@@ -1,8 +1,8 @@
 import React, {useContext, useState} from 'react';
 import {Image, Pressable, StyleSheet, Text, View} from 'react-native';
 
-import {AppTextField} from '../../../../core/components/AppTextField';
-import {Icon} from '../../../../core/components/Icon';
+import {AppTextField} from '../../../../../core/components/AppTextField';
+import {Icon} from '../../../../../core/components/Icon';
 import {
   facebookUrl,
   instagramUrl,
@@ -10,13 +10,13 @@ import {
   twitterUrl,
   url as urlValidator,
   youtubeUrl,
-} from '../../../../core/form/validators';
-import {colors} from '../../../../core/theme/colors';
-import {TenantContext} from '../../../../core/tenant/TenantProvider';
+} from '../../../../../core/form/validators';
+import {colors} from '../../../../../core/theme/colors';
+import {TenantContext} from '../../../../../core/tenant/TenantProvider';
 import {
   BUSINESS_MODELS,
   FOUNDER_ROLES,
-} from './options';
+} from '../shared/options';
 import {
   AdvisoryMember,
   BasicInfoForm as BasicInfoFormType,
@@ -24,7 +24,7 @@ import {
   EMPTY_ADVISORY,
   EMPTY_LEADERSHIP,
   TeamMember,
-} from './types';
+} from '../shared/types';
 
 type Props = {
   primaryColor: string;

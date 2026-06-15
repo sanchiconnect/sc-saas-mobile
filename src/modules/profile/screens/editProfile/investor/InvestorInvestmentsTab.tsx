@@ -1,17 +1,17 @@
 import React, {forwardRef, useEffect, useImperativeHandle, useRef, useState} from 'react';
 import {StyleSheet, Switch, Text, TextInput, View} from 'react-native';
 
-import {AppTextField} from '../../../../core/components/AppTextField';
-import {useToast} from '../../../../core/toast/ToastProvider';
-import {authService} from '../../../auth/services/auth.service';
+import {AppTextField} from '../../../../../core/components/AppTextField';
+import {useToast} from '../../../../../core/toast/ToastProvider';
+import {authService} from '../../../../auth/services/auth.service';
 
 import {
   MultiSelectField,
   MultiSelectOption,
-} from './MultiSelectField';
-import {ProfileTabCard} from './ProfileTabCard';
+} from '../shared/MultiSelectField';
+import {ProfileTabCard} from '../shared/ProfileTabCard';
 
-import type {SecondaryTabHandle} from './MentorDomainExpertiseTab';
+import type {SecondaryTabHandle} from '../mentor/MentorDomainExpertiseTab';
 
 type Props = {
   token: string;
@@ -128,15 +128,11 @@ function InvestorInvestmentsTab({
 }: Props, ref) {
   const toast = useToast();
   const [form, setForm] = useState<Form>(() => seedForm(initialData));
-  // Inline field-level errors. Mirrors the useFormValidation pattern but
-  // kept lightweight here since the shape includes multi-selects we don't
-  // currently route through the hook.
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [submitted, setSubmitted] = useState(false);
   const markTouched = (key: string) =>
     setTouched(prev => ({...prev, [key]: true}));
 
-  // Per-field validators (raw — visibility gating applied below).
   const rawErrors: Record<string, string | undefined> = {
     ticketSizeMin: !form.ticketSizeMin.trim()
       ? 'Minimum ticket size is required.'
@@ -262,9 +258,6 @@ function InvestorInvestmentsTab({
           primaryColor={primaryColor}
           max={maxIndustries}
           onChange={next => {
-            // Pruning: drop sub-categories that belonged to industries the
-            // user just deselected. Without this, hidden selections linger
-            // in the payload.
             const stillSelectedSubIds = new Set<number>();
             industryOptions
               .filter(opt => next.includes(opt.id))
@@ -285,8 +278,6 @@ function InvestorInvestmentsTab({
       ) : null}
 
       {(() => {
-        // Aggregate sub-categories for currently-selected industries. If none
-        // expose sub-categories, hide the section entirely.
         const visibleSubs: Array<{id: number; name: string}> = [];
         const seen = new Set<number>();
         industryOptions

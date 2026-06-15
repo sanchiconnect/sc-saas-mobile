@@ -1,19 +1,19 @@
 import React, {forwardRef, useEffect, useImperativeHandle, useRef} from 'react';
 
-import {AppTextField} from '../../../../core/components/AppTextField';
-import {useToast} from '../../../../core/toast/ToastProvider';
-import {useFormValidation} from '../../../../core/form/useFormValidation';
+import {AppTextField} from '../../../../../core/components/AppTextField';
+import {useToast} from '../../../../../core/toast/ToastProvider';
+import {useFormValidation} from '../../../../../core/form/useFormValidation';
 import {
   combine,
   email,
   mobileNumber,
   required,
   url,
-} from '../../../../core/form/validators';
-import {authService} from '../../../auth/services/auth.service';
+} from '../../../../../core/form/validators';
+import {authService} from '../../../../auth/services/auth.service';
 
-import {ProfileTabCard} from './ProfileTabCard';
-import type {SecondaryTabHandle} from './MentorDomainExpertiseTab';
+import {ProfileTabCard} from '../shared/ProfileTabCard';
+import type {SecondaryTabHandle} from '../mentor/MentorDomainExpertiseTab';
 
 type Props = {
   token: string;
@@ -156,4 +156,3 @@ function InvestorRepresentativeTab({token, onSaveSuccess}: Props, ref) {
     </ProfileTabCard>
   );
 });
-

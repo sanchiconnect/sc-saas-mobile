@@ -15,11 +15,11 @@ import {
   errorCodes,
 } from '@react-native-documents/picker';
 
-import {authService} from '../../../auth/services/auth.service';
-import {Icon} from '../../../../core/components/Icon';
-import {colors} from '../../../../core/theme/colors';
-import {useToast} from '../../../../core/toast/ToastProvider';
-import {FilePreviewModal} from '../../components/FilePreviewModal';
+import {authService} from '../../../../auth/services/auth.service';
+import {Icon} from '../../../../../core/components/Icon';
+import {colors} from '../../../../../core/theme/colors';
+import {useToast} from '../../../../../core/toast/ToastProvider';
+import {FilePreviewModal} from '../../../components/FilePreviewModal';
 
 type DocumentType = {
   id?: string | number;

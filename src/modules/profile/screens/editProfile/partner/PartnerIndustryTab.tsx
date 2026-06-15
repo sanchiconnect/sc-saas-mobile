@@ -1,12 +1,12 @@
 import React, {forwardRef, useEffect, useImperativeHandle, useRef, useState} from 'react';
 import {StyleSheet, Switch, Text, TextInput, View} from 'react-native';
 
-import {useToast} from '../../../../core/toast/ToastProvider';
-import {authService} from '../../../auth/services/auth.service';
+import {useToast} from '../../../../../core/toast/ToastProvider';
+import {authService} from '../../../../auth/services/auth.service';
 
-import {MultiSelectField, MultiSelectOption} from './MultiSelectField';
-import {ProfileTabCard} from './ProfileTabCard';
-import type {SecondaryTabHandle} from './MentorDomainExpertiseTab';
+import {MultiSelectField, MultiSelectOption} from '../shared/MultiSelectField';
+import {ProfileTabCard} from '../shared/ProfileTabCard';
+import type {SecondaryTabHandle} from '../mentor/MentorDomainExpertiseTab';
 
 type Props = {
   token: string;

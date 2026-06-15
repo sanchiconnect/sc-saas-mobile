@@ -1,4 +1,4 @@
-import type {EditProfileTab} from '../../../home/types';
+import type {EditProfileTab} from '../../../../home/types';
 
 export type EditProfileTabKey =
   | 'basic'

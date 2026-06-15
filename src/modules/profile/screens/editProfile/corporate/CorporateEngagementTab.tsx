@@ -1,18 +1,18 @@
 import React, {forwardRef, useEffect, useImperativeHandle, useRef, useState} from 'react';
 import {Pressable, StyleSheet, Text, View} from 'react-native';
 
-import {AppTextField} from '../../../../core/components/AppTextField';
-import {Icon} from '../../../../core/components/Icon';
-import {useToast} from '../../../../core/toast/ToastProvider';
-import {authService} from '../../../auth/services/auth.service';
+import {AppTextField} from '../../../../../core/components/AppTextField';
+import {Icon} from '../../../../../core/components/Icon';
+import {useToast} from '../../../../../core/toast/ToastProvider';
+import {authService} from '../../../../auth/services/auth.service';
 
 import {
   MultiSelectField,
   MultiSelectOption,
-} from './MultiSelectField';
-import {ProfileTabCard} from './ProfileTabCard';
+} from '../shared/MultiSelectField';
+import {ProfileTabCard} from '../shared/ProfileTabCard';
 
-import type {SecondaryTabHandle} from './MentorDomainExpertiseTab';
+import type {SecondaryTabHandle} from '../mentor/MentorDomainExpertiseTab';
 export type {SecondaryTabHandle};
 
 type Props = {

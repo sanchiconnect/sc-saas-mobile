@@ -76,7 +76,7 @@ const PROFILE_COMPLETENESS_PATH_OVERRIDES: Record<string, string> = {
   // Frontend dispatches a separate `GetIndividualProfileCompleteness` action
   // when `investorType === 'individual'`. Mirror via this override key —
   // resolved by `getProfileCompletion(token, accountType, investorType)`.
-  'investor:individual': 'api/v1/investors/profile_completeness',
+  'investor:individual': 'api/v1/investors/organization/profile_completeness',
 };
 
 const buildDashboardPath = (accountType?: string): string => {

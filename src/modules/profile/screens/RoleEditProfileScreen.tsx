@@ -13,30 +13,30 @@ import {colors} from '../../../core/theme/colors';
 import {TenantContext} from '../../../core/tenant/TenantProvider';
 import {useToast} from '../../../core/toast/ToastProvider';
 import {authService} from '../../auth/services/auth.service';
-import {CorporateEngagementTab} from './editProfile/CorporateEngagementTab';
+import {CorporateEngagementTab} from './editProfile/corporate/CorporateEngagementTab';
 import {
   CustomFormTab,
   CustomFormTabHandle,
   DynamicForm,
   isFormComplete,
   normalizeRawField,
-} from './editProfile/CustomFormTab';
-import {InvestorInvestmentsTab} from './editProfile/InvestorInvestmentsTab';
-import {InvestorRepresentativeTab} from './editProfile/InvestorRepresentativeTab';
+} from './editProfile/shared/CustomFormTab';
+import {InvestorInvestmentsTab} from './editProfile/investor/InvestorInvestmentsTab';
+import {InvestorRepresentativeTab} from './editProfile/investor/InvestorRepresentativeTab';
 import {
   MentorDomainExpertiseTab,
   SecondaryTabHandle,
-} from './editProfile/MentorDomainExpertiseTab';
-import {PartnerIndustryTab} from './editProfile/PartnerIndustryTab';
-import {RoleBasicInfoTab, RoleBasicInfoTabHandle} from './editProfile/RoleBasicInfoTab';
-import {ServiceProviderIndustryTab} from './editProfile/ServiceProviderIndustryTab';
+} from './editProfile/mentor/MentorDomainExpertiseTab';
+import {PartnerIndustryTab} from './editProfile/partner/PartnerIndustryTab';
+import {RoleBasicInfoTab, RoleBasicInfoTabHandle} from './editProfile/shared/RoleBasicInfoTab';
+import {ServiceProviderIndustryTab} from './editProfile/service_provider/ServiceProviderIndustryTab';
 import {
   detectInvestorSubtype,
   getTabLayout,
   InvestorSubtype,
-} from './editProfile/tabConfig';
+} from './editProfile/shared/tabConfig';
 import type {EditProfileTab} from '../../home/types';
-import type {MultiSelectOption} from './editProfile/MultiSelectField';
+import type {MultiSelectOption} from './editProfile/shared/MultiSelectField';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -96,7 +96,23 @@ const buildDomainAreaOptions = (
   }));
 };
 
+// Maps each investor tab key to the corresponding key in data.forms from the
+// profile_completeness API response.
+const INVESTOR_TAB_FORM_KEYS: Record<string, string> = {
+  basic: 'investorInformation',
+  investment_details: 'investmentDetails',
+  investment_thesis: 'investmentThesis',
+  representative: 'representativeDetails',
+};
+
 // ─── types ────────────────────────────────────────────────────────────────────
+
+type CompletionForm = {
+  total: number;
+  completed: number;
+  percentage: number;
+  missingFields: string[];
+};
 
 type Props = {
   token: string;
@@ -125,6 +141,7 @@ export function RoleEditProfileScreen({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [backendCompletion, setBackendCompletion] = useState<number | null>(null);
+  const [completionForms, setCompletionForms] = useState<Record<string, CompletionForm> | null>(null);
 
   // ── tab navigation ────────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<string>('basic');
@@ -306,6 +323,10 @@ export function RoleEditProfileScreen({
         if (cancelled) return;
         const num = Number(res?.data?.percentage ?? res?.percentage);
         if (Number.isFinite(num)) setBackendCompletion(num);
+        const forms = res?.data?.forms;
+        if (forms && typeof forms === 'object') {
+          setCompletionForms(forms as Record<string, CompletionForm>);
+        }
       })
       .catch(() => {});
     return () => {
@@ -381,6 +402,12 @@ export function RoleEditProfileScreen({
   // ── tab dot completion (from loaded profile data) ─────────────────────────
 
   const secondaryTabComplete = (key: string): boolean => {
+    if (accountType === 'investor' && completionForms) {
+      const formKey = INVESTOR_TAB_FORM_KEYS[key];
+      if (formKey && completionForms[formKey]) {
+        return Number(completionForms[formKey].percentage) === 100;
+      }
+    }
     const d = profileData;
     if (!d) return false;
     switch (key) {
@@ -562,6 +589,10 @@ export function RoleEditProfileScreen({
         .then(res => {
           const num = Number(res?.data?.percentage ?? res?.percentage);
           if (Number.isFinite(num)) setBackendCompletion(num);
+          const forms = res?.data?.forms;
+          if (forms && typeof forms === 'object') {
+            setCompletionForms(forms as Record<string, CompletionForm>);
+          }
         })
         .catch(() => {});
     }

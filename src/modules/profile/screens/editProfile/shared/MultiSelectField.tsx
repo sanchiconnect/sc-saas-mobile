@@ -1,7 +1,7 @@
 import React, {useMemo, useState} from 'react';
 import {Pressable, StyleSheet, Text, View} from 'react-native';
 
-import {Icon} from '../../../../core/components/Icon';
+import {Icon} from '../../../../../core/components/Icon';
 
 export type MultiSelectOption = {
   id: number | string;

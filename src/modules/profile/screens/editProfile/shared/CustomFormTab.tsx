@@ -23,10 +23,10 @@ import {pick, types as docTypes} from '@react-native-documents/picker';
 
 import {Picker as ModalPicker} from './Picker';
 
-import {AppButton} from '../../../../core/components/AppButton';
-import {AppTextField} from '../../../../core/components/AppTextField';
-import {TenantContext} from '../../../../core/tenant/TenantProvider';
-import {authService} from '../../../auth/services/auth.service';
+import {AppButton} from '../../../../../core/components/AppButton';
+import {AppTextField} from '../../../../../core/components/AppTextField';
+import {TenantContext} from '../../../../../core/tenant/TenantProvider';
+import {authService} from '../../../../auth/services/auth.service';
 
 import {
   MultiSelectField,

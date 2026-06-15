@@ -34,7 +34,7 @@ import {Icon} from '../../../core/components/Icon';
 import {fromApi, toApi} from '../availabilityMapper';
 import {availabilityService} from '../services/availability.service';
 import {colors, withAlpha} from '../../../core/theme/colors';
-import {Picker} from './editProfile/Picker';
+import {Picker} from './editProfile/shared/Picker';
 import {useToast} from '../../../core/toast/ToastProvider';
 
 // Supported country dial codes — mirrors COUNTRY_CODES in the frontend's

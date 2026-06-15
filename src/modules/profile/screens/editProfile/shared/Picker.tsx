@@ -9,7 +9,7 @@ import {
   View,
 } from 'react-native';
 
-import {Icon} from '../../../../core/components/Icon';
+import {Icon} from '../../../../../core/components/Icon';
 
 type PickerProps = {
   visible: boolean;

@@ -23,7 +23,7 @@ import {CustomFormView} from '../components/CustomFormView';
 import {
   normalizeRawField,
   type DynamicForm,
-} from './editProfile/CustomFormTab';
+} from './editProfile/shared/CustomFormTab';
 
 type ProfileScreenProps = {
   token: string;

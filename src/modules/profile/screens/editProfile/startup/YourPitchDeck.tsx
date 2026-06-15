@@ -17,12 +17,12 @@ import {
   errorCodes,
 } from '@react-native-documents/picker';
 
-import {authService} from '../../../auth/services/auth.service';
-import {Icon} from '../../../../core/components/Icon';
-import {colors} from '../../../../core/theme/colors';
-import {TenantContext} from '../../../../core/tenant/TenantProvider';
-import {useToast} from '../../../../core/toast/ToastProvider';
-import {FilePreviewModal} from '../../components/FilePreviewModal';
+import {authService} from '../../../../auth/services/auth.service';
+import {Icon} from '../../../../../core/components/Icon';
+import {colors} from '../../../../../core/theme/colors';
+import {TenantContext} from '../../../../../core/tenant/TenantProvider';
+import {useToast} from '../../../../../core/toast/ToastProvider';
+import {FilePreviewModal} from '../../../components/FilePreviewModal';
 
 type PitchDeck = {
   elevatorPitch?: string | null;
@@ -34,10 +34,6 @@ type PitchDeck = {
   embedUrl?: string | null;
   pitchType?: string | null;
   sampleDocument?: string | null;
-  // The backend pre-converts the uploaded PDF to JPGs (one per page) on
-  // ingestion. The mobile carousel reads whichever of these arrays the
-  // server returns; the web component does the same. Fields are typed
-  // loosely because the API may ship plain string URLs or wrapped objects.
   pitchDocumentImages?: unknown;
   pitchImages?: unknown;
   documentImages?: unknown;
@@ -71,10 +67,6 @@ const iconForExt = (ext: string): string => {
   return 'file-document-outline';
 };
 
-// Resolve a (possibly relative) server path against the tenant's CDN / API
-// origin so external openers (browser, download) always receive an absolute
-// URL. Falls back through the most-specific origin first (imgKit → s3 →
-// baseUrl) so production paths land on the CDN they were uploaded to.
 const resolveUrl = (
   path: string,
   bases: Array<string | null | undefined>,
@@ -86,10 +78,6 @@ const resolveUrl = (
   return `${base.replace(/\/$/, '')}/${path.replace(/^\//, '')}`;
 };
 
-// Pulls an image URL string out of whatever shape the backend ships — some
-// endpoints return plain strings, others wrap each page as
-// `{url}` / `{path}` / `{src}` / `{image}`. Unrecognized entries are
-// dropped.
 const imageUrlFromEntry = (entry: unknown): string => {
   if (!entry) return '';
   if (typeof entry === 'string') return entry;
@@ -102,11 +90,6 @@ const imageUrlFromEntry = (entry: unknown): string => {
   return '';
 };
 
-// Flexible reader for the pre-converted page-image array on `pitchDeck`.
-// The exact field name varies between deployments, so we walk a list of
-// known candidates and return the first non-empty one. Matches the web
-// `app-pitch-document-carousel`'s behavior of consuming the pitchDeck
-// object as-is.
 const getPitchImages = (
   pitchDeck: PitchDeck | null | undefined,
   bases: Array<string | null | undefined>,
@@ -132,10 +115,6 @@ const getPitchImages = (
   return [];
 };
 
-// Image-based pitch-deck carousel that mirrors the web `<ngb-carousel>` —
-// the backend pre-renders each PDF page to a JPG on upload, so we just
-// flip through those images instead of rasterizing the PDF on-device.
-// Avoids the CORS / WebView problems the PDF.js approach hit.
 function PdfPagesCarousel({
   images,
   primaryColor,
@@ -151,9 +130,6 @@ function PdfPagesCarousel({
   const safePage = Math.min(Math.max(1, page), Math.max(1, total));
   const currentUrl = images[safePage - 1];
 
-  // Reset per-image load state whenever the user flips pages so the
-  // spinner appears while the new image is fetching, and `errored`
-  // doesn't leak from a previous page.
   const goTo = (next: number) => {
     if (next < 1 || next > total) return;
     setLoaded(false);
@@ -193,7 +169,6 @@ function PdfPagesCarousel({
         </View>
       ) : null}
 
-      {/* Floating Prev / Next chevrons, same pattern as the web carousel. */}
       <Pressable
         onPress={() => goTo(safePage - 1)}
         disabled={!canPrev}
@@ -299,8 +274,6 @@ export function YourPitchDeck({
   const {baseUrl, globalSetting} = useContext(TenantContext);
   const toast = useToast();
   const rawPitchDocument = pitchDeck?.pitchDocument || '';
-  // Resolve to an absolute URL so OS-level openers (browser, download)
-  // always receive a fetchable address — server may return a relative path.
   const pitchDocument = resolveUrl(rawPitchDocument, [
     globalSetting?.imgKitUrl,
     globalSetting?.assetsImgKitUrl,
@@ -310,8 +283,6 @@ export function YourPitchDeck({
   const fileName =
     pitchDeck?.fileName || (rawPitchDocument.split('/').pop() ?? '');
   const fileExt = extOf(fileName || rawPitchDocument);
-  // Resolve the array of pre-converted page-images from whichever field
-  // the backend ships, against the same CDN bases used for pitchDocument.
   const pitchImages = getPitchImages(pitchDeck, [
     globalSetting?.imgKitUrl,
     globalSetting?.assetsImgKitUrl,
@@ -333,31 +304,16 @@ export function YourPitchDeck({
   const [defaultPitchType, setDefaultPitchType] = useState<string | null>(
     pitchDeck?.pitchType || null,
   );
-  // Drives the in-app file preview modal. The Download buttons open it
-  // instead of going straight to Linking.openURL, so users see the
-  // contents inside the app first, then tap Download in the modal which
-  // closes back to this screen — no Chrome tab left behind.
   const [previewFile, setPreviewFile] = useState<{
     url: string;
     displayName?: string;
     images?: string[];
   } | null>(null);
-  // Polling state for the post-upload PDF→JPG conversion. The backend
-  // converts the freshly-uploaded deck to page images asynchronously, so
-  // the immediate post-upload reload often lands before
-  // `pitchDocumentImages` is populated — which is why users were seeing
-  // the file-card fallback instead of the carousel until they manually
-  // refreshed. We poll `onUploaded` a few times so the carousel mounts
-  // the moment the images land.
   const pollingRef = useRef(false);
   const pollAttemptsRef = useRef(0);
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Toggled true while the conversion poll is in flight so the UI can
-  // surface a "Generating preview…" hint over the file-card fallback.
   const [waitingForImages, setWaitingForImages] = useState(false);
 
-  // Stop polling as soon as the parent re-renders us with a pitchDeck that
-  // includes the page images. Also stop if the component unmounts.
   useEffect(() => {
     if (pollingRef.current && pitchImages.length > 0) {
       pollingRef.current = false;
@@ -380,10 +336,6 @@ export function YourPitchDeck({
     };
   }, []);
 
-  // Trigger up to 8 silent profile reloads (~6s total at 750ms each) so the
-  // carousel can replace the file-card fallback as soon as the backend
-  // finishes converting PDF pages to JPGs. Cancelled the instant
-  // pitchImages becomes non-empty via the effect above.
   const startPollingForImages = () => {
     pollingRef.current = true;
     pollAttemptsRef.current = 0;
@@ -425,10 +377,6 @@ export function YourPitchDeck({
   };
 
   const pickDeckFile = async () => {
-    // Restrict the system picker to deck-friendly types up front so users
-    // see only those files in the chooser. We pass MIME types explicitly
-    // because Android's SAF honors them more reliably than the named
-    // `types.pdf` / `types.ppt` constants, and iOS treats them as UTIs.
     const ALLOWED_MIME_TYPES = [
       'application/pdf',
       'application/vnd.ms-powerpoint',
@@ -445,10 +393,6 @@ export function YourPitchDeck({
       if (!picked?.uri) {
         throw new Error('No file was selected.');
       }
-      // Defense in depth: some Android pickers (especially third-party file
-      // explorers like Files by Google) ignore the type filter and return
-      // any file with `application/octet-stream`. Fall back to extension
-      // check so we don't upload e.g. an image or zip as a "pitch deck".
       const mime = String(picked.type || '').toLowerCase();
       const name = String(picked.name || '').toLowerCase();
       const ext = (name.split('.').pop() || '').replace(/[^a-z0-9]/g, '');
@@ -567,10 +511,6 @@ export function YourPitchDeck({
         kind === 'deck' ? 'Pitch deck uploaded.' : 'Video pitch uploaded.',
       );
       onUploaded?.();
-      // For deck uploads, also kick off the conversion poll so the
-      // carousel can replace the file-card fallback the instant the
-      // backend finishes converting the PDF pages to JPGs (no manual
-      // refresh needed).
       if (kind === 'deck') {
         startPollingForImages();
       }
@@ -643,10 +583,6 @@ export function YourPitchDeck({
         </Text>
 
         {pitchDocument ? (
-          // Uploaded: one consolidated card — PDF page preview (with Prev /
-          // Next pager) for .pdf, a large icon for other formats; filename
-          // below; and the three actions (View, Download, Replace) on a
-          // single row.
           <View
             style={[
               styles.deckCard,
@@ -745,8 +681,6 @@ export function YourPitchDeck({
             </View>
           </View>
         ) : (
-          // Empty state: single tappable upload zone (no duplicate Edit
-          // button beside it). Tap anywhere on this card to open the picker.
           <Pressable
             onPress={() => handleUpload('deck')}
             disabled={busyKind !== null}
@@ -1468,8 +1402,6 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 0.4,
   },
-  // Consolidated pitch-deck card: large thumbnail + filename + 3 actions.
-  // Replaces the previous file-card + drop-zone + file-row stack.
   deckCard: {
     alignItems: 'center',
     backgroundColor: '#ffffff',
@@ -1531,7 +1463,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
-  // Single-tap upload zone shown when no file exists.
   uploadZone: {
     alignItems: 'center',
     backgroundColor: '#f8fafc',
@@ -1553,10 +1484,6 @@ const styles = StyleSheet.create({
     color: '#64748b',
     fontSize: 12,
   },
-  // PdfPreview chrome — the WebView container plus the floating pager
-  // buttons and page indicator that overlay it. alignSelf:'stretch' is
-  // essential: the parent deckCard sets alignItems:'center', which would
-  // otherwise collapse this frame to its content's natural width.
   previewFrame: {
     alignSelf: 'stretch',
     backgroundColor: '#f8fafc',
@@ -1572,17 +1499,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8fafc',
     flex: 1,
   },
-  // Each carousel slide is a single Image filling the preview frame; the
-  // image itself contains the rendered page so we let it letterbox via
-  // resizeMode="contain" rather than cropping with cover.
   previewImage: {
     backgroundColor: '#f8fafc',
     height: '100%',
     width: '100%',
   },
-  // Absolute overlay so the loading spinner / error message sits on top of
-  // the Image rather than getting laid out below it (and clipped by
-  // overflow:hidden on the frame).
   previewStatusOverlay: {
     alignItems: 'center',
     bottom: 0,

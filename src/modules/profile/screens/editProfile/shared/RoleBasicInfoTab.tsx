@@ -12,9 +12,9 @@ import {
 import {launchImageLibrary} from 'react-native-image-picker';
 import {pick, types} from '@react-native-documents/picker';
 
-import {AppTextField} from '../../../../core/components/AppTextField';
-import {Icon} from '../../../../core/components/Icon';
-import {useFormValidation} from '../../../../core/form/useFormValidation';
+import {AppTextField} from '../../../../../core/components/AppTextField';
+import {Icon} from '../../../../../core/components/Icon';
+import {useFormValidation} from '../../../../../core/form/useFormValidation';
 import {
   combine,
   facebookUrl,
@@ -25,10 +25,10 @@ import {
   url,
   Validator,
   youtubeUrl,
-} from '../../../../core/form/validators';
-import {TenantContext} from '../../../../core/tenant/TenantProvider';
+} from '../../../../../core/form/validators';
+import {TenantContext} from '../../../../../core/tenant/TenantProvider';
 
-import {authService} from '../../../auth/services/auth.service';
+import {authService} from '../../../../auth/services/auth.service';
 import {
   MultiSelectField,
   MultiSelectOption,

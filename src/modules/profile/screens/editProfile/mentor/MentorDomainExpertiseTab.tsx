@@ -1,15 +1,15 @@
 import React, {forwardRef, useContext, useEffect, useImperativeHandle, useMemo, useRef, useState} from 'react';
 import {StyleSheet, Switch, Text, TextInput, View} from 'react-native';
 
-import {TenantContext} from '../../../../core/tenant/TenantProvider';
-import {useToast} from '../../../../core/toast/ToastProvider';
-import {authService} from '../../../auth/services/auth.service';
+import {TenantContext} from '../../../../../core/tenant/TenantProvider';
+import {useToast} from '../../../../../core/toast/ToastProvider';
+import {authService} from '../../../../auth/services/auth.service';
 
 import {
   MultiSelectField,
   MultiSelectOption,
-} from './MultiSelectField';
-import {ProfileTabCard} from './ProfileTabCard';
+} from '../shared/MultiSelectField';
+import {ProfileTabCard} from '../shared/ProfileTabCard';
 
 export type SecondaryTabHandle = {
   triggerSave: () => Promise<void>;

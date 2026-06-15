@@ -19,30 +19,30 @@ import {colors} from '../../../core/theme/colors';
 import {TenantContext} from '../../../core/tenant/TenantProvider';
 import {useToast} from '../../../core/toast/ToastProvider';
 import {authService} from '../../auth/services/auth.service';
-import {BasicInfoForm} from './editProfile/BasicInfoForm';
-import {CorporateEngagementTab} from './editProfile/CorporateEngagementTab';
+import {BasicInfoForm} from './editProfile/startup/BasicInfoForm';
+import {CorporateEngagementTab} from './editProfile/corporate/CorporateEngagementTab';
 import {
   CustomFormTab,
   CustomFormTabHandle,
   DynamicForm,
   isFormComplete,
   normalizeRawField,
-} from './editProfile/CustomFormTab';
-import {Documents} from './editProfile/Documents';
-import {FinancialsForm} from './editProfile/FinancialsForm';
-import {InvestorInvestmentsTab} from './editProfile/InvestorInvestmentsTab';
-import {InvestorRepresentativeTab} from './editProfile/InvestorRepresentativeTab';
-import {MentorDomainExpertiseTab} from './editProfile/MentorDomainExpertiseTab';
-import {Picker} from './editProfile/Picker';
-import {PartnerIndustryTab} from './editProfile/PartnerIndustryTab';
-import {RoleBasicInfoTab, RoleBasicInfoTabHandle} from './editProfile/RoleBasicInfoTab';
-import {ServiceProviderIndustryTab} from './editProfile/ServiceProviderIndustryTab';
-import {YourPitchDeck} from './editProfile/YourPitchDeck';
+} from './editProfile/shared/CustomFormTab';
+import {Documents} from './editProfile/startup/Documents';
+import {FinancialsForm} from './editProfile/startup/FinancialsForm';
+import {InvestorInvestmentsTab} from './editProfile/investor/InvestorInvestmentsTab';
+import {InvestorRepresentativeTab} from './editProfile/investor/InvestorRepresentativeTab';
+import {MentorDomainExpertiseTab} from './editProfile/mentor/MentorDomainExpertiseTab';
+import {Picker} from './editProfile/shared/Picker';
+import {PartnerIndustryTab} from './editProfile/partner/PartnerIndustryTab';
+import {RoleBasicInfoTab, RoleBasicInfoTabHandle} from './editProfile/shared/RoleBasicInfoTab';
+import {ServiceProviderIndustryTab} from './editProfile/service_provider/ServiceProviderIndustryTab';
+import {YourPitchDeck} from './editProfile/startup/YourPitchDeck';
 import {
   buildBaseTabs,
   detectInvestorSubtype,
   InvestorSubtype,
-} from './editProfile/tabConfig';
+} from './editProfile/shared/tabConfig';
 import {
   COMPANY_SIZES,
   COUNTRIES,
@@ -52,19 +52,19 @@ import {
   getCountryIdByName,
   getStateIdByName,
   getStatesFor,
-} from './editProfile/options';
+} from './editProfile/shared/options';
 import {
   buildBasicInfoPayload,
   buildFinancialsPayload,
   extractProfile,
-} from './editProfile/extractProfile';
+} from './editProfile/shared/extractProfile';
 import {
   BasicInfoForm as BasicInfoFormType,
   FinancialsForm as FinancialsFormType,
   EMPTY_LEADERSHIP,
   EMPTY_BASIC_INFO,
   EMPTY_FINANCIALS,
-} from './editProfile/types';
+} from './editProfile/shared/types';
 import type {EditProfileTab} from '../../home/types';
 
 type EditProfileScreenProps = {

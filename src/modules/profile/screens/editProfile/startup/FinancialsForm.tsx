@@ -8,16 +8,16 @@ import {
   View,
 } from 'react-native';
 
-import {AppButton} from '../../../../core/components/AppButton';
-import {AppTextField} from '../../../../core/components/AppTextField';
-import {Icon} from '../../../../core/components/Icon';
-import {colors} from '../../../../core/theme/colors';
+import {AppButton} from '../../../../../core/components/AppButton';
+import {AppTextField} from '../../../../../core/components/AppTextField';
+import {Icon} from '../../../../../core/components/Icon';
+import {colors} from '../../../../../core/theme/colors';
 import {
   INVESTMENT_BANKER_OPTIONS,
   REVENUE_STAGES,
   TIME_TO_COMMERCIALIZE_OPTIONS,
-} from './options';
-import {FinancialsForm as FinancialsFormType} from './types';
+} from '../shared/options';
+import {FinancialsForm as FinancialsFormType} from '../shared/types';
 
 type SelectOption = {
   id: number | string;
@@ -59,7 +59,6 @@ type Props = {
 };
 
 type CommitmentDraft = {
-  // Stable key for the row — server uuid if persisted, else a local temp id.
   rowKey: string;
   uuid: string;
   investorName: string;
@@ -101,12 +100,6 @@ export function FinancialsForm({
   onSaveCommitment,
   onDeleteCommitment,
 }: Props) {
-  // Local draft state for the commitments section. Seeded from the
-  // server-provided list, plus any rows the user has added via "+ ADD NEW"
-  // that haven't been persisted yet. Re-seeded whenever the server list
-  // changes (e.g. after a successful save refresh) — locally-added drafts
-  // without a uuid are preserved across re-seeds so the user doesn't lose
-  // their typing.
   const [commitmentDrafts, setCommitmentDrafts] = useState<CommitmentDraft[]>(
     () => ongoingCommitments.map(toDraft),
   );
@@ -167,11 +160,6 @@ export function FinancialsForm({
         hideInvestorName: draft.hideInvestorName,
       });
       if (isNew) {
-        // The parent's refresh re-seeds this commitment as a server-backed
-        // draft (with the new uuid). If we keep this local draft around it
-        // appears as a duplicate row alongside the new server entry —
-        // because the re-seed effect preserves uuid-less drafts. Drop it
-        // here so only the canonical server row remains.
         setCommitmentDrafts(prev =>
           prev.filter(d => d.rowKey !== draft.rowKey),
         );
@@ -187,7 +175,6 @@ export function FinancialsForm({
   };
 
   const deleteCommitment = async (draft: CommitmentDraft) => {
-    // Drafts that never saved — drop them locally without an API call.
     if (!draft.uuid) {
       setCommitmentDrafts(prev => prev.filter(d => d.rowKey !== draft.rowKey));
       return;
@@ -336,8 +323,6 @@ export function FinancialsForm({
             onPress={() => {
               const next = !hasOngoingCommitments;
               setHasOngoingCommitments(next);
-              // Turning the section off clears any unsaved local drafts.
-              // Persisted commitments stay on the server until deleted.
               if (!next) {
                 setCommitmentDrafts(prev => prev.filter(d => d.uuid));
               }
@@ -363,7 +348,7 @@ export function FinancialsForm({
             <View style={styles.commitmentsList}>
               {commitmentDrafts.length === 0 ? (
                 <Text style={styles.emptyText}>
-                  No ongoing commitments yet. Tap “+ ADD NEW” to add one.
+                  No ongoing commitments yet. Tap "+ ADD NEW" to add one.
                 </Text>
               ) : null}
 
