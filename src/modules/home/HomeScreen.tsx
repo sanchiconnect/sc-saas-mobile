@@ -333,6 +333,7 @@ export function HomeScreen({
         ) : (
           <RoleEditProfileScreen
             token={session.token}
+            initialAccountType={summary?.accountType}
             onBack={() => setSelectedMenu({section: 'dashboard'})}
             onPreview={() => setSelectedMenu({section: 'profile'})}
             onProfileUpdated={() => {

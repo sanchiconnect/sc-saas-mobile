@@ -26,6 +26,7 @@ type Props = {
   maxAbilityMetrics?: number;
   maxIndustries?: number;
   onSaveSuccess?: () => void;
+  onValidChange?: (valid: boolean) => void;
 };
 
 type Form = {
@@ -125,6 +126,7 @@ function InvestorInvestmentsTab({
   maxAbilityMetrics = 7,
   maxIndustries = 5,
   onSaveSuccess,
+  onValidChange,
 }: Props, ref) {
   const toast = useToast();
   const [form, setForm] = useState<Form>(() => seedForm(initialData));
@@ -163,6 +165,11 @@ function InvestorInvestmentsTab({
     setTouched({});
     setSubmitted(false);
   }, [initialData]);
+
+  useEffect(() => {
+    onValidChange?.(!hasErrors);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasErrors]);
 
   const onSave = async () => {
     setSubmitted(true);

@@ -91,6 +91,13 @@ export type DropdownDataMap = Record<
   Array<{id: number | string; name: string}>
 >;
 
+// Years from current year down to 1901, matching the web's yearOfIncorporationArray.
+const _cur = new Date().getFullYear();
+const YEAR_OPTIONS: Array<{id: number; name: string}> = Array.from(
+  {length: _cur - 1901 + 1},
+  (_, i) => {const y = _cur - i; return {id: y, name: String(y)};},
+);
+
 type RoleKey =
   | 'investor:organization'
   | 'investor:individual'
@@ -118,9 +125,10 @@ const ROLE_FIELDS: Record<RoleKey, FieldConfig[]> = {
     },
     {
       key: 'establishmentYear',
-      label: 'Establishment Year',
+      label: 'Established in',
       required: true,
-      keyboardType: 'numeric',
+      kind: 'dropdown',
+      dropdownSource: 'establishment_years',
     },
     {key: 'aboutUs', label: 'About', multiline: true, required: true},
     {key: 'portfolioSize', label: 'Portfolio Size', keyboardType: 'numeric'},
@@ -144,7 +152,7 @@ const ROLE_FIELDS: Record<RoleKey, FieldConfig[]> = {
       dropdownSource: 'cities',
     },
     {key: 'displayWebsite', label: 'Website', keyboardType: 'url'},
-    {key: 'linkedinUrl', label: 'LinkedIn URL', keyboardType: 'url'},
+    {key: 'linkedinUrl', label: 'LinkedIn URL', keyboardType: 'url', required: true},
     {key: 'twitterUrl', label: 'Twitter / X URL', keyboardType: 'url'},
   ],
   'investor:individual': [
@@ -343,7 +351,8 @@ const ROLE_FIELDS: Record<RoleKey, FieldConfig[]> = {
       key: 'establishmentYear',
       label: 'Established in',
       required: true,
-      keyboardType: 'numeric',
+      kind: 'dropdown',
+      dropdownSource: 'establishment_years',
     },
     {key: 'shortDescription', label: 'Headline', required: true},
     {
@@ -632,7 +641,7 @@ function RoleBasicInfoTab({
     setOtherIndustriesText(others.join(','));
   }, [initialData]);
   const investorLogo =
-    initialData?.companyLogo || initialData?.avatar || initialData?.logo || '';
+    initialData?.organizationLogo || initialData?.companyLogo || initialData?.avatar || initialData?.logo || '';
   const resolvedLogo = localLogoUri
     ? localLogoUri
     : investorLogo
@@ -903,6 +912,7 @@ function RoleBasicInfoTab({
     if (field.dropdownSource === 'countries') return countryOptions;
     if (field.dropdownSource === 'states') return stateOptions;
     if (field.dropdownSource === 'cities') return cityOptions;
+    if (field.dropdownSource === 'establishment_years') return YEAR_OPTIONS;
     return dropdownData[field.dropdownSource] || [];
   };
 
@@ -1039,11 +1049,7 @@ function RoleBasicInfoTab({
             }
             value={form.values[field.key] || ''}
             onChangeText={text => {
-              const next =
-                field.key === 'establishmentYear'
-                  ? text.replace(/[^0-9]/g, '').slice(0, 4)
-                  : text;
-              form.setValue(field.key, next);
+              form.setValue(field.key, text);
             }}
             onBlur={() => form.setTouched(field.key)}
           />
@@ -1277,9 +1283,9 @@ const seedValues = (
 };
 
 // Field keys that should be sent as numbers in the API payload.
+// Note: establishmentYear is intentionally excluded — the investor API expects a string.
 const NUMERIC_PAYLOAD_KEYS = new Set([
   'portfolioSize',
-  'establishmentYear',
   'organizationTypeId',
   'registeredCountryId',
   'registeredStateId',

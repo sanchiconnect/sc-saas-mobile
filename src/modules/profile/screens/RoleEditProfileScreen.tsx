@@ -119,6 +119,9 @@ type Props = {
   onBack: () => void;
   onPreview?: () => void;
   onProfileUpdated?: () => void;
+  // Pass the already-known accountType from HomeScreen's dashboard summary so
+  // we don't need to call getProfile() and deal with its response structure.
+  initialAccountType?: string;
 };
 
 // ─── component ───────────────────────────────────────────────────────────────
@@ -127,13 +130,16 @@ export function RoleEditProfileScreen({
   token,
   onBack,
   onProfileUpdated,
+  initialAccountType,
 }: Props) {
   const {theme, globalSetting, baseUrl} = useContext(TenantContext);
   const toast = useToast();
   const primaryColor = theme?.primary || colors.primary;
 
   // ── profile / role state ──────────────────────────────────────────────────
-  const [accountType, setAccountType] = useState<string | null>(null);
+  const [accountType, setAccountType] = useState<string | null>(
+    initialAccountType ? initialAccountType.toLowerCase() : null,
+  );
   const [investorSubtype, setInvestorSubtype] =
     useState<InvestorSubtype>('organization');
   const [profileData, setProfileData] = useState<Record<string, any> | null>(null);
@@ -159,6 +165,10 @@ export function RoleEditProfileScreen({
   // ── shared SAVE button gating for RoleBasicInfoTab ────────────────────────
   const [roleFormValid, setRoleFormValid] = useState(false);
   const roleBasicTabRef = useRef<RoleBasicInfoTabHandle>(null);
+
+  // ── investor tab local validity (drives dot colour in real-time) ──────────
+  const [investorInvestmentsValid, setInvestorInvestmentsValid] = useState(false);
+  const [investorRepresentativeValid, setInvestorRepresentativeValid] = useState(false);
 
   // ── secondary tab refs ────────────────────────────────────────────────────
   const mentorTabRef = useRef<SecondaryTabHandle>(null);
@@ -214,16 +224,19 @@ export function RoleEditProfileScreen({
   };
 
   // Determine role first, then load profile data.
+  // Skip when initialAccountType was passed in — the caller already knows the role.
   useEffect(() => {
+    if (initialAccountType) return;
     let cancelled = false;
     authService
       .getProfile(token)
       .then(raw => {
         if (cancelled) return;
-        const type = String(raw?.data?.accountType || '').toLowerCase();
+        const rawUser = raw?.data?.user || raw?.data || {};
+        const type = String(rawUser?.accountType || '').toLowerCase();
         const resolved = type || 'mentor';
         setAccountType(resolved);
-        setInvestorSubtype(detectInvestorSubtype(raw?.data));
+        setInvestorSubtype(detectInvestorSubtype(rawUser));
       })
       .catch(() => {
         if (!cancelled) setAccountType('mentor');
@@ -231,7 +244,7 @@ export function RoleEditProfileScreen({
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [token, initialAccountType]);
 
   useEffect(() => {
     if (!accountType) return;
@@ -402,11 +415,9 @@ export function RoleEditProfileScreen({
   // ── tab dot completion (from loaded profile data) ─────────────────────────
 
   const secondaryTabComplete = (key: string): boolean => {
-    if (accountType === 'investor' && completionForms) {
-      const formKey = INVESTOR_TAB_FORM_KEYS[key];
-      if (formKey && completionForms[formKey]) {
-        return Number(completionForms[formKey].percentage) === 100;
-      }
+    if (accountType === 'investor') {
+      if (key === 'investment_details') return investorInvestmentsValid;
+      if (key === 'representative') return investorRepresentativeValid;
     }
     const d = profileData;
     if (!d) return false;
@@ -767,13 +778,16 @@ export function RoleEditProfileScreen({
               Math.max(1, Number(globalSetting?.investorMaxInvestabilityMetrics) || 7)
             }
             onSaveSuccess={onSecondaryTabSaveSuccess}
+            onValidChange={setInvestorInvestmentsValid}
           />
         ) : activeTab === 'representative' ? (
           <InvestorRepresentativeTab
             ref={investorRepresentativeTabRef}
             token={token}
             primaryColor={primaryColor}
+            initialData={profileData}
             onSaveSuccess={onSecondaryTabSaveSuccess}
+            onValidChange={setInvestorRepresentativeValid}
           />
         ) : activeTab === 'domain_expertise' ? (
           <MentorDomainExpertiseTab
