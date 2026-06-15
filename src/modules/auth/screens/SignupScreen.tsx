@@ -65,7 +65,10 @@ export function SignupScreen({
   const tint = withAlpha(accent, 0.08);
   const [submitted, setSubmitted] = useState(false);
   const [touched, setTouched] = useState<Record<string, boolean>>({});
+  const [emailAvailabilityError, setEmailAvailabilityError] = useState('');
   const [mobileAvailabilityError, setMobileAvailabilityError] = useState('');
+  const [isCheckingEmail, setIsCheckingEmail] = useState(false);
+  const [isCheckingMobile, setIsCheckingMobile] = useState(false);
   const [form, setForm] = useState<SignupDraft>({
     companyName: '',
     organizationName: '',
@@ -88,13 +91,53 @@ export function SignupScreen({
   }, [role, investorType]);
 
   useEffect(() => {
+    const email = form.email.trim();
+
+    if (!email || !isValidEmail(email)) {
+      setEmailAvailabilityError('');
+      setIsCheckingEmail(false);
+      return;
+    }
+
+    setIsCheckingEmail(true);
+    let isActive = true;
+
+    const timer = setTimeout(async () => {
+      try {
+        const nextError = await authService.verifySignupEmail(
+          email,
+          role,
+          investorType,
+        );
+
+        if (isActive) {
+          setEmailAvailabilityError(nextError || '');
+          setIsCheckingEmail(false);
+        }
+      } catch {
+        if (isActive) {
+          setEmailAvailabilityError('');
+          setIsCheckingEmail(false);
+        }
+      }
+    }, 500);
+
+    return () => {
+      isActive = false;
+      clearTimeout(timer);
+    };
+  }, [form.email, investorType, role]);
+
+  useEffect(() => {
     const mobile = form.mobile.trim();
 
     if (!mobile || mobile.length < 4) {
       setMobileAvailabilityError('');
+      setIsCheckingMobile(false);
       return;
     }
 
+    setIsCheckingMobile(true);
     let isActive = true;
 
     const timer = setTimeout(async () => {
@@ -107,10 +150,12 @@ export function SignupScreen({
 
         if (isActive) {
           setMobileAvailabilityError(nextError || '');
+          setIsCheckingMobile(false);
         }
       } catch {
         if (isActive) {
           setMobileAvailabilityError('');
+          setIsCheckingMobile(false);
         }
       }
     }, 500);
@@ -185,6 +230,8 @@ export function SignupScreen({
       nextErrors.email = 'Email address is required.';
     } else if (!isValidEmail(form.email)) {
       nextErrors.email = 'Enter a valid email address.';
+    } else if (emailAvailabilityError) {
+      nextErrors.email = emailAvailabilityError;
     }
 
     if (!form.mobile.trim()) {
@@ -208,6 +255,7 @@ export function SignupScreen({
     return nextErrors;
   }, [
     form,
+    emailAvailabilityError,
     mobileAvailabilityError,
     requiresCompanyName,
     requiresDesignation,
@@ -427,8 +475,8 @@ export function SignupScreen({
 
             <AppButton
               label="Send OTP"
-              disabled={isSubmitting}
-              loading={isSubmitting}
+              disabled={isSubmitting || isCheckingEmail || isCheckingMobile}
+              loading={isSubmitting || isCheckingEmail || isCheckingMobile}
               onPress={handleSubmit}
             />
 

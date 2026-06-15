@@ -2114,6 +2114,36 @@ export const authService = {
     return session;
   },
 
+  async verifySignupEmail(
+    email: string,
+    role?: string,
+    investorType?: string,
+  ): Promise<string | null> {
+    const nextEmail = email.trim();
+
+    if (!nextEmail) {
+      return null;
+    }
+
+    const baseUrl = await resolveBaseUrl();
+    const response = await verifyEmail(
+      baseUrl,
+      nextEmail,
+      normalizeRole(role),
+      normalizeInvestorType(investorType),
+    );
+
+    if (isFailureResponse(response)) {
+      return getErrorMessage(response) || 'This email address is already registered.';
+    }
+
+    if (response?.data?.isExist === true) {
+      return response.data.message || 'This email address is already registered.';
+    }
+
+    return null;
+  },
+
   async verifySignupMobile(
     mobile: string,
     role?: string,
@@ -2135,6 +2165,10 @@ export const authService = {
 
     if (isFailureResponse(response)) {
       return getErrorMessage(response) || 'This mobile number is already registered.';
+    }
+
+    if (response?.data?.isExist === true) {
+      return response.data.message || 'This mobile number is already registered.';
     }
 
     return null;
