@@ -85,9 +85,15 @@ const seedForm = (data: Record<string, any> | null): Form => {
       investmentDetails.turnAroundTime != null
         ? String(investmentDetails.turnAroundTime)
         : '',
-    industries: extractIds(data.sectoralInterestIds || data.sectoralInterests),
+    industries: extractIds(
+      investmentDetails.sectoralInterestIds ||
+      data.sectoralInterestIds ||
+      data.sectoralInterests,
+    ),
     industrySubCategories: extractIds(
-      data.sectoralInterestSubIds || data.sectoralInterestSub,
+      investmentDetails.sectoralInterestSubIds ||
+      data.sectoralInterestSubIds ||
+      data.sectoralInterestSub,
     ),
     otherIndustriesActive: others.length > 0,
     otherIndustriesText: others.join(','),
@@ -123,7 +129,7 @@ function InvestorInvestmentsTab({
   preferenceOptions,
   abilityMetricOptions,
   businessModelOptions,
-  maxAbilityMetrics = 7,
+  maxAbilityMetrics = 4,
   maxIndustries = 5,
   onSaveSuccess,
   onValidChange,
@@ -153,6 +159,12 @@ function InvestorInvestmentsTab({
       : !/^\d+$/.test(form.turnAroundTime.trim())
       ? 'Enter digits only.'
       : undefined,
+    industries: form.industries.length === 0 ? 'required' : undefined,
+    mechanisms: form.mechanisms.length === 0 ? 'required' : undefined,
+    stages: form.stages.length === 0 ? 'required' : undefined,
+    preferences: form.preferences.length === 0 ? 'required' : undefined,
+    abilityMetrics: form.abilityMetrics.length === 0 ? 'required' : undefined,
+    businessModels: form.businessModels.length === 0 ? 'required' : undefined,
   };
   const errors: Record<string, string | undefined> = {};
   Object.entries(rawErrors).forEach(([k, v]) => {
@@ -221,10 +233,23 @@ function InvestorInvestmentsTab({
       subtitle="How you invest — ticket sizes, mechanisms, sectors, stages."
     >
 
+      <AppTextField
+        label="Turn Around Time (TAT) in days"
+        required
+        error={errors.turnAroundTime}
+        keyboardType="number-pad"
+        value={form.turnAroundTime}
+        onChangeText={t => setForm(p => ({...p, turnAroundTime: t}))}
+        onBlur={() => markTouched('turnAroundTime')}
+      />
+
+      <Text style={styles.sectionLabel}>
+        Ticket Size<Text style={styles.requiredMark}> *</Text>
+      </Text>
       <View style={styles.row}>
         <View style={{flex: 1}}>
           <AppTextField
-            label="Ticket Size — Min"
+            label="Min (INR)"
             required
             error={errors.ticketSizeMin}
             keyboardType="number-pad"
@@ -235,7 +260,7 @@ function InvestorInvestmentsTab({
         </View>
         <View style={{flex: 1}}>
           <AppTextField
-            label="Ticket Size — Max"
+            label="Max (INR)"
             required
             error={errors.ticketSizeMax}
             keyboardType="number-pad"
@@ -246,20 +271,11 @@ function InvestorInvestmentsTab({
         </View>
       </View>
 
-      <AppTextField
-        label="Turnaround Time (days)"
-        required
-        error={errors.turnAroundTime}
-        keyboardType="number-pad"
-        value={form.turnAroundTime}
-        onChangeText={t => setForm(p => ({...p, turnAroundTime: t}))}
-        onBlur={() => markTouched('turnAroundTime')}
-      />
-
       {industryOptions.length > 0 ? (
         <MultiSelectField
-          label="Sectoral Interests"
+          label="Sectoral Interest"
           hint={`Select up to ${maxIndustries}`}
+          required
           options={industryOptions}
           selected={form.industries}
           primaryColor={primaryColor}
@@ -342,7 +358,8 @@ function InvestorInvestmentsTab({
 
       {mechanismOptions.length > 0 ? (
         <MultiSelectField
-          label="Investment Mechanisms"
+          label="Using instruments"
+          required
           options={mechanismOptions}
           selected={form.mechanisms}
           primaryColor={primaryColor}
@@ -350,19 +367,10 @@ function InvestorInvestmentsTab({
         />
       ) : null}
 
-      {stageOptions.length > 0 ? (
-        <MultiSelectField
-          label="Investment Stages"
-          options={stageOptions}
-          selected={form.stages}
-          primaryColor={primaryColor}
-          onChange={next => setForm(p => ({...p, stages: next}))}
-        />
-      ) : null}
-
       {preferenceOptions.length > 0 ? (
         <MultiSelectField
-          label="Investment Preferences"
+          label="We prefer to"
+          required
           options={preferenceOptions}
           selected={form.preferences}
           primaryColor={primaryColor}
@@ -370,10 +378,21 @@ function InvestorInvestmentsTab({
         />
       ) : null}
 
+      {stageOptions.length > 0 ? (
+        <MultiSelectField
+          label="at ______ Stage"
+          required
+          options={stageOptions}
+          selected={form.stages}
+          primaryColor={primaryColor}
+          onChange={next => setForm(p => ({...p, stages: next}))}
+        />
+      ) : null}
+
       {abilityMetricOptions.length > 0 ? (
         <MultiSelectField
-          label="Investability Metrics"
-          hint={`Select up to ${maxAbilityMetrics}`}
+          label={`Investability Metrics (max. ${maxAbilityMetrics})`}
+          required
           options={abilityMetricOptions}
           selected={form.abilityMetrics}
           primaryColor={primaryColor}
@@ -384,7 +403,8 @@ function InvestorInvestmentsTab({
 
       {businessModelOptions.length > 0 ? (
         <MultiSelectField
-          label="Business Models"
+          label="We invest in"
+          required
           options={businessModelOptions}
           selected={form.businessModels}
           primaryColor={primaryColor}
@@ -400,6 +420,16 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     gap: 12,
+  },
+  sectionLabel: {
+    color: '#0f172a',
+    fontSize: 15,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  requiredMark: {
+    color: '#dc2626',
+    fontWeight: '600',
   },
   otherToggleRow: {
     alignItems: 'center',

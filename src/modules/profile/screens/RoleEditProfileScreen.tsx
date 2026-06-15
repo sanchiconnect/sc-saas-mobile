@@ -184,6 +184,9 @@ export function RoleEditProfileScreen({
   const [investmentStageOptions, setInvestmentStageOptions] = useState<
     Array<{id: number; name: string}>
   >([]);
+  const [investmentMechanismOptions, setInvestmentMechanismOptions] = useState<
+    Array<{id: number; name: string}>
+  >([]);
   const [investmentPreferenceOptions, setInvestmentPreferenceOptions] =
     useState<Array<{id: number; name: string}>>([]);
   const [abilityMetricOptions, setAbilityMetricOptions] = useState<
@@ -382,7 +385,7 @@ export function RoleEditProfileScreen({
     // Role-specific extra options (investor / service_provider only; mentor handled above).
     const extraKeys: string =
       accountType === 'investor'
-        ? 'investment_stages,investment_preferences,investability_metrics,business_models,organization_types'
+        ? 'investment_mechanisms,investment_stages,investment_preferences,investability_metrics,business_models,organization_types'
         : accountType === 'service_provider'
           ? 'service_provider_types,service_provider_categories'
           : '';
@@ -394,6 +397,7 @@ export function RoleEditProfileScreen({
           if (cancelled) return;
           const d = payload?.data || {};
           if (accountType === 'investor') {
+            setInvestmentMechanismOptions(toIdName(d.investment_mechanisms));
             setInvestmentStageOptions(toIdName(d.investment_stages));
             setInvestmentPreferenceOptions(toIdName(d.investment_preferences));
             setAbilityMetricOptions(toIdName(d.investability_metrics));
@@ -494,6 +498,8 @@ export function RoleEditProfileScreen({
   const isActiveTabValid = (): boolean => {
     if (activeTab === 'basic') return roleFormValid;
     if (activeTab === 'domain_expertise') return domainTabValid;
+    if (activeTab === 'investment_details' || activeTab === 'investment_thesis') return investorInvestmentsValid;
+    if (activeTab === 'representative') return investorRepresentativeValid;
     return true;
   };
 
@@ -766,7 +772,7 @@ export function RoleEditProfileScreen({
             primaryColor={primaryColor}
             initialData={profileData}
             industryOptions={industryOptions}
-            mechanismOptions={[]}
+            mechanismOptions={investmentMechanismOptions}
             stageOptions={investmentStageOptions}
             preferenceOptions={investmentPreferenceOptions}
             abilityMetricOptions={abilityMetricOptions}
