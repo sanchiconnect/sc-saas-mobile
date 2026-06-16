@@ -1,6 +1,7 @@
 import React, {useContext, useEffect, useRef, useState} from 'react';
 import {
   ActivityIndicator,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -119,6 +120,9 @@ type Props = {
   onBack: () => void;
   onPreview?: () => void;
   onProfileUpdated?: () => void;
+  // Pass the already-known accountType from HomeScreen's dashboard summary so
+  // we don't need to call getProfile() and deal with its response structure.
+  initialAccountType?: string;
 };
 
 // ─── component ───────────────────────────────────────────────────────────────
@@ -126,14 +130,18 @@ type Props = {
 export function RoleEditProfileScreen({
   token,
   onBack,
+  onPreview,
   onProfileUpdated,
+  initialAccountType,
 }: Props) {
   const {theme, globalSetting, baseUrl} = useContext(TenantContext);
   const toast = useToast();
   const primaryColor = theme?.primary || colors.primary;
 
   // ── profile / role state ──────────────────────────────────────────────────
-  const [accountType, setAccountType] = useState<string | null>(null);
+  const [accountType, setAccountType] = useState<string | null>(
+    initialAccountType ? initialAccountType.toLowerCase() : null,
+  );
   const [investorSubtype, setInvestorSubtype] =
     useState<InvestorSubtype>('organization');
   const [profileData, setProfileData] = useState<Record<string, any> | null>(null);
@@ -142,6 +150,11 @@ export function RoleEditProfileScreen({
   const [isSaving, setIsSaving] = useState(false);
   const [backendCompletion, setBackendCompletion] = useState<number | null>(null);
   const [completionForms, setCompletionForms] = useState<Record<string, CompletionForm> | null>(null);
+  const [canRequestApproval, setCanRequestApproval] = useState(false);
+  const [isApprovalRequested, setIsApprovalRequested] = useState(false);
+  const [isApproved, setIsApproved] = useState(false);
+  const [showApprovalModal, setShowApprovalModal] = useState(false);
+  const [isSubmittingApproval, setIsSubmittingApproval] = useState(false);
 
   // ── tab navigation ────────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<string>('basic');
@@ -160,6 +173,10 @@ export function RoleEditProfileScreen({
   const [roleFormValid, setRoleFormValid] = useState(false);
   const roleBasicTabRef = useRef<RoleBasicInfoTabHandle>(null);
 
+  // ── investor tab local validity (drives dot colour in real-time) ──────────
+  const [investorInvestmentsValid, setInvestorInvestmentsValid] = useState(false);
+  const [investorRepresentativeValid, setInvestorRepresentativeValid] = useState(false);
+
   // ── secondary tab refs ────────────────────────────────────────────────────
   const mentorTabRef = useRef<SecondaryTabHandle>(null);
   const corporateTabRef = useRef<SecondaryTabHandle>(null);
@@ -172,6 +189,9 @@ export function RoleEditProfileScreen({
   const [industryOptions, setIndustryOptions] = useState<DomainOption[]>([]);
   const [technologyOptions, setTechnologyOptions] = useState<DomainOption[]>([]);
   const [investmentStageOptions, setInvestmentStageOptions] = useState<
+    Array<{id: number; name: string}>
+  >([]);
+  const [investmentMechanismOptions, setInvestmentMechanismOptions] = useState<
     Array<{id: number; name: string}>
   >([]);
   const [investmentPreferenceOptions, setInvestmentPreferenceOptions] =
@@ -214,16 +234,19 @@ export function RoleEditProfileScreen({
   };
 
   // Determine role first, then load profile data.
+  // Skip when initialAccountType was passed in — the caller already knows the role.
   useEffect(() => {
+    if (initialAccountType) return;
     let cancelled = false;
     authService
       .getProfile(token)
       .then(raw => {
         if (cancelled) return;
-        const type = String(raw?.data?.accountType || '').toLowerCase();
+        const rawUser = raw?.data?.user || raw?.data || {};
+        const type = String(rawUser?.accountType || '').toLowerCase();
         const resolved = type || 'mentor';
         setAccountType(resolved);
-        setInvestorSubtype(detectInvestorSubtype(raw?.data));
+        setInvestorSubtype(detectInvestorSubtype(rawUser));
       })
       .catch(() => {
         if (!cancelled) setAccountType('mentor');
@@ -231,7 +254,7 @@ export function RoleEditProfileScreen({
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [token, initialAccountType]);
 
   useEffect(() => {
     if (!accountType) return;
@@ -321,12 +344,16 @@ export function RoleEditProfileScreen({
       .getProfileCompletion(token, accountType, investorSubtype)
       .then(res => {
         if (cancelled) return;
-        const num = Number(res?.data?.percentage ?? res?.percentage);
+        const d = res?.data ?? res ?? {};
+        const num = Number(d.percentage);
         if (Number.isFinite(num)) setBackendCompletion(num);
-        const forms = res?.data?.forms;
+        const forms = d.forms;
         if (forms && typeof forms === 'object') {
           setCompletionForms(forms as Record<string, CompletionForm>);
         }
+        setCanRequestApproval(Boolean(d.canRequestApproval));
+        setIsApprovalRequested(Boolean(d.isApprovalRequested));
+        setIsApproved(Boolean(d.isApproved));
       })
       .catch(() => {});
     return () => {
@@ -369,7 +396,7 @@ export function RoleEditProfileScreen({
     // Role-specific extra options (investor / service_provider only; mentor handled above).
     const extraKeys: string =
       accountType === 'investor'
-        ? 'investment_stages,investment_preferences,investability_metrics,business_models,organization_types'
+        ? 'investment_mechanisms,investment_stages,investment_preferences,investability_metrics,business_models,organization_types'
         : accountType === 'service_provider'
           ? 'service_provider_types,service_provider_categories'
           : '';
@@ -381,6 +408,7 @@ export function RoleEditProfileScreen({
           if (cancelled) return;
           const d = payload?.data || {};
           if (accountType === 'investor') {
+            setInvestmentMechanismOptions(toIdName(d.investment_mechanisms));
             setInvestmentStageOptions(toIdName(d.investment_stages));
             setInvestmentPreferenceOptions(toIdName(d.investment_preferences));
             setAbilityMetricOptions(toIdName(d.investability_metrics));
@@ -402,11 +430,9 @@ export function RoleEditProfileScreen({
   // ── tab dot completion (from loaded profile data) ─────────────────────────
 
   const secondaryTabComplete = (key: string): boolean => {
-    if (accountType === 'investor' && completionForms) {
-      const formKey = INVESTOR_TAB_FORM_KEYS[key];
-      if (formKey && completionForms[formKey]) {
-        return Number(completionForms[formKey].percentage) === 100;
-      }
+    if (accountType === 'investor') {
+      if (key === 'investment_details') return investorInvestmentsValid;
+      if (key === 'representative') return investorRepresentativeValid;
     }
     const d = profileData;
     if (!d) return false;
@@ -483,7 +509,28 @@ export function RoleEditProfileScreen({
   const isActiveTabValid = (): boolean => {
     if (activeTab === 'basic') return roleFormValid;
     if (activeTab === 'domain_expertise') return domainTabValid;
+    if (activeTab === 'investment_details' || activeTab === 'investment_thesis') return investorInvestmentsValid;
+    if (activeTab === 'representative') return investorRepresentativeValid;
     return true;
+  };
+
+  const handleRequestApproval = async () => {
+    if (!accountType) return;
+    setIsSubmittingApproval(true);
+    try {
+      await authService.requestApproval(token, accountType);
+      setShowApprovalModal(false);
+      setIsApprovalRequested(true);
+      setCanRequestApproval(false);
+      toast.success('Profile submitted for approval!');
+      onProfileUpdated?.();
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : 'Could not submit for approval.',
+      );
+    } finally {
+      setIsSubmittingApproval(false);
+    }
   };
 
   const handleSave = async () => {
@@ -587,12 +634,15 @@ export function RoleEditProfileScreen({
       authService
         .getProfileCompletion(token, accountType, investorSubtype)
         .then(res => {
-          const num = Number(res?.data?.percentage ?? res?.percentage);
+          const d = res?.data ?? res ?? {};
+          const num = Number(d.percentage);
           if (Number.isFinite(num)) setBackendCompletion(num);
-          const forms = res?.data?.forms;
+          const forms = d.forms;
           if (forms && typeof forms === 'object') {
             setCompletionForms(forms as Record<string, CompletionForm>);
           }
+          setCanRequestApproval(Boolean(d.canRequestApproval));
+          setIsApprovalRequested(Boolean(d.isApprovalRequested));
         })
         .catch(() => {});
     }
@@ -613,6 +663,18 @@ export function RoleEditProfileScreen({
               {Math.round(profileCompletion)}%
             </Text>
           </View>
+          {canRequestApproval && !isApprovalRequested ? (
+            <Pressable
+              style={[styles.submitHeaderBtn, {backgroundColor: colors.success}]}
+              onPress={() => setShowApprovalModal(true)}
+              accessibilityRole="button">
+              <Text style={styles.submitHeaderBtnLabel}>SUBMIT</Text>
+            </Pressable>
+          ) : isApprovalRequested && !isApproved ? (
+            <View style={[styles.submitHeaderBtn, {backgroundColor: '#64748b'}]}>
+              <Text style={styles.submitHeaderBtnLabel}>PENDING</Text>
+            </View>
+          ) : null}
         </View>
 
         {/* Progress bar */}
@@ -755,7 +817,7 @@ export function RoleEditProfileScreen({
             primaryColor={primaryColor}
             initialData={profileData}
             industryOptions={industryOptions}
-            mechanismOptions={[]}
+            mechanismOptions={investmentMechanismOptions}
             stageOptions={investmentStageOptions}
             preferenceOptions={investmentPreferenceOptions}
             abilityMetricOptions={abilityMetricOptions}
@@ -767,13 +829,16 @@ export function RoleEditProfileScreen({
               Math.max(1, Number(globalSetting?.investorMaxInvestabilityMetrics) || 7)
             }
             onSaveSuccess={onSecondaryTabSaveSuccess}
+            onValidChange={setInvestorInvestmentsValid}
           />
         ) : activeTab === 'representative' ? (
           <InvestorRepresentativeTab
             ref={investorRepresentativeTabRef}
             token={token}
             primaryColor={primaryColor}
+            initialData={profileData}
             onSaveSuccess={onSecondaryTabSaveSuccess}
+            onValidChange={setInvestorRepresentativeValid}
           />
         ) : activeTab === 'domain_expertise' ? (
           <MentorDomainExpertiseTab
@@ -889,6 +954,56 @@ export function RoleEditProfileScreen({
           </View>
         ) : null}
       </View>
+
+      {/* ── Profile Approval Modal ───────────────────────────────────────── */}
+      <Modal
+        visible={showApprovalModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowApprovalModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={[styles.modalIconWrap, {borderColor: colors.success}]}>
+              <Text style={[styles.modalCheckmark, {color: colors.success}]}>✓</Text>
+            </View>
+            <Text style={styles.modalTitle}>
+              Awesome! your profile is ready to go live.
+            </Text>
+            <Text style={styles.modalSubtitle}>
+              Submit to start connecting with the community.
+            </Text>
+            <View style={styles.modalButtons}>
+              <AppButton
+                label={isSubmittingApproval ? 'Submitting…' : 'Submit'}
+                loading={isSubmittingApproval}
+                disabled={isSubmittingApproval}
+                onPress={handleRequestApproval}
+                style={{flex: 1, backgroundColor: primaryColor}}
+                labelStyle={styles.modalBtnLabel}
+              />
+              {onPreview ? (
+                <AppButton
+                  label="Preview"
+                  disabled={isSubmittingApproval}
+                  onPress={() => {
+                    setShowApprovalModal(false);
+                    onPreview();
+                  }}
+                  style={[styles.modalPreviewBtn, {flex: 1}]}
+                  labelStyle={styles.modalBtnLabel}
+                />
+              ) : null}
+              <AppButton
+                label="Cancel"
+                disabled={isSubmittingApproval}
+                onPress={() => setShowApprovalModal(false)}
+                style={[styles.modalCancelBtn, {flex: 1}]}
+                labelStyle={styles.modalBtnLabel}
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -977,4 +1092,74 @@ const styles = StyleSheet.create({
   navButton: {backgroundColor: '#f1f5f9'},
   navButtonLabel: {color: '#475569', fontSize: 13, fontWeight: '700'},
   actionButtonLabel: {fontSize: 13, fontWeight: '700'},
+  submitHeaderBtn: {
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  submitHeaderBtnLabel: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  modalCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    padding: 28,
+    alignItems: 'center',
+    width: '100%',
+    maxWidth: 400,
+    gap: 12,
+  },
+  modalIconWrap: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    borderWidth: 3,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  modalCheckmark: {
+    fontSize: 36,
+    fontWeight: '700',
+    lineHeight: 44,
+  },
+  modalTitle: {
+    color: '#0f172a',
+    fontSize: 18,
+    fontWeight: '700',
+    textAlign: 'center',
+    lineHeight: 26,
+  },
+  modalSubtitle: {
+    color: '#475569',
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 8,
+    width: '100%',
+  },
+  modalPreviewBtn: {
+    backgroundColor: '#0f172a',
+  },
+  modalCancelBtn: {
+    backgroundColor: '#94a3b8',
+  },
+  modalBtnLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
 });

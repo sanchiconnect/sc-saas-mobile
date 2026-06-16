@@ -73,10 +73,18 @@ const buildOngoingCommitmentsPath = (accountType?: string) => {
 
 const PROFILE_COMPLETENESS_PATH_OVERRIDES: Record<string, string> = {
   investor: 'api/v1/investors/organization/profile_completeness',
-  // Frontend dispatches a separate `GetIndividualProfileCompleteness` action
-  // when `investorType === 'individual'`. Mirror via this override key —
-  // resolved by `getProfileCompletion(token, accountType, investorType)`.
-  'investor:individual': 'api/v1/investors/organization/profile_completeness',
+  'investor:individual': 'api/v1/investors/individual/profile_completeness',
+};
+
+const REQUEST_APPROVAL_PATH_OVERRIDES: Record<string, string> = {
+  investor: 'api/v1/investors/request/approval',
+};
+const buildRequestApprovalPath = (accountType: string): string => {
+  const type = accountType.toLowerCase();
+  const override = REQUEST_APPROVAL_PATH_OVERRIDES[type];
+  if (override) return override;
+  const plural = ACCOUNT_TYPE_TO_PLURAL[type] || `${type}s`;
+  return `api/v1/${plural}/request/approval`;
 };
 
 const buildDashboardPath = (accountType?: string): string => {
@@ -693,6 +701,22 @@ export const authService = {
       {
         method: 'GET',
         headers: getAuthHeader(token),
+      },
+      baseUrl,
+    );
+  },
+
+  async requestApproval(
+    token: string,
+    accountType: string,
+  ): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      buildRequestApprovalPath(accountType),
+      {
+        method: 'PATCH',
+        headers: getAuthHeader(token),
+        body: JSON.stringify({}),
       },
       baseUrl,
     );

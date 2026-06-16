@@ -45,7 +45,8 @@ const TAB_LAYOUTS: Record<string, TabBlueprint[]> = {
   ],
   'investor:individual': [
     BASIC,
-    {key: 'investment_thesis', label: 'Investment Thesis'},
+    {key: 'investment_details', label: 'Investment Details'},
+    {key: 'representative', label: 'Representative Details'},
   ],
   mentor: [BASIC, {key: 'domain_expertise', label: 'Domain Expertise'}],
   corporate: [BASIC, {key: 'engagement', label: 'Engagement'}],

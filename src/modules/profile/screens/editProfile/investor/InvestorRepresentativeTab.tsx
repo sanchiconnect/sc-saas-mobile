@@ -18,7 +18,11 @@ import type {SecondaryTabHandle} from '../mentor/MentorDomainExpertiseTab';
 type Props = {
   token: string;
   primaryColor: string;
+  // The web loads representative data from organization-information under
+  // data.representative — pass profileData here so we read from the same source.
+  initialData?: Record<string, any> | null;
   onSaveSuccess?: () => void;
+  onValidChange?: (valid: boolean) => void;
 };
 
 type FormState = {
@@ -38,44 +42,46 @@ const EMPTY: FormState = {
 };
 
 export const InvestorRepresentativeTab = forwardRef<SecondaryTabHandle, Props>(
-function InvestorRepresentativeTab({token, onSaveSuccess}: Props, ref) {
+function InvestorRepresentativeTab({token, initialData, onSaveSuccess, onValidChange}: Props, ref) {
   const toast = useToast();
 
   const form = useFormValidation<FormState>({
     initial: EMPTY,
     validators: {
-      personName: required('Full name'),
+      personName: required('Represented by'),
       designation: required('Designation'),
       mobileNumber: combine(required('Mobile number'), mobileNumber(7, 15)),
       email: combine(required('Email'), email),
-      // LinkedIn URL is required per the frontend FormGroup (LINKDIN_URL_REGEX).
-      linkedinUrl: combine(required('LinkedIn URL'), url),
+      linkedinUrl: combine(required('LinkedIn profile'), url),
     },
   });
 
+  // Web reads representative data from organization-information → data.representative.
   useEffect(() => {
-    let cancelled = false;
-    authService
-      .getInvestorRepresentative(token)
-      .then(res => {
-        if (cancelled) return;
-        const data = res?.data || res || {};
-        form.reset({
-          personName: String(data.personName || ''),
-          designation: String(data.designation || ''),
-          mobileNumber:
-            data.mobileNumber != null ? String(data.mobileNumber) : '',
-          email: String(data.email || ''),
-          linkedinUrl: String(data.linkedinUrl || ''),
-        });
-      })
-      .catch(() => {})
-      .finally(() => {});
-    return () => {
-      cancelled = true;
-    };
+    if (!initialData) return;
+    const rep = initialData?.representative || {};
+    form.reset({
+      personName: String(rep.personName || ''),
+      designation: String(rep.designation || ''),
+      mobileNumber: rep.mobileNumber != null ? String(rep.mobileNumber) : '',
+      email: String(rep.email || ''),
+      linkedinUrl: String(rep.linkedinUrl || ''),
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  }, [initialData]);
+
+  // Notify parent when all required fields are filled so the tab dot updates.
+  useEffect(() => {
+    const v = form.values;
+    const valid =
+      Boolean(v.personName.trim()) &&
+      Boolean(v.designation.trim()) &&
+      v.mobileNumber.replace(/\D/g, '').length >= 7 &&
+      Boolean(v.email.trim()) &&
+      Boolean(v.linkedinUrl.trim());
+    onValidChange?.(valid);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.values]);
 
   const submitNetwork = async (values: FormState) => {
     try {
@@ -106,9 +112,8 @@ function InvestorRepresentativeTab({token, onSaveSuccess}: Props, ref) {
       title="Representative Details"
       subtitle="The point-of-contact at your organisation. Shown to startups when you connect with them."
     >
-
       <AppTextField
-        label="Full Name"
+        label="Represented by"
         required
         error={form.errors.personName}
         value={form.values.personName}
@@ -124,7 +129,7 @@ function InvestorRepresentativeTab({token, onSaveSuccess}: Props, ref) {
         onBlur={() => form.setTouched('designation')}
       />
       <AppTextField
-        label="Mobile Number"
+        label="Mobile Number (Whatsapp Preferred)"
         required
         error={form.errors.mobileNumber}
         keyboardType="number-pad"
@@ -133,7 +138,7 @@ function InvestorRepresentativeTab({token, onSaveSuccess}: Props, ref) {
         onBlur={() => form.setTouched('mobileNumber')}
       />
       <AppTextField
-        label="Email Address"
+        label="Email"
         required
         error={form.errors.email}
         keyboardType="email-address"
@@ -143,7 +148,7 @@ function InvestorRepresentativeTab({token, onSaveSuccess}: Props, ref) {
         onBlur={() => form.setTouched('email')}
       />
       <AppTextField
-        label="LinkedIn URL"
+        label="LinkedIn Profile"
         required
         error={form.errors.linkedinUrl}
         keyboardType="url"
@@ -152,7 +157,6 @@ function InvestorRepresentativeTab({token, onSaveSuccess}: Props, ref) {
         onChangeText={t => form.setValue('linkedinUrl', t)}
         onBlur={() => form.setTouched('linkedinUrl')}
       />
-
     </ProfileTabCard>
   );
 });
