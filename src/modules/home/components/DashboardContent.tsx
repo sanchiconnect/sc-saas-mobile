@@ -1,5 +1,7 @@
-import React, {useState} from 'react';
+import React, {useEffect, useState} from 'react';
 import {
+  ActivityIndicator,
+  Image,
   Modal,
   Pressable,
   StyleSheet,
@@ -14,6 +16,8 @@ import {DashboardStat} from '../types';
 import {PostComposer} from './PostComposer';
 import {RecommendedSection} from './RecommendedSection';
 import {ResourcesSection} from '../../resources/components/ResourcesSection';
+import {connectionsService} from '../../connections/services/connections.service';
+import type {Connection} from '../../connections/types';
 
 // Search-scope chips, in display order. `userKey` matches the tenant.users.*
 // flag — chip is hidden if the tenant has disabled that role. Users can
@@ -59,7 +63,302 @@ type DashboardContentProps = {
   // Whether the signed-in user is approved to publish posts. Forwarded to the
   // composer; defaults to true.
   isApproved?: boolean;
+  pendingConnectionsCount?: number;
+  onViewAllConnections?: () => void;
+  onConnectionChatPress?: () => void;
 };
+
+const connStyles = StyleSheet.create({
+  loadingBox: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 80,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.lg,
+  },
+  section: {
+    backgroundColor: '#ffffff',
+    borderRadius: radii.lg,
+    elevation: 2,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.lg,
+    paddingHorizontal: spacing.md + 2,
+    paddingTop: spacing.md + 2,
+    paddingBottom: spacing.sm,
+    shadowColor: '#0f172a',
+    shadowOffset: {width: 0, height: 4},
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+  },
+  header: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: spacing.sm,
+  },
+  headerLeft: {
+    gap: 4,
+  },
+  headerTitle: {
+    fontSize: typography.bodyLg,
+    fontWeight: '700',
+  },
+  headerUnderline: {
+    height: 2,
+    width: 96,
+    borderRadius: 2,
+  },
+  pendingBadgeRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 6,
+  },
+  pendingLabel: {
+    color: '#475569',
+    fontSize: typography.small,
+    fontWeight: '500',
+  },
+  pendingBadge: {
+    alignItems: 'center',
+    backgroundColor: '#ef4444',
+    borderRadius: 10,
+    height: 20,
+    justifyContent: 'center',
+    minWidth: 20,
+    paddingHorizontal: 5,
+  },
+  pendingBadgeText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  row: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.md,
+    paddingVertical: spacing.md,
+  },
+  avatar: {
+    borderRadius: 24,
+    height: 48,
+    width: 48,
+  },
+  avatarFallback: {
+    alignItems: 'center',
+    backgroundColor: '#e2e8f0',
+    justifyContent: 'center',
+  },
+  avatarInitials: {
+    color: '#475569',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  info: {
+    flex: 1,
+  },
+  name: {
+    color: '#0f172a',
+    fontSize: typography.bodyLg,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  metaRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  sub: {
+    color: '#64748b',
+    fontSize: typography.small,
+  },
+  typeBadge: {
+    borderColor: '#94a3b8',
+    borderRadius: 4,
+    borderWidth: 1,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+  },
+  typeBadgeText: {
+    color: '#64748b',
+    fontSize: 10,
+    fontWeight: '600',
+    letterSpacing: 0.3,
+  },
+  chatBtn: {
+    padding: 6,
+  },
+  divider: {
+    backgroundColor: '#e2e8f0',
+    height: 1,
+  },
+  viewAllBtn: {
+    alignItems: 'center',
+    borderColor: '#e2e8f0',
+    borderRadius: radii.md,
+    borderWidth: 1,
+    marginBottom: spacing.sm,
+    marginTop: spacing.sm,
+    paddingVertical: spacing.md,
+  },
+  viewAllText: {
+    color: '#0f172a',
+    fontSize: typography.bodyLg,
+    fontWeight: '600',
+  },
+});
+
+function MyConnectionsSection({
+  token,
+  logoBaseUrl,
+  primaryColor,
+  pendingConnectionsCount,
+  onViewAll,
+  onChatPress,
+}: {
+  token: string;
+  logoBaseUrl?: string;
+  primaryColor: string;
+  pendingConnectionsCount?: number;
+  onViewAll?: () => void;
+  onChatPress?: () => void;
+}) {
+  const [connections, setConnections] = useState<Connection[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    connectionsService
+      .listActive(token, {limit: 4})
+      .then(res => setConnections(res?.data?.items || []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [token]);
+
+  if (loading) {
+    return (
+      <View style={connStyles.loadingBox}>
+        <ActivityIndicator size="small" color={primaryColor} />
+      </View>
+    );
+  }
+
+  if (connections.length === 0) {
+    return null;
+  }
+
+  const resolveAvatar = (path?: string | null): string | null => {
+    if (!path) {
+      return null;
+    }
+    if (/^https?:\/\//i.test(path)) {
+      return path;
+    }
+    if (logoBaseUrl) {
+      return `${logoBaseUrl.replace(/\/$/, '')}/${path.replace(/^\//, '')}`;
+    }
+    return null;
+  };
+
+  const getInitials = (name?: string) =>
+    (name || 'U')
+      .split(' ')
+      .slice(0, 2)
+      .map(w => w[0])
+      .join('')
+      .toUpperCase();
+
+  return (
+    <View style={connStyles.section}>
+      <View style={connStyles.header}>
+        <View style={connStyles.headerLeft}>
+          <Text style={[connStyles.headerTitle, {color: primaryColor}]}>
+            My Connections
+          </Text>
+          <View
+            style={[connStyles.headerUnderline, {backgroundColor: primaryColor}]}
+          />
+        </View>
+        {(pendingConnectionsCount ?? 0) > 0 ? (
+          <View style={connStyles.pendingBadgeRow}>
+            <Text style={connStyles.pendingLabel}>Pending Requests</Text>
+            <View style={connStyles.pendingBadge}>
+              <Text style={connStyles.pendingBadgeText}>
+                {pendingConnectionsCount}
+              </Text>
+            </View>
+          </View>
+        ) : null}
+      </View>
+
+      {connections.map((conn, idx) => {
+        const avatarUri = resolveAvatar(conn.avatar || conn.companyLogo);
+        const name =
+          conn.companyName || conn.fullName || conn.name || 'Unknown';
+        const sub = conn.designation || '';
+        const acType = conn.accountType || '';
+
+        return (
+          <View key={conn.connectionUUID}>
+            <View style={connStyles.row}>
+              {avatarUri ? (
+                <Image source={{uri: avatarUri}} style={connStyles.avatar} />
+              ) : (
+                <View style={[connStyles.avatar, connStyles.avatarFallback]}>
+                  <Text style={connStyles.avatarInitials}>
+                    {getInitials(name)}
+                  </Text>
+                </View>
+              )}
+              <View style={connStyles.info}>
+                <Text style={connStyles.name} numberOfLines={1}>
+                  {name}
+                </Text>
+                <View style={connStyles.metaRow}>
+                  {sub ? (
+                    <Text style={connStyles.sub} numberOfLines={1}>
+                      {sub}
+                    </Text>
+                  ) : null}
+                  {acType ? (
+                    <View style={connStyles.typeBadge}>
+                      <Text style={connStyles.typeBadgeText}>
+                        {acType.toUpperCase()}
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+              </View>
+              <Pressable
+                style={({pressed}) => [
+                  connStyles.chatBtn,
+                  pressed && {opacity: 0.5},
+                ]}
+                onPress={onChatPress}
+                accessibilityRole="button"
+                accessibilityLabel="Open chat">
+                <Icon name="message-text-outline" size={22} color="#64748b" />
+              </Pressable>
+            </View>
+            {idx < connections.length - 1 ? (
+              <View style={connStyles.divider} />
+            ) : null}
+          </View>
+        );
+      })}
+
+      <Pressable
+        style={({pressed}) => [
+          connStyles.viewAllBtn,
+          pressed && {opacity: 0.7},
+        ]}
+        onPress={onViewAll}
+        accessibilityRole="button"
+        accessibilityLabel="View all connections">
+        <Text style={connStyles.viewAllText}>View All</Text>
+      </Pressable>
+    </View>
+  );
+}
 
 function getGreeting(date: Date = new Date()): string {
   const hour = date.getHours();
@@ -84,6 +383,9 @@ export function DashboardContent({
   logoBaseUrl,
   canToggleStatus,
   isApproved = true,
+  pendingConnectionsCount,
+  onViewAllConnections,
+  onConnectionChatPress,
 }: DashboardContentProps) {
   const progress = Math.max(0, Math.min(profileCompletion, 100));
   // Pre-compute the tick positions for the progress ring. Each tick is a
@@ -300,6 +602,15 @@ export function DashboardContent({
         tenantUsers={tenantUsers}
         logoBaseUrl={logoBaseUrl}
         canToggleStatus={canToggleStatus}
+      />
+
+      <MyConnectionsSection
+        token={token}
+        logoBaseUrl={logoBaseUrl}
+        primaryColor={primaryColor}
+        pendingConnectionsCount={pendingConnectionsCount}
+        onViewAll={onViewAllConnections}
+        onChatPress={onConnectionChatPress}
       />
 
       <ResourcesSection

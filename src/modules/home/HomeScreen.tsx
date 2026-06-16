@@ -921,6 +921,9 @@ export function HomeScreen({
               logoBaseUrl={logoBaseUrl ?? undefined}
               canToggleStatus={summary?.canToggleStatus}
               isApproved={Boolean(summary?.isApproved)}
+              pendingConnectionsCount={pendingConnectionsCount}
+              onViewAllConnections={() => setSelectedMenu({section: 'connections'})}
+              onConnectionChatPress={() => setSelectedMenu({section: 'chat'})}
             />
           </>
         ) : null}
