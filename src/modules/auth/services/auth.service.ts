@@ -1038,6 +1038,15 @@ export const authService = {
   },
 
   // ── Corporate: Engagement ──
+  async getCorporateEngagement(token: string): Promise<ApiResponse> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson<ApiResponse>(
+      CORPORATE_ENGAGEMENT_PATH,
+      {method: 'GET', headers: getAuthHeader(token)},
+      baseUrl,
+    );
+  },
+
   async updateCorporateEngagement(
     token: string,
     payload: Record<string, any>,
@@ -2090,6 +2099,13 @@ export const authService = {
           );
         }
 
+        const emailPayload = emailCheck?.data ?? emailCheck;
+        if (emailPayload?.isNotBusinessEmail === true) {
+          throw new Error(
+            String(emailPayload?.message || 'Only work email addresses are allowed.'),
+          );
+        }
+
         if (isFailureResponse(mobileCheck)) {
           throw new Error(
             getErrorMessage(mobileCheck) || 'Mobile verification failed.',
@@ -2161,8 +2177,13 @@ export const authService = {
       return getErrorMessage(response) || 'This email address is already registered.';
     }
 
-    if (response?.data?.isExist === true) {
-      return response.data.message || 'This email address is already registered.';
+    const emailPayload = response?.data ?? response;
+    if (emailPayload?.isNotBusinessEmail === true) {
+      return String(emailPayload?.message || 'Only work email addresses are allowed.');
+    }
+
+    if (emailPayload?.isExist === true) {
+      return String(emailPayload?.message || 'This email address is already registered.');
     }
 
     return null;

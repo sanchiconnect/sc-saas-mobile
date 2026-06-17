@@ -1,4 +1,4 @@
-import React, {useContext, useEffect, useRef, useState} from 'react';
+import React, {useContext, useEffect, useMemo, useRef, useState} from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -21,6 +21,7 @@ import {useToast} from '../../../core/toast/ToastProvider';
 import {authService} from '../../auth/services/auth.service';
 import {BasicInfoForm} from './editProfile/startup/BasicInfoForm';
 import {CorporateEngagementTab} from './editProfile/corporate/CorporateEngagementTab';
+import type {SecondaryTabHandle} from './editProfile/corporate/CorporateEngagementTab';
 import {
   CustomFormTab,
   CustomFormTabHandle,
@@ -396,6 +397,13 @@ export function EditProfileScreen({
   // startup isActiveTabValid() gating so the shared SAVE button behaves
   // identically for every role.
   const [roleFormValid, setRoleFormValid] = useState(false);
+  const [engagementComplete, setEngagementComplete] = useState(false);
+  // Tracks whether the corporate engagement form's required fields are filled.
+  // Updated live by CorporateEngagementTab via onValidChange.
+  const [engagementValid, setEngagementValid] = useState(true);
+  // Corporate engagement data fetched from GET /corporates/engagement-information.
+  // Separate from startupInfo because the engagement endpoint is a distinct resource.
+  const [corporateEngagementData, setCorporateEngagementData] = useState<Record<string, any> | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [picker, setPicker] = useState<PickerKind | null>(null);
   const [countryOptions, setCountryOptions] = useState<Country[]>(COUNTRIES);
@@ -437,6 +445,7 @@ export function EditProfileScreen({
   // so we don't need a separate in-card Save inside each tab.
   const customFormRefs = useRef<Record<string, CustomFormTabHandle | null>>({});
   const roleBasicTabRef = useRef<RoleBasicInfoTabHandle>(null);
+  const corporateEngagementRef = useRef<SecondaryTabHandle>(null);
   // {id, name} lookup for business models + product stages — fetched from
   // /global/custom so we can resolve the form's stored names to the numeric
   // IDs the sub-resource PATCHes require.
@@ -508,6 +517,7 @@ export function EditProfileScreen({
         : [];
       setOtherTechActive(otherTech.length > 0);
       setOtherTechText(otherTech.join(','));
+      setEngagementComplete(root?.connectWithStartups !== undefined);
     } catch (error) {
       setLoadError(
         error instanceof Error
@@ -582,6 +592,31 @@ export function EditProfileScreen({
       cancelled = true;
     };
   }, [token, accountType, investorSubtype]);
+
+  // Fetch corporate engagement data from its own endpoint when the user is
+  // a corporate. startupInfo doesn't include engagement fields.
+  useEffect(() => {
+    if (accountType !== 'corporate') return;
+    let cancelled = false;
+    authService
+      .getCorporateEngagement(token)
+      .then(res => {
+        if (cancelled) return;
+        const data = res?.data || res || null;
+        setCorporateEngagementData(data);
+        setEngagementComplete(
+          data != null &&
+            (data.connectWithStartups !== undefined ||
+              data.wantToConnectWithStartups !== undefined),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setCorporateEngagementData(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token, accountType]);
 
   useEffect(() => {
     if (!accountType) {
@@ -924,6 +959,7 @@ export function EditProfileScreen({
           : [];
         setOtherTechActive(otherTech.length > 0);
         setOtherTechText(otherTech.join(','));
+        // engagementComplete is managed by the dedicated getCorporateEngagement fetch.
       })
       .catch(error => {
         if (cancelled) return;
@@ -1008,7 +1044,7 @@ export function EditProfileScreen({
     };
   }, [basicInfo.country, basicInfo.state, stateOptions, baseUrl]);
 
-  const baseTabsForRole: EditProfileTab[] = buildEditTabs(
+  const baseTabsForRole = useMemo<EditProfileTab[]>(() => buildEditTabs(
     basicInfo,
     {
       ...startupInfo,
@@ -1018,11 +1054,25 @@ export function EditProfileScreen({
     startupForms,
     accountType || 'startup',
     investorSubtype,
-  );
+  ).map(tab => {
+    if (accountType !== 'corporate') return tab;
+    if (tab.key === 'basic') {
+      const complete =
+        Boolean(startupInfo?.companyName) &&
+        Boolean(startupInfo?.size) &&
+        Boolean(startupInfo?.briefDescription) &&
+        Boolean(startupInfo?.registeredCountryId);
+      return {...tab, status: complete ? ('complete' as const) : ('incomplete' as const)};
+    }
+    if (tab.key === 'engagement') {
+      return {...tab, status: (engagementComplete || engagementValid) ? ('complete' as const) : ('incomplete' as const)};
+    }
+    return tab;
+  }), [basicInfo, startupInfo, selectedIndustryIds, selectedTechnologyIds, startupForms, accountType, investorSubtype, engagementComplete, engagementValid]);
 
   // Tenant-defined custom profile forms appended after the built-in tabs.
   // Each form is one tab keyed by `custom:<uuid>` so we can dispatch by key.
-  const tabs: EditProfileTab[] = [
+  const tabs = useMemo<EditProfileTab[]>(() => [
     ...baseTabsForRole,
     ...customForms.map(form => ({
       key: `custom:${form.uuid}`,
@@ -1031,7 +1081,7 @@ export function EditProfileScreen({
         ? 'complete'
         : 'incomplete') as 'complete' | 'incomplete',
     })),
-  ];
+  ], [baseTabsForRole, customForms, customFormStatuses]);
 
   useEffect(() => {
     if (!tabs.some(tab => tab.key === activeTab) && tabs.length > 0) {
@@ -1074,6 +1124,7 @@ export function EditProfileScreen({
   const profileCompletion =
     backendCompletion != null ? backendCompletion : localCompletion;
 
+
   const updateBasic = <K extends keyof BasicInfoFormType>(
     key: K,
     value: BasicInfoFormType[K],
@@ -1094,7 +1145,7 @@ export function EditProfileScreen({
   // disabled state so users can't submit an incomplete form. Only enforces
   // tabs whose Save we own (basic/industry/financials); custom forms manage
   // their own completeness via [[customFormStatuses]].
-  const isActiveTabValid = () => {
+  const activeTabIsValid = useMemo(() => {
     if (activeTab === 'basic') {
       if (accountType && accountType !== 'startup') return roleFormValid;
       if (!basicInfo.companyName?.trim()) return false;
@@ -1142,8 +1193,11 @@ export function EditProfileScreen({
       }
       return true;
     }
+    if (activeTab === 'engagement') {
+      return engagementValid;
+    }
     return true;
-  };
+  }, [activeTab, accountType, roleFormValid, basicInfo, selectedIndustryIds, selectedTechnologyIds, financialInfo, engagementValid]);
 
   const refreshOngoingCommitments = async () => {
     if (!accountType) return;
@@ -1186,7 +1240,11 @@ export function EditProfileScreen({
       roleBasicTabRef.current?.triggerSubmit();
       return;
     }
-    if (!isActiveTabValid()) {
+    if (activeTab === 'engagement') {
+      await corporateEngagementRef.current?.triggerSave();
+      return;
+    }
+    if (!activeTabIsValid) {
       toast.error('Please fill all required fields.');
       return;
     }
@@ -2251,19 +2309,37 @@ export function EditProfileScreen({
           />
         ) : activeTab === 'engagement' ? (
           <CorporateEngagementTab
+            ref={corporateEngagementRef}
             token={token}
             primaryColor={primaryColor}
-            initialData={startupInfo}
-            reasonOptions={
-              Array.isArray(globalSetting?.features?.connect_with_startups)
-                ? globalSetting.features.connect_with_startups.map(
-                    (item: any, i: number) => ({
-                      id: item.id ?? item.value ?? i,
-                      name: String(item.name ?? item.label ?? item),
-                    }),
-                  )
-                : []
-            }
+            initialData={corporateEngagementData}
+            onValidChange={setEngagementValid}
+            onSaveSuccess={() => {
+              setEngagementComplete(true);
+              onProfileUpdated?.();
+              // Re-fetch engagement data so the form re-seeds with the
+              // server's persisted values after a successful save.
+              authService
+                .getCorporateEngagement(token)
+                .then(res => {
+                  const data = res?.data || res || null;
+                  setCorporateEngagementData(data);
+                })
+                .catch(() => {});
+              if (accountType) {
+                authService
+                  .getProfileCompletion(token, accountType, investorSubtype)
+                  .then(res => {
+                    const pct = (res?.data?.percentage ?? res?.percentage) as
+                      | number
+                      | string
+                      | undefined;
+                    const num = Number(pct);
+                    if (Number.isFinite(num)) setBackendCompletion(num);
+                  })
+                  .catch(() => {});
+              }
+            }}
           />
         ) : activeTab.startsWith('custom:') ? (
           (() => {
@@ -2325,6 +2401,7 @@ export function EditProfileScreen({
             (activeTab !== 'basic' &&
               activeTab !== 'industry' &&
               activeTab !== 'financials' &&
+              activeTab !== 'engagement' &&
               !isCustomTab) ||
             // For custom forms: block save until every required field is
             // filled. The status is tracked by CustomFormTab's
@@ -2332,7 +2409,7 @@ export function EditProfileScreen({
             (isCustomTab && !customFormStatuses[activeCustomUuid]) ||
             // For built-in tabs: block save until the tab's own required
             // fields are filled (companyName/companySize/country/...).
-            (!isCustomTab && !isActiveTabValid());
+            (!isCustomTab && !activeTabIsValid);
           return (
             <>
               {!isFirst ? (
