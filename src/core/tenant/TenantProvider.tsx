@@ -51,8 +51,11 @@ export const TenantProvider = ({children}: Props) => {
   ) => {
     try {
       const res = await fetchSettingStyle(url);
-      const branding = res?.data?.branding;
-      const settingsData = res?.data || {};
+      // Settings API returns a flat object (no `data` wrapper).
+      // Fall back to `res` itself so all keys resolve correctly.
+      const settingsData = res?.data ?? res ?? {};
+      const branding = settingsData?.branding;
+      console.log('settingsData', settingsData?.WhyDoYouWantToConnectWithStartupsOptions);
       setGlobalSetting({
         // Branding
         brandName: settingsData?.branding?.brandName,
@@ -89,7 +92,6 @@ export const TenantProvider = ({children}: Props) => {
         mentorMaxDomainAreas: settingsData?.mentorMaxDomainAreas,
         mentorMaxIndustries: settingsData?.mentorMaxIndustries,
         mentorMaxTechnologies: settingsData?.mentorMaxTechnologies,
-
         // Tenant-configurable enums
         CorporateSizes: Array.isArray(settingsData?.CorporateSizes)
           ? settingsData.CorporateSizes
@@ -97,6 +99,8 @@ export const TenantProvider = ({children}: Props) => {
         memberRoles: Array.isArray(settingsData?.memberRoles)
           ? settingsData.memberRoles
           : [],
+        WhyDoYouWantToConnectWithStartupsOptions: Array.isArray(settingsData?.WhyDoYouWantToConnectWithStartupsOptions)
+          ? settingsData.WhyDoYouWantToConnectWithStartupsOptions: [],
       });
       setTheme({
         primary: branding?.colors?.primary,

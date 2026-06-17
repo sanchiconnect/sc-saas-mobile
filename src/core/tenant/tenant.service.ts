@@ -30,7 +30,7 @@ export const fetchSettingStyle = async (
   baseUrl: string,
 ): Promise<ApiResponse> => {
   const response = await fetch(`${baseUrl}api/v1/public/global/settings`);
-  return response.json();
+   return response.json();
 };
 
 export const fetchFundingStages = async (
