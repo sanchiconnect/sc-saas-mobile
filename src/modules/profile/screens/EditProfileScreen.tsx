@@ -1055,6 +1055,18 @@ export function EditProfileScreen({
     accountType || 'startup',
     investorSubtype,
   ).map(tab => {
+    if (accountType === 'service_provider') {
+      if (tab.key === 'basic') {
+        const complete =
+          Boolean(startupInfo?.name) &&
+          Boolean(startupInfo?.providerType?.id ?? startupInfo?.serviceProviderType) &&
+          Boolean(startupInfo?.providerCategory?.id ?? startupInfo?.serviceProviderCategory) &&
+          Boolean(startupInfo?.briefDescription) &&
+          Boolean(startupInfo?.registeredCountryId);
+        return {...tab, status: complete ? ('complete' as const) : ('incomplete' as const)};
+      }
+      return tab;
+    }
     if (accountType !== 'corporate') return tab;
     if (tab.key === 'basic') {
       const complete =
