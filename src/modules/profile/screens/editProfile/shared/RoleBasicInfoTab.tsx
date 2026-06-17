@@ -1270,6 +1270,7 @@ const seedValues = (
     }
     if (field.key === 'provideCategoryId') {
       const nested =
+        data?.providerCategory?.id ??
         data?.provideCategory?.id ??
         data?.provideCategoryR?.id ??
         data?.provideCategoryId;

@@ -50,10 +50,9 @@ const TAB_LAYOUTS: Record<string, TabBlueprint[]> = {
   ],
   mentor: [BASIC, {key: 'domain_expertise', label: 'Domain Expertise'}],
   corporate: [BASIC, {key: 'engagement', label: 'Engagement'}],
-  service_provider: [
-    BASIC,
-    {key: 'industry', label: 'Industry / Vertical Focus'},
-  ],
+  // Industry/Technology is commented out in the web's PROFILE_NAV_LINKS —
+  // only Basic Information is shown for service providers.
+  service_provider: [BASIC],
   partner: [BASIC, {key: 'industry', label: 'Industry / Technology'}],
   // Frontend currently exposes ONLY Basic Information for program-office —
   // the Industry/Technology link is commented out in
