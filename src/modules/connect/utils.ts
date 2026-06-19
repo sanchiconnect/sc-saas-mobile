@@ -15,13 +15,16 @@ const firstString = (...vals: unknown[]): string => {
 
 // The USER uuid — what connect / wishlist / chat key on. Prefer the explicit
 // user-uuid fields; only fall back to the bare `uuid` (often the account uuid)
-// when nothing better exists.
+// when nothing better exists. The extra paths cover partner and service_provider
+// search responses which may nest the user uuid under `user.uuid` or `users[0]`.
 export const resolveUserUuid = (item: Record<string, any>): string =>
   firstString(
     item?.userUUID,
     item?.userUuid,
     item?.user?.uuid,
     item?.user?.userUUID,
+    item?.users?.[0]?.uuid,
+    item?.users?.[0]?.userUUID,
     item?.uuid,
     item?.id,
   );

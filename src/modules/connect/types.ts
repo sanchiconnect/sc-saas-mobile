@@ -44,10 +44,11 @@ export const ROLE_API_FRAGMENT: Record<
   corporates: {plural: 'corporates', singular: 'corporate'},
   mentors: {plural: 'mentors', singular: 'mentor'},
   'service-providers': {
-    plural: 'service-providers',
-    singular: 'service-provider',
+    plural: 'service_providers',
+    singular: 'service_provider',
+    profileInfoPath: 'service-provider-information',
   },
-  partners: {plural: 'partners', singular: 'partner'},
+  partners: {plural: 'partners', singular: 'partner', profileInfoPath: 'partners-information'},
   'program-office-team': {
     plural: 'program_office_members',
     singular: 'program_office',

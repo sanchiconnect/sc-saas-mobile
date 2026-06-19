@@ -35,9 +35,15 @@ export function useProfileDetail(
         if (cancelled) return;
         if (full && typeof full === 'object') {
           setProfile(prev => ({...prev, ...full}));
+          // Try every known shape across all roles. Partners and service
+          // providers may return `user` as a plain object (not an array),
+          // or surface the UUID directly on the root response.
           const fromProfile =
             full?.user?.[0]?.uuid ||
             full?.user?.[0]?.userUUID ||
+            full?.user?.uuid ||
+            full?.user?.userUUID ||
+            full?.users?.[0]?.uuid ||
             full?.userUUID ||
             full?.userUuid;
           if (fromProfile) {
