@@ -27,7 +27,7 @@ export type SocialLinks = {
 
 export type FinancialsForm = {
   fundingStage: string;
-  isRaisingFunds: boolean;
+  isRaisingFunds: boolean | null;
   targetFundraise: string;
   tentativeValuation: string;
   investmentMechanisms: string[];
@@ -111,7 +111,7 @@ export const EMPTY_SOCIAL: SocialLinks = {
 
 export const EMPTY_FINANCIALS: FinancialsForm = {
   fundingStage: '',
-  isRaisingFunds: false,
+  isRaisingFunds: null,
   targetFundraise: '',
   tentativeValuation: '',
   investmentMechanisms: [],

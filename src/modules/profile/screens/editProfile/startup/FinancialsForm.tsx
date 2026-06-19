@@ -233,13 +233,13 @@ export function FinancialsForm({
         <View style={styles.yesNoRow}>
           <YesNoButton
             label="Yes"
-            active={value.isRaisingFunds}
+            active={value.isRaisingFunds === true}
             primaryColor={primaryColor}
             onPress={() => onChange('isRaisingFunds', true)}
           />
           <YesNoButton
             label="No"
-            active={!value.isRaisingFunds}
+            active={value.isRaisingFunds === false}
             primaryColor={primaryColor}
             onPress={() => onChange('isRaisingFunds', false)}
           />
@@ -574,7 +574,7 @@ function YesNoButton({
   onPress,
 }: {
   label: string;
-  active: boolean;
+  active: boolean | null;
   primaryColor: string;
   onPress: () => void;
 }) {

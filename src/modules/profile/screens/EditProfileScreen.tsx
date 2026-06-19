@@ -304,9 +304,15 @@ const buildEditTabs = (
         startupInfo?.financials?.targetFundraise ||
         startupInfo?.financials?.tentativeValuation,
     ),
+    // elevatorPitch is also saved from the Basic Info tab so it must NOT
+    // be used here — otherwise Basic Info save turns the Pitch Deck dot green.
+    // Only an actual uploaded/linked pitch document counts as complete.
     pitch: Boolean(
-      startupInfo?.pitchDeck?.elevatorPitch ||
-        startupInfo?.pitchDeck?.pitchDocument,
+      startupInfo?.pitchDeck?.pitchDocument ||
+        startupInfo?.pitchDeck?.powerPitchUrl ||
+        startupInfo?.pitchDeck?.powerPitchDeckUrl ||
+        startupInfo?.pitchDeck?.uploadPitchUrl ||
+        startupInfo?.pitchDeck?.embedUrl,
     ),
   };
 
@@ -401,10 +407,14 @@ export function EditProfileScreen({
   // startup isActiveTabValid() gating so the shared SAVE button behaves
   // identically for every role.
   const [roleFormValid, setRoleFormValid] = useState(false);
+  // Tracks whether all mandatory documents have been uploaded.
+  // Updated by Documents component via onCompletionChange.
+  const [documentsComplete, setDocumentsComplete] = useState(false);
   const [engagementComplete, setEngagementComplete] = useState(false);
   // Tracks whether the corporate engagement form's required fields are filled.
-  // Updated live by CorporateEngagementTab via onValidChange.
-  const [engagementValid, setEngagementValid] = useState(true);
+  // Updated live by CorporateEngagementTab via onValidChange. Starts false
+  // so the dot is red until the form reports valid state from server data.
+  const [engagementValid, setEngagementValid] = useState(false);
   // Corporate engagement data fetched from GET /corporates/engagement-information.
   // Separate from startupInfo because the engagement endpoint is a distinct resource.
   const [corporateEngagementData, setCorporateEngagementData] = useState<Record<string, any> | null>(null);
@@ -444,6 +454,9 @@ export function EditProfileScreen({
   // diff each sub-resource (business models, pitch, product info, advisors,
   // founders) so we only PATCH endpoints whose data the user actually changed.
   const initialBasicInfoRef = useRef<BasicInfoFormType | null>(null);
+  // Tracks the isRaisingFunds value last loaded from the server so the save
+  // path only fires the toggle endpoint when the user actually changed it.
+  const serverIsRaisingFundsRef = useRef<boolean | null>(null);
   // Refs keyed by form uuid for each rendered CustomFormTab. Lets the
   // footer SAVE button drive the active custom form's save() imperatively
   // so we don't need a separate in-card Save inside each tab.
@@ -494,6 +507,7 @@ export function EditProfileScreen({
         ipCountry: productInfo?.ipCountry ?? null,
       };
       setFinancialInfo(extracted.financials);
+      serverIsRaisingFundsRef.current = extracted.financials.isRaisingFunds;
       setSelectedIndustryIds(
         Array.isArray(root?.startupIndustries)
           ? root.startupIndustries
@@ -929,6 +943,7 @@ export function EditProfileScreen({
         setBasicInfo(normalized);
         initialBasicInfoRef.current = normalized;
         setFinancialInfo(extracted.financials);
+        serverIsRaisingFundsRef.current = extracted.financials.isRaisingFunds;
         const root = raw?.data || raw || {};
         const productInfo = root?.productInformation || {};
         initialProductInfoRef.current = {
@@ -1066,7 +1081,11 @@ export function EditProfileScreen({
           Boolean(startupInfo?.providerType?.id ?? startupInfo?.serviceProviderType) &&
           Boolean(startupInfo?.providerCategory?.id ?? startupInfo?.serviceProviderCategory) &&
           Boolean(startupInfo?.briefDescription) &&
-          Boolean(startupInfo?.registeredCountryId);
+          Boolean(
+            startupInfo?.registeredCountryId ||
+            startupInfo?.registeredCountry?.id ||
+            startupInfo?.registeredCountry,
+          );
         return {...tab, status: complete ? ('complete' as const) : ('incomplete' as const)};
       }
       return tab;
@@ -1075,16 +1094,28 @@ export function EditProfileScreen({
     if (tab.key === 'basic') {
       const complete =
         Boolean(startupInfo?.companyName) &&
-        Boolean(startupInfo?.size) &&
+        Boolean(startupInfo?.size || startupInfo?.companySize) &&
         Boolean(startupInfo?.briefDescription) &&
-        Boolean(startupInfo?.registeredCountryId);
+        Boolean(
+          startupInfo?.registeredCountryId ||
+          startupInfo?.registeredCountry?.id ||
+          startupInfo?.registeredCountry,
+        );
       return {...tab, status: complete ? ('complete' as const) : ('incomplete' as const)};
     }
     if (tab.key === 'engagement') {
       return {...tab, status: (engagementComplete || engagementValid) ? ('complete' as const) : ('incomplete' as const)};
     }
     return tab;
-  }), [basicInfo, startupInfo, selectedIndustryIds, selectedTechnologyIds, startupForms, accountType, investorSubtype, engagementComplete, engagementValid]);
+  }).map(tab => {
+    // Pitch tab is complete only when both the pitch deck AND all mandatory
+    // documents are uploaded. Documents reports via onCompletionChange.
+    if (tab.key === 'pitch') {
+      const pitchFilled = tab.status === 'complete';
+      return {...tab, status: (pitchFilled && documentsComplete) ? ('complete' as const) : ('incomplete' as const)};
+    }
+    return tab;
+  }), [basicInfo, startupInfo, selectedIndustryIds, selectedTechnologyIds, startupForms, accountType, investorSubtype, engagementComplete, engagementValid, documentsComplete]);
 
   // Tenant-defined custom profile forms appended after the built-in tabs.
   // Each form is one tab keyed by `custom:<uuid>` so we can dispatch by key.
@@ -1319,16 +1350,19 @@ export function EditProfileScreen({
       } else if (activeTab === 'financials') {
         const payload = buildFinancialsPayload(financialInfo);
         await authService.updateFinancialsInformation(token, payload);
-        // Mirror the web flow: after financials PATCH, also flip the
-        // raising-funds master toggle and reload the persisted state so the
-        // form (and any commitments list) refreshes with the server's truth.
-        try {
-          await authService.toggleRaisingFunds(
-            token,
-            financialInfo.isRaisingFunds,
-          );
-        } catch {
-          // Toggle is best-effort — financials PATCH already succeeded.
+        // The /toggle/raising-funds endpoint is a pure flip — it doesn't
+        // accept a target value. Only call it when the user actually changed
+        // the Yes/No choice from what the server currently has.
+        const desiredRaising = financialInfo.isRaisingFunds;
+        if (
+          desiredRaising !== null &&
+          desiredRaising !== serverIsRaisingFundsRef.current
+        ) {
+          try {
+            await authService.toggleRaisingFunds(token, desiredRaising);
+          } catch {
+            // Toggle is best-effort — financials PATCH already succeeded.
+          }
         }
         // Silent reload — non-silent flips isLoading and replaces the form
         // with the centered spinner, which unmounts the ScrollView and
@@ -2287,6 +2321,7 @@ export function EditProfileScreen({
             <Documents
               token={token}
               primaryColor={primaryColor}
+              onCompletionChange={setDocumentsComplete}
               onUploaded={() => loadProfile({silent: true})}
             />
           </View>

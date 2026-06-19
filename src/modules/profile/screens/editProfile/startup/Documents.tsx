@@ -44,6 +44,9 @@ type Props = {
   token: string;
   primaryColor: string;
   onUploaded?: (response: any) => void;
+  // Fires whenever the mandatory-document completion state changes so the
+  // parent tab can update the pitch tab dot without a full profile reload.
+  onCompletionChange?: (allMandatoryUploaded: boolean) => void;
 };
 
 const MAX_FILE_SIZE_MB = 25;
@@ -123,7 +126,7 @@ const mergeSupportingDocuments = (
   return [...merged, ...remaining];
 };
 
-export function Documents({token, primaryColor, onUploaded}: Props) {
+export function Documents({token, primaryColor, onUploaded, onCompletionChange}: Props) {
   const [apiBaseUrl, setApiBaseUrl] = useState('');
   const [documentTypes, setDocumentTypes] = useState<DocumentType[]>([]);
   const [documents, setDocuments] = useState<SupportingDocument[]>([]);
@@ -184,6 +187,16 @@ export function Documents({token, primaryColor, onUploaded}: Props) {
     loadAll().catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
+
+  // Notify parent whenever mandatory-document completion changes.
+  useEffect(() => {
+    if (!onCompletionChange || documents.length === 0) return;
+    const mandatory = documents.filter(d => d.isMandatory);
+    const allUploaded =
+      mandatory.length > 0 &&
+      mandatory.every(d => Boolean(d.uuid) && Boolean(d.url?.objectUrl));
+    onCompletionChange(allUploaded);
+  }, [documents, onCompletionChange]);
 
   const openLink = (url?: string | null, fallback?: string) => {
     if (!url) {
