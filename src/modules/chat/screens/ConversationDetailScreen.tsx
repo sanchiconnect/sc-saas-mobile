@@ -497,13 +497,16 @@ export function ConversationDetailScreen({
       ? headerAvatar
       : `${logoBaseUrl}${headerAvatar}`
     : null;
-  // Meeting actions (Instant / Schedule) are only meaningful in 1:1
-  // chats — we need a specific other-user UUID to scope the meeting
-  // against. The toolbar simply doesn't render for group threads.
   const toast = useToast();
   const otherMember = findOtherMember(conversation, currentUserUuid);
+  // Show meeting toolbar only for "group"-type conversations (startup-to-startup
+  // private connections). "user"-type chats (mentor, admin) are excluded.
   const canScheduleMeeting =
-    isDirectChat(conversation) && Boolean(otherMember?.uuid);
+    conversation.conversationType === 'group' && Boolean(otherMember?.uuid);
+  // Instant meeting is hidden when meeting moderation is enabled on the tenant.
+  const canInstantMeeting =
+    canScheduleMeeting &&
+    !globalSetting?.features?.meeting_moderation_enabled;
   const [isCreatingInstant, setIsCreatingInstant] = useState(false);
   // Drives the ScheduleMeetingModal — same component the Meetings
   // screen uses, but locked to the other chat participant via the
@@ -1221,26 +1224,28 @@ export function ConversationDetailScreen({
           API calls (instant + scheduled) need a single otherUserUUID. */}
       {canScheduleMeeting ? (
         <View style={meetingActionStyles.row}>
-          <Pressable
-            onPress={handleInstantMeeting}
-            disabled={isCreatingInstant}
-            style={({pressed}) => [
-              meetingActionStyles.btn,
-              meetingActionStyles.btnGhost,
-              pressed && !isCreatingInstant && {opacity: 0.85},
-              isCreatingInstant && {opacity: 0.6},
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel="Setup instant meeting">
-            {isCreatingInstant ? (
-              <ActivityIndicator size="small" color="#475569" />
-            ) : (
-              <Icon name="video-outline" size={16} color="#475569" />
-            )}
-            <Text style={meetingActionStyles.btnGhostText}>
-              Setup Instant meeting
-            </Text>
-          </Pressable>
+          {canInstantMeeting ? (
+            <Pressable
+              onPress={handleInstantMeeting}
+              disabled={isCreatingInstant}
+              style={({pressed}) => [
+                meetingActionStyles.btn,
+                meetingActionStyles.btnGhost,
+                pressed && !isCreatingInstant && {opacity: 0.85},
+                isCreatingInstant && {opacity: 0.6},
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Setup instant meeting">
+              {isCreatingInstant ? (
+                <ActivityIndicator size="small" color="#475569" />
+              ) : (
+                <Icon name="video-outline" size={16} color="#475569" />
+              )}
+              <Text style={meetingActionStyles.btnGhostText}>
+                Setup Instant meeting
+              </Text>
+            </Pressable>
+          ) : null}
           <Pressable
             onPress={handleScheduleMeetingTap}
             style={({pressed}) => [

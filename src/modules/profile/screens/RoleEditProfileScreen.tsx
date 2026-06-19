@@ -1,13 +1,17 @@
 import React, {useContext, useEffect, useRef, useState} from 'react';
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
 
 import {AppButton} from '../../../core/components/AppButton';
 import {colors} from '../../../core/theme/colors';
@@ -136,6 +140,7 @@ export function RoleEditProfileScreen({
 }: Props) {
   const {theme, globalSetting, baseUrl} = useContext(TenantContext);
   const toast = useToast();
+  const insets = useSafeAreaInsets();
   const primaryColor = theme?.primary || colors.primary;
 
   // ── profile / role state ──────────────────────────────────────────────────
@@ -650,7 +655,10 @@ export function RoleEditProfileScreen({
   };
 
   return (
-    <View style={styles.page}>
+    <KeyboardAvoidingView
+      style={styles.page}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={0}>
       {/* ── Header ──────────────────────────────────────────────────────── */}
       <View style={styles.header}>
         <View style={styles.headerRow}>
@@ -861,16 +869,6 @@ export function RoleEditProfileScreen({
             token={token}
             primaryColor={primaryColor}
             initialData={profileData}
-            reasonOptions={
-              Array.isArray(globalSetting?.features?.connect_with_startups)
-                ? globalSetting.features.connect_with_startups.map(
-                    (item: any, i: number) => ({
-                      id: item.id ?? item.value ?? i,
-                      name: String(item.name ?? item.label ?? item),
-                    }),
-                  )
-                : []
-            }
             onSaveSuccess={onSecondaryTabSaveSuccess}
           />
         ) : activeTab === 'industry' ? (
@@ -921,7 +919,7 @@ export function RoleEditProfileScreen({
       </ScrollView>
 
       {/* ── Footer ──────────────────────────────────────────────────────── */}
-      <View style={styles.footer}>
+      <View style={[styles.footer, {paddingBottom: Math.max(insets.bottom, 8) + 16}]}>
         {!isFirst ? (
           <View style={styles.footerSlot}>
             <AppButton
@@ -1004,7 +1002,7 @@ export function RoleEditProfileScreen({
           </View>
         </View>
       </Modal>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

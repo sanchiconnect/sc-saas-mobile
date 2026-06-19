@@ -2,6 +2,8 @@ import React, {useContext, useEffect, useMemo, useRef, useState} from 'react';
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,6 +13,7 @@ import {
   View,
 } from 'react-native';
 import {launchImageLibrary} from 'react-native-image-picker';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
 
 import {AppButton} from '../../../core/components/AppButton';
 import {FormScrollView} from '../../../core/components/FormScrollView';
@@ -336,6 +339,7 @@ export function EditProfileScreen({
 }: EditProfileScreenProps) {
   const {theme, globalSetting, baseUrl} = useContext(TenantContext);
   const toast = useToast();
+  const insets = useSafeAreaInsets();
   const primaryColor = theme?.primary || colors.primary;
   const logoBaseUrl =
     globalSetting?.imgKitUrl || globalSetting?.assetsImgKitUrl;
@@ -1879,7 +1883,10 @@ export function EditProfileScreen({
   }
 
   return (
-    <View style={styles.page}>
+    <KeyboardAvoidingView
+      style={styles.page}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={0}>
       <View style={styles.headerBlock}>
         <View style={styles.header}>
           <Pressable
@@ -2392,7 +2399,7 @@ export function EditProfileScreen({
 
       {renderPicker()}
 
-      <View style={styles.footer}>
+      <View style={[styles.footer, {paddingBottom: Math.max(insets.bottom, 8) + 16}]}>
         {(() => {
           const currentIndex = tabs.findIndex(tab => tab.key === activeTab);
           const isFirst = currentIndex <= 0;
@@ -2461,7 +2468,7 @@ export function EditProfileScreen({
           );
         })()}
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
