@@ -382,57 +382,61 @@ export function MyMeetingsScreen({token, currentUserName, onBack}: Props) {
               </View>
 
               <View style={styles.gridWrap}>
-                {monthCells.map((cell, i) => {
-                  const dayMeetings = meetingsByDay[cell.iso] || [];
-                  const isSelected = selectedDayIso === cell.iso;
-                  const isToday =
-                    cell.date.getFullYear() === today.getFullYear() &&
-                    cell.date.getMonth() === today.getMonth() &&
-                    cell.date.getDate() === today.getDate();
-                  return (
-                    <Pressable
-                      key={`${cell.iso}-${i}`}
-                      onPress={() =>
-                        setSelectedDayIso(
-                          isSelected ? null : cell.iso,
-                        )
-                      }
-                      style={[
-                        styles.gridCell,
-                        isToday && {backgroundColor: '#dcfce7'},
-                        isSelected && {
-                          backgroundColor: `${primaryColor}1a`,
-                          borderColor: primaryColor,
-                          borderWidth: 1,
-                        },
-                      ]}>
-                      <Text
-                        style={[
-                          styles.gridCellDay,
-                          !cell.inMonth && styles.gridCellDayMuted,
-                          isSelected && {
-                            color: primaryColor,
-                            fontWeight: '800',
-                          },
-                        ]}>
-                        {cell.date.getDate()}
-                      </Text>
-                      {dayMeetings.length > 0 ? (
-                        <View style={styles.dotsRow}>
-                          {dayMeetings.slice(0, 3).map((_, j) => (
-                            <View
-                              key={j}
-                              style={[
-                                styles.dot,
-                                {backgroundColor: '#f97316'},
-                              ]}
-                            />
-                          ))}
-                        </View>
-                      ) : null}
-                    </Pressable>
-                  );
-                })}
+                {Array.from({length: 6}, (_, weekIdx) => (
+                  <View key={weekIdx} style={styles.gridRow}>
+                    {monthCells.slice(weekIdx * 7, weekIdx * 7 + 7).map((cell, i) => {
+                      const dayMeetings = meetingsByDay[cell.iso] || [];
+                      const isSelected = selectedDayIso === cell.iso;
+                      const isToday =
+                        cell.date.getFullYear() === today.getFullYear() &&
+                        cell.date.getMonth() === today.getMonth() &&
+                        cell.date.getDate() === today.getDate();
+                      return (
+                        <Pressable
+                          key={`${cell.iso}-${i}`}
+                          onPress={() =>
+                            setSelectedDayIso(
+                              isSelected ? null : cell.iso,
+                            )
+                          }
+                          style={[
+                            styles.gridCell,
+                            isToday && {backgroundColor: '#dcfce7'},
+                            isSelected && {
+                              backgroundColor: `${primaryColor}1a`,
+                              borderColor: primaryColor,
+                              borderWidth: 1,
+                            },
+                          ]}>
+                          <Text
+                            style={[
+                              styles.gridCellDay,
+                              !cell.inMonth && styles.gridCellDayMuted,
+                              isSelected && {
+                                color: primaryColor,
+                                fontWeight: '800',
+                              },
+                            ]}>
+                            {cell.date.getDate()}
+                          </Text>
+                          {dayMeetings.length > 0 ? (
+                            <View style={styles.dotsRow}>
+                              {dayMeetings.slice(0, 3).map((_, j) => (
+                                <View
+                                  key={j}
+                                  style={[
+                                    styles.dot,
+                                    {backgroundColor: '#f97316'},
+                                  ]}
+                                />
+                              ))}
+                            </View>
+                          ) : null}
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                ))}
               </View>
 
               {selectedDayIso && selectedDayMeetings.length > 0 ? (
@@ -750,25 +754,20 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   gridWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    // Match the weekday header's horizontal padding so each 1/7 cell lines up
-    // directly under its Sun–Sat label.
     paddingHorizontal: 8,
     paddingVertical: 4,
+  },
+  gridRow: {
+    flexDirection: 'row',
   },
   gridCell: {
     alignItems: 'center',
     borderRadius: 8,
+    flex: 1,
     gap: 4,
-    // Only vertical margin — a horizontal margin on top of a 1/7 width makes
-    // the seven cells overflow the row and wrap to six per line. The column
-    // gap is instead absorbed by each cell centering its content. Mirrors the
-    // core CalendarPicker grid.
     marginVertical: 2,
     minHeight: 52,
     paddingTop: 6,
-    width: `${100 / 7}%`,
   },
   gridCellDay: {
     color: '#0f172a',
