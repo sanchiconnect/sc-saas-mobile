@@ -1,13 +1,17 @@
 import React, {useContext, useEffect, useRef, useState} from 'react';
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
 
 import {AppButton} from '../../../core/components/AppButton';
 import {colors} from '../../../core/theme/colors';
@@ -136,6 +140,7 @@ export function RoleEditProfileScreen({
 }: Props) {
   const {theme, globalSetting, baseUrl} = useContext(TenantContext);
   const toast = useToast();
+  const insets = useSafeAreaInsets();
   const primaryColor = theme?.primary || colors.primary;
 
   // ── profile / role state ──────────────────────────────────────────────────
@@ -429,6 +434,51 @@ export function RoleEditProfileScreen({
 
   // ── tab dot completion (from loaded profile data) ─────────────────────────
 
+  // Derives basic-tab completion from server data so the dot is correct on
+  // first load (before the user has touched any field). roleFormValid takes
+  // over once the form fires onValidityChange.
+  const basicTabComplete = (d: Record<string, any> | null): boolean => {
+    if (!d) return false;
+    const hasCountry = Boolean(
+      d.registeredCountryId ||
+      d.registeredCountry?.id ||
+      d.registeredCountry,
+    );
+    switch (accountType) {
+      case 'corporate':
+        return (
+          Boolean(d.companyName) &&
+          Boolean(d.size || d.companySize) &&
+          Boolean(d.briefDescription) &&
+          hasCountry
+        );
+      case 'service_provider':
+        return (
+          Boolean(d.name) &&
+          Boolean(d.providerType?.id || d.serviceProviderType) &&
+          Boolean(d.providerCategory?.id || d.serviceProviderCategory) &&
+          Boolean(d.briefDescription) &&
+          hasCountry
+        );
+      case 'partner':
+        return Boolean(d.name) && Boolean(d.partnerType) && hasCountry;
+      case 'investor':
+        return (
+          Boolean(d.name || d.companyName) &&
+          Boolean(d.organizationType || d.organization_type) &&
+          hasCountry
+        );
+      case 'mentor':
+        return (
+          Boolean(d.name || d.fullName) &&
+          Boolean(d.briefDescription || d.bio) &&
+          hasCountry
+        );
+      default:
+        return Boolean(d.name || d.companyName) && hasCountry;
+    }
+  };
+
   const secondaryTabComplete = (key: string): boolean => {
     if (accountType === 'investor') {
       if (key === 'investment_details') return investorInvestmentsValid;
@@ -445,7 +495,12 @@ export function RoleEditProfileScreen({
           (Array.isArray(d.domainAreasPrimary) && d.domainAreasPrimary.length > 0)
         );
       case 'engagement':
-        return d.connectWithStartups !== undefined && d.connectWithStartups !== null;
+        // Require actual selections — not just the field being present.
+        return (
+          (Array.isArray(d.wantToConnectWithStartups) && d.wantToConnectWithStartups.length > 0) ||
+          (Array.isArray(d.connectionRequirements) && d.connectionRequirements.length > 0) ||
+          (typeof d.connectWithStartups === 'boolean')
+        );
       case 'investment_details':
       case 'investment_thesis': {
         const inv = d.investmentDetails || d;
@@ -456,7 +511,9 @@ export function RoleEditProfileScreen({
       case 'industry':
         return (
           (Array.isArray(d.sectoralInterestIds) && d.sectoralInterestIds.length > 0) ||
-          (Array.isArray(d.industryDomainIds) && d.industryDomainIds.length > 0)
+          (Array.isArray(d.industryDomainIds) && d.industryDomainIds.length > 0) ||
+          (Array.isArray(d.partnerIndustries) && d.partnerIndustries.length > 0) ||
+          (Array.isArray(d.industries) && d.industries.length > 0)
         );
       default:
         return false;
@@ -470,7 +527,9 @@ export function RoleEditProfileScreen({
         ...t,
         status: (
           t.key === 'basic'
-            ? roleFormValid
+            // roleFormValid drives live form state; fall back to server data
+            // for the initial render so the dot is correct before any interaction.
+            ? (roleFormValid || basicTabComplete(profileData))
             : secondaryTabComplete(t.key)
         ) ? 'complete' as const : 'incomplete' as const,
       }))
@@ -650,7 +709,10 @@ export function RoleEditProfileScreen({
   };
 
   return (
-    <View style={styles.page}>
+    <KeyboardAvoidingView
+      style={styles.page}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={0}>
       {/* ── Header ──────────────────────────────────────────────────────── */}
       <View style={styles.header}>
         <View style={styles.headerRow}>
@@ -861,16 +923,6 @@ export function RoleEditProfileScreen({
             token={token}
             primaryColor={primaryColor}
             initialData={profileData}
-            reasonOptions={
-              Array.isArray(globalSetting?.features?.connect_with_startups)
-                ? globalSetting.features.connect_with_startups.map(
-                    (item: any, i: number) => ({
-                      id: item.id ?? item.value ?? i,
-                      name: String(item.name ?? item.label ?? item),
-                    }),
-                  )
-                : []
-            }
             onSaveSuccess={onSecondaryTabSaveSuccess}
           />
         ) : activeTab === 'industry' ? (
@@ -921,7 +973,7 @@ export function RoleEditProfileScreen({
       </ScrollView>
 
       {/* ── Footer ──────────────────────────────────────────────────────── */}
-      <View style={styles.footer}>
+      <View style={[styles.footer, {paddingBottom: Math.max(insets.bottom, 8) + 16}]}>
         {!isFirst ? (
           <View style={styles.footerSlot}>
             <AppButton
@@ -1004,7 +1056,7 @@ export function RoleEditProfileScreen({
           </View>
         </View>
       </Modal>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

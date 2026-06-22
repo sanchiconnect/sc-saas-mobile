@@ -358,10 +358,11 @@ export const extractProfile = (
         financialsRoot?.fundingStageName,
       ),
     ),
-    isRaisingFunds: asBoolean(
-      pickFirst(root?.isRaisingFunds, financialsRoot?.isRaisingFunds),
-      false,
-    ),
+    isRaisingFunds: (() => {
+      const raw = pickFirst(root?.isRaisingFunds, financialsRoot?.isRaisingFunds);
+      if (raw === null || raw === undefined) return null;
+      return asBoolean(raw, false);
+    })(),
     targetFundraise: asString(financialsRoot?.targetFundraise),
     tentativeValuation: asString(financialsRoot?.tentativeValuation),
     investmentMechanisms: asIdentifierArray(

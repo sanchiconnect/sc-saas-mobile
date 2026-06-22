@@ -202,12 +202,17 @@ export function ScheduleMeetingModal({
   const [isLoadingSlots, setIsLoadingSlots] = useState(false);
 
   // Reset when the modal opens — preset user + defaults.
+  // Deps use primitive values (uuid/name strings) instead of the presetUser
+  // object so keyboard show/hide re-renders (which recreate the object
+  // reference) don't retrigger the reset and wipe in-progress form state.
+  const presetUuid = presetUser?.uuid;
+  const presetName = presetUser?.name;
   useEffect(() => {
     if (!visible) return;
-    setSelectedUser(presetUser || null);
+    setSelectedUser(presetUuid ? {uuid: presetUuid, name: presetName || ''} : null);
     setMeetingTitle(
-      presetUser && currentUserName
-        ? `${currentUserName} <> ${presetUser.name}`
+      presetUuid && presetName && currentUserName
+        ? `${currentUserName} <> ${presetName}`
         : '',
     );
     setAgenda('');
@@ -220,7 +225,7 @@ export function ScheduleMeetingModal({
     setExternalUrl('');
     setSlots([]);
     setAvailability(null);
-  }, [visible, presetUser, currentUserName]);
+  }, [visible, presetUuid, presetName, currentUserName]);
 
   // Fetch reviewers list when no preset user (matches web's
   // `getReviewers()`).
@@ -271,7 +276,9 @@ export function ScheduleMeetingModal({
     };
   }, [visible, selectedUser?.uuid, selectedUser?.name, currentUserName, token]);
 
-  // Refetch date-specific slots whenever target user / date changes.
+  // Refetch date-specific slots whenever target user / date / duration changes.
+  // Duration is included so slot boundaries (step size) update immediately
+  // when the user taps a different duration chip.
   useEffect(() => {
     if (
       !visible ||
@@ -284,11 +291,6 @@ export function ScheduleMeetingModal({
     }
     let cancelled = false;
     setIsLoadingSlots(true);
-    // When the picked date is TODAY, hide slots whose start time has
-    // already passed — snapping "now" up to the next clean step
-    // boundary so the first surfaced slot is always a valid future
-    // start time. For future dates `minStart` stays 0 and every slot
-    // in the working window is offered.
     const durationMins = Number(duration) || 30;
     const minStart =
       date === todayIso()
@@ -305,29 +307,23 @@ export function ScheduleMeetingModal({
       .getCalendarAvailability(token, selectedUser.uuid, date)
       .then(s => {
         if (cancelled) return;
-        // Drop server-returned slots whose start has already passed
-        // today. For future dates `minStart === 0` keeps everything.
         const futureServerSlots = s.filter(
           x => hhmmToMinutes(to24Hour(x.timeFrom)) >= minStart,
         );
-        // Fall back to locally-generated slots when the server's
-        // date-specific response is empty / unparseable (same approach
-        // the web's generateTimeSlotsWithAMPM uses).
         const finalSlots =
           futureServerSlots.length > 0
             ? futureServerSlots
             : generateLocalSlots(durationMins, minStart);
         setSlots(finalSlots);
-        // Clear stale time when slot set changes.
+        // Clear stale selection when new slot boundaries don't include it.
         setTimeFrom(prev =>
           finalSlots.some(x => to24Hour(x.timeFrom) === prev) ? prev : '',
         );
       })
       .catch(() => {
         if (!cancelled) {
-          // Network / parse failure — still surface local future slots
-          // so the user can submit rather than getting stuck.
           setSlots(generateLocalSlots(durationMins, minStart));
+          setTimeFrom('');
         }
       })
       .finally(() => {
@@ -336,7 +332,19 @@ export function ScheduleMeetingModal({
     return () => {
       cancelled = true;
     };
-  }, [visible, selectedUser?.uuid, date, availability?.availabilityHours, token]);
+  }, [visible, selectedUser?.uuid, date, duration, availability?.availabilityHours, token]);
+
+  // Computed end time — derived from the selected slot's timeTo when
+  // available, otherwise timeFrom + selected duration.
+  const computedTimeTo = timeFrom
+    ? (() => {
+        const tf = to24Hour(timeFrom);
+        const matched = slots.find(s => to24Hour(s.timeFrom) === tf);
+        return to24Hour(
+          matched?.timeTo || addMinutes24h(tf, Number(duration) || 30),
+        );
+      })()
+    : '';
 
   const isUnavailable =
     availability?.availabilityHours === AVAILABILITY.TEMPORARY_UNAVAILABLE;
@@ -574,6 +582,11 @@ export function ScheduleMeetingModal({
                   </Text>
                   <Icon name="chevron-down" size={20} color="#64748b" />
                 </Pressable>
+                {timeFrom && computedTimeTo ? (
+                  <Text style={styles.timeRangeHint}>
+                    Until {to12Hour(computedTimeTo)}
+                  </Text>
+                ) : null}
               </View>
             </View>
 
@@ -1037,5 +1050,10 @@ const styles = StyleSheet.create({
     fontSize: 13,
     paddingVertical: 12,
     textAlign: 'center',
+  },
+  timeRangeHint: {
+    color: '#64748b',
+    fontSize: 11,
+    marginTop: 4,
   },
 });

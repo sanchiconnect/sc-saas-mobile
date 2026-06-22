@@ -112,7 +112,8 @@ const buildProfileCompletenessPath = (
   return `api/v1/${plural}/profile_completeness`;
 };
 const FINANCIALS_INFORMATION_PATH = 'api/v1/startups/financials-information';
-const RAISING_FUNDS_TOGGLE_PATH = 'api/v1/startups/toggle/raising-funds';
+const RAISING_FUNDS_PATH = 'api/v1/startups/toggle/raising-funds';
+const NOT_RAISING_FUNDS_PATH = 'api/v1/startups/toggle/not-raising-funds';
 const ONGOING_COMMITMENTS_PATH = 'api/v1/startups/ongoing-commitments';
 const INDUSTRY_TECHNOLOGY_BUSINESS_PATH =
   'api/v1/startups/industry-technology-business';
@@ -1208,15 +1209,15 @@ export const authService = {
 
   async toggleRaisingFunds(
     token: string,
-    isRaisingFunds: boolean,
+    isRaisingFunds: boolean | null,
   ): Promise<ApiResponse> {
     const baseUrl = await resolveBaseUrl();
+    const path = isRaisingFunds ? RAISING_FUNDS_PATH : NOT_RAISING_FUNDS_PATH;
     return requestJson<ApiResponse>(
-      RAISING_FUNDS_TOGGLE_PATH,
+      path,
       {
         method: 'PATCH',
         headers: getAuthHeader(token),
-        body: JSON.stringify({isRaisingFunds}),
       },
       baseUrl,
     );
