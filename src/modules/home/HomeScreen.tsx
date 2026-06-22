@@ -13,6 +13,7 @@ import {
 
 import {AuthSession} from '../auth/models/auth.models';
 import {TenantContext} from '../../core/tenant/TenantProvider';
+import {useToast} from '../../core/toast/ToastProvider';
 import {Icon} from '../../core/components/Icon';
 import {Tooltip} from '../../core/components/Tooltip';
 import {APPROVAL_REQUIRED_MESSAGE} from '../community/constants';
@@ -88,19 +89,20 @@ export function HomeScreen({
   // the numbers reflect the latest state without polling.
   const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
   const [pendingConnectionsCount, setPendingConnectionsCount] = useState(0);
+  const [connectionsInitialTab, setConnectionsInitialTab] = useState<
+    'active' | 'pending'
+  >('active');
   // Community Wall create-post composer + a bump key the feed watches to
   // reload after a successful post.
   const [isComposerOpen, setIsComposerOpen] = useState(false);
   const [communityRefreshKey, setCommunityRefreshKey] = useState(0);
   const [connectProfileActive, setConnectProfileActive] = useState(false);
 
-  // Tell App.tsx to hide the floating feedback FAB while the user is inside
-  // a chat thread — otherwise it overlaps the send button.
+  // Show the feedback FAB only on the dashboard screen.
   useEffect(() => {
-    const suppress =
-      selectedMenu.section === 'chat' && activeConversation !== null;
+    const suppress = selectedMenu.section !== 'dashboard';
     onSuppressFeedbackFab?.(suppress);
-  }, [selectedMenu.section, activeConversation, onSuppressFeedbackFab]);
+  }, [selectedMenu.section, onSuppressFeedbackFab]);
 
   // Drawer badge counts. The /notifications/count endpoint already ships
   // unreadMessageCount + pendingConnectionCount + sentConnectionCount in a
@@ -157,6 +159,7 @@ export function HomeScreen({
   }, [isMenuOpen, selectedMenu.section, activeConversation]);
 
   const {globalSetting, theme} = useContext(TenantContext);
+  const toast = useToast();
 
   const loadSummary = async (token: string) => {
     const next = await dashboardService.fetchSummary(token);
@@ -593,6 +596,7 @@ export function HomeScreen({
           currentUserUuid={summary?.userUuid || session.user.uuid || session.user.id}
           currentUserName={session.user.fullName}
           currentUserAccountType={summary?.accountType}
+          initialTab={connectionsInitialTab}
           onOpenChat={conversation => {
             setActiveConversation(conversation);
             setSelectedMenu({section: 'chat'});
@@ -746,6 +750,7 @@ export function HomeScreen({
           onPosted={() => {
             setIsComposerOpen(false);
             setCommunityRefreshKey(key => key + 1);
+            toast.success('Post created successfully!');
           }}
         />
       </View>
@@ -923,8 +928,19 @@ export function HomeScreen({
               canToggleStatus={summary?.canToggleStatus}
               isApproved={Boolean(summary?.isApproved)}
               pendingConnectionsCount={pendingConnectionsCount}
-              onViewAllConnections={() => setSelectedMenu({section: 'connections'})}
+              onViewAllConnections={() => {
+                setConnectionsInitialTab('active');
+                setSelectedMenu({section: 'connections'});
+              }}
+              onPendingConnectionsPress={() => {
+                setConnectionsInitialTab('pending');
+                setSelectedMenu({section: 'connections'});
+              }}
               onConnectionChatPress={() => setSelectedMenu({section: 'chat'})}
+              onPosted={() => {
+                setCommunityRefreshKey(key => key + 1);
+                setSelectedMenu({section: 'community'});
+              }}
             />
           </>
         ) : null}

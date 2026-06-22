@@ -235,6 +235,9 @@ const styles = StyleSheet.create({
     // like "Personal information saved." aren't truncated by an overly
     // narrow minimum width.
     zIndex: 1000,
+    // Android needs elevation to render above sibling Views — zIndex alone
+    // does not control stacking order on Android.
+    elevation: 999,
   },
   toast: {
     flexDirection: 'row',

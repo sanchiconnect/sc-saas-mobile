@@ -4,6 +4,7 @@ import {
   Alert,
   Dimensions,
   Image,
+  Linking,
   Modal,
   Pressable,
   StyleSheet,
@@ -76,6 +77,34 @@ const stripHtml = (html?: string): string => {
     .replace(/&#39;/g, "'")
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+};
+
+const URL_REGEX = /(https?:\/\/[^\s]+)/g;
+
+const renderTextWithLinks = (
+  text: string,
+  linkStyle: object,
+  textStyle: object,
+) => {
+  const parts = text.split(URL_REGEX);
+  return parts.map((part, i) => {
+    if (URL_REGEX.test(part)) {
+      URL_REGEX.lastIndex = 0;
+      return (
+        <Text
+          key={i}
+          style={linkStyle}
+          onPress={() => Linking.openURL(part).catch(() => {})}>
+          {part}
+        </Text>
+      );
+    }
+    return (
+      <Text key={i} style={textStyle}>
+        {part}
+      </Text>
+    );
+  });
 };
 
 // Short "x ago" relative time. Falls back to the raw value if unparseable.
@@ -212,15 +241,10 @@ export function CommunityPostCard({
     if (readOnly || locked || !trimmed || isPosting) return;
     setIsPosting(true);
     try {
-      const res = await communityService.addComment(token, post.uuid, trimmed);
+      await communityService.addComment(token, post.uuid, trimmed);
       setComment('');
-      setCommentCount(prev => prev + 1);
-      // Show the new comment immediately if the thread is open.
-      if (res?.data) setComments(prev => [res.data as CommunityComment, ...prev]);
-      if (!expanded) {
-        setExpanded(true);
-        if (!commentsLoaded) loadComments();
-      }
+      setExpanded(true);
+      await loadComments();
     } catch {
       // Keep the draft so the user can retry on failure.
     } finally {
@@ -519,8 +543,12 @@ export function CommunityPostCard({
         </Modal>
       ) : null}
 
-      {/* Body text */}
-      {text ? <Text style={styles.bodyText}>{text}</Text> : null}
+      {/* Body text — URLs rendered as tappable links */}
+      {text ? (
+        <Text style={styles.bodyText}>
+          {renderTextWithLinks(text, styles.linkText, styles.bodyText)}
+        </Text>
+      ) : null}
 
       {/* Attached image(s) */}
       {imageUris.map(uri => (
@@ -1090,6 +1118,12 @@ const styles = StyleSheet.create({
     fontSize: typography.bodyLg,
     lineHeight: 22,
     marginTop: spacing.md,
+  },
+  linkText: {
+    color: '#2563eb',
+    fontSize: typography.bodyLg,
+    lineHeight: 22,
+    textDecorationLine: 'underline',
   },
   imageCard: {
     backgroundColor: '#ffffff',
