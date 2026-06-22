@@ -49,6 +49,8 @@ type Props = {
   // wires this to navigate into the chat detail with a synthesized
   // Conversation object — same flow as opening a chat from the list.
   onOpenChat?: (conversation: Conversation) => void;
+  // Open directly on a specific tab (e.g. 'pending' from the dashboard badge).
+  initialTab?: TabKey;
 };
 
 type TabKey = 'active' | 'pending' | 'rejected';
@@ -265,6 +267,7 @@ export function ConnectionsScreen({
   currentUserName,
   currentUserAccountType,
   onOpenChat,
+  initialTab,
 }: Props) {
   const {theme, globalSetting} = useContext(TenantContext);
   const primaryColor = theme?.primary || colors.primary;
@@ -272,7 +275,7 @@ export function ConnectionsScreen({
     globalSetting?.imgKitUrl || globalSetting?.assetsImgKitUrl || '';
   const toast = useToast();
 
-  const [activeTab, setActiveTab] = useState<TabKey>('active');
+  const [activeTab, setActiveTab] = useState<TabKey>(initialTab ?? 'active');
   const [pendingSubTab, setPendingSubTab] =
     useState<PendingSubTab>('received');
   // Rejected has All / Received / Sent sub-tabs. The backend ships them as

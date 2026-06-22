@@ -65,6 +65,7 @@ type DashboardContentProps = {
   isApproved?: boolean;
   pendingConnectionsCount?: number;
   onViewAllConnections?: () => void;
+  onPendingConnectionsPress?: () => void;
   onConnectionChatPress?: () => void;
 };
 
@@ -214,6 +215,7 @@ function MyConnectionsSection({
   primaryColor,
   pendingConnectionsCount,
   onViewAll,
+  onPendingPress,
   onChatPress,
 }: {
   token: string;
@@ -221,6 +223,7 @@ function MyConnectionsSection({
   primaryColor: string;
   pendingConnectionsCount?: number;
   onViewAll?: () => void;
+  onPendingPress?: () => void;
   onChatPress?: () => void;
 }) {
   const [connections, setConnections] = useState<Connection[]>([]);
@@ -279,14 +282,21 @@ function MyConnectionsSection({
           />
         </View>
         {(pendingConnectionsCount ?? 0) > 0 ? (
-          <View style={connStyles.pendingBadgeRow}>
+          <Pressable
+            style={({pressed}) => [
+              connStyles.pendingBadgeRow,
+              pressed && {opacity: 0.6},
+            ]}
+            onPress={onPendingPress}
+            accessibilityRole="button"
+            accessibilityLabel="View pending connection requests">
             <Text style={connStyles.pendingLabel}>Pending Requests</Text>
             <View style={connStyles.pendingBadge}>
               <Text style={connStyles.pendingBadgeText}>
                 {pendingConnectionsCount}
               </Text>
             </View>
-          </View>
+          </Pressable>
         ) : null}
       </View>
 
@@ -385,6 +395,7 @@ export function DashboardContent({
   isApproved = true,
   pendingConnectionsCount,
   onViewAllConnections,
+  onPendingConnectionsPress,
   onConnectionChatPress,
 }: DashboardContentProps) {
   const progress = Math.max(0, Math.min(profileCompletion, 100));
@@ -610,6 +621,7 @@ export function DashboardContent({
         primaryColor={primaryColor}
         pendingConnectionsCount={pendingConnectionsCount}
         onViewAll={onViewAllConnections}
+        onPendingPress={onPendingConnectionsPress}
         onChatPress={onConnectionChatPress}
       />
 

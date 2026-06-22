@@ -88,6 +88,9 @@ export function HomeScreen({
   // the numbers reflect the latest state without polling.
   const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
   const [pendingConnectionsCount, setPendingConnectionsCount] = useState(0);
+  const [connectionsInitialTab, setConnectionsInitialTab] = useState<
+    'active' | 'pending'
+  >('active');
   // Community Wall create-post composer + a bump key the feed watches to
   // reload after a successful post.
   const [isComposerOpen, setIsComposerOpen] = useState(false);
@@ -593,6 +596,7 @@ export function HomeScreen({
           currentUserUuid={summary?.userUuid || session.user.uuid || session.user.id}
           currentUserName={session.user.fullName}
           currentUserAccountType={summary?.accountType}
+          initialTab={connectionsInitialTab}
           onOpenChat={conversation => {
             setActiveConversation(conversation);
             setSelectedMenu({section: 'chat'});
@@ -923,7 +927,14 @@ export function HomeScreen({
               canToggleStatus={summary?.canToggleStatus}
               isApproved={Boolean(summary?.isApproved)}
               pendingConnectionsCount={pendingConnectionsCount}
-              onViewAllConnections={() => setSelectedMenu({section: 'connections'})}
+              onViewAllConnections={() => {
+                setConnectionsInitialTab('active');
+                setSelectedMenu({section: 'connections'});
+              }}
+              onPendingConnectionsPress={() => {
+                setConnectionsInitialTab('pending');
+                setSelectedMenu({section: 'connections'});
+              }}
               onConnectionChatPress={() => setSelectedMenu({section: 'chat'})}
             />
           </>
