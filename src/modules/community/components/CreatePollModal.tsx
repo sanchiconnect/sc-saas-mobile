@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useRef, useState} from 'react';
 import {
   KeyboardAvoidingView,
   Modal,
@@ -54,6 +54,7 @@ export function CreatePollModal({
   );
   const [timeLine, setTimeLine] = useState(initial?.timeLine ?? 'one_day');
   const [isDurationOpen, setIsDurationOpen] = useState(false);
+  const scrollRef = useRef<ScrollView>(null);
 
   const filledOptions = options.map(o => o.trim()).filter(Boolean);
   const canSave = question.trim().length > 0 && filledOptions.length >= MIN_OPTIONS;
@@ -106,6 +107,7 @@ export function CreatePollModal({
           <View style={styles.divider} />
 
           <ScrollView
+            ref={scrollRef}
             style={styles.body}
             contentContainerStyle={styles.bodyContent}
             keyboardShouldPersistTaps="handled"
@@ -167,7 +169,16 @@ export function CreatePollModal({
             </Text>
             <Pressable
               style={styles.select}
-              onPress={() => setIsDurationOpen(open => !open)}
+              onPress={() => {
+                const next = !isDurationOpen;
+                setIsDurationOpen(next);
+                if (next) {
+                  setTimeout(
+                    () => scrollRef.current?.scrollToEnd({animated: true}),
+                    200,
+                  );
+                }
+              }}
               accessibilityRole="button"
               accessibilityLabel="Select poll duration">
               <Text style={styles.selectText}>{durationLabel}</Text>
@@ -343,7 +354,6 @@ const styles = StyleSheet.create({
     borderRadius: radii.md,
     borderWidth: 1,
     marginTop: spacing.xs,
-    overflow: 'hidden',
   },
   dropdownItem: {
     alignItems: 'center',

@@ -15,6 +15,7 @@ import {RichEditor, actions} from 'react-native-pell-rich-editor';
 
 import {Icon} from '../../../core/components/Icon';
 import {Tooltip} from '../../../core/components/Tooltip';
+import {useToast} from '../../../core/toast/ToastProvider';
 import {
   CreatePollModal,
   type PollDraft,
@@ -59,6 +60,7 @@ export function PostComposer({
   onPosted,
   isApproved = true,
 }: PostComposerProps) {
+  const toast = useToast();
   const richText = useRef<RichEditor>(null);
   const [html, setHtml] = useState('');
   const [active, setActive] = useState<string[]>([]);
@@ -126,6 +128,7 @@ export function PostComposer({
       // question / timeLine / options by the service.
       await communityService.createPost(token, html, paths, poll);
       reset();
+      toast.success('Post created successfully!');
       onPosted?.();
     } catch (e: any) {
       setError(e?.message || 'Unable to create post. Please try again.');

@@ -67,6 +67,7 @@ type DashboardContentProps = {
   onViewAllConnections?: () => void;
   onPendingConnectionsPress?: () => void;
   onConnectionChatPress?: () => void;
+  onPosted?: () => void;
 };
 
 const connStyles = StyleSheet.create({
@@ -397,6 +398,7 @@ export function DashboardContent({
   onViewAllConnections,
   onPendingConnectionsPress,
   onConnectionChatPress,
+  onPosted,
 }: DashboardContentProps) {
   const progress = Math.max(0, Math.min(profileCompletion, 100));
   // Pre-compute the tick positions for the progress ring. Each tick is a
@@ -605,6 +607,7 @@ export function DashboardContent({
         primaryColor={primaryColor}
         token={token}
         isApproved={isApproved}
+        onPosted={onPosted}
       />
 
       <RecommendedSections
