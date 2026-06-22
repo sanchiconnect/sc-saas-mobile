@@ -1189,6 +1189,7 @@ function RoleBasicInfoTab({
           // states, cities, organization types and service-provider catalogues
           // all qualify — flag it universally for dropdown fields.
           searchable={optionsForDropdown(activeDropdown).length > 10}
+          searchKeyboardType={activeDropdown.dropdownSource === 'establishment_years' ? 'number-pad' : 'default'}
           emptyMessage={
             activeDropdown.key === 'registeredStateId'
               ? 'Select a country first'

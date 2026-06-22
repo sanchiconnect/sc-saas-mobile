@@ -156,6 +156,7 @@ export function RoleEditProfileScreen({
   const [backendCompletion, setBackendCompletion] = useState<number | null>(null);
   const [completionForms, setCompletionForms] = useState<Record<string, CompletionForm> | null>(null);
   const [canRequestApproval, setCanRequestApproval] = useState(false);
+  const [canToggleStatus, setCanToggleStatus] = useState(false);
   const [isApprovalRequested, setIsApprovalRequested] = useState(false);
   const [isApproved, setIsApproved] = useState(false);
   const [showApprovalModal, setShowApprovalModal] = useState(false);
@@ -357,6 +358,7 @@ export function RoleEditProfileScreen({
           setCompletionForms(forms as Record<string, CompletionForm>);
         }
         setCanRequestApproval(Boolean(d.canRequestApproval));
+        setCanToggleStatus(Boolean(d.canToggleStatus));
         setIsApprovalRequested(Boolean(d.isApprovalRequested));
         setIsApproved(Boolean(d.isApproved));
       })
@@ -653,6 +655,9 @@ export function RoleEditProfileScreen({
   // ── render ────────────────────────────────────────────────────────────────
 
   const profileCompletion = backendCompletion ?? 0;
+  const isUnderApproval =
+    isApprovalRequested && !canToggleStatus && !isApproved;
+  const isSubmitDisabled = !canRequestApproval && profileCompletion < 95;
 
   if (isLoading) {
     return (
@@ -722,35 +727,41 @@ export function RoleEditProfileScreen({
           <Text style={styles.screenTitle}>Edit Profile</Text>
           <View style={styles.completionBadge}>
             <Text style={[styles.completionPct, {color: primaryColor}]}>
-              {Math.round(profileCompletion)}%
+              {backendCompletion !== null ? `${Math.round(backendCompletion)}%` : '—'}
             </Text>
           </View>
-          {canRequestApproval && !isApprovalRequested ? (
+          {isUnderApproval ? (
+            <View style={[styles.submitHeaderBtn, {backgroundColor: '#64748b'}]}>
+              <Text style={styles.submitHeaderBtnLabel}>SUBMITTED</Text>
+            </View>
+          ) : !isApproved ? (
             <Pressable
-              style={[styles.submitHeaderBtn, {backgroundColor: colors.success}]}
-              onPress={() => setShowApprovalModal(true)}
-              accessibilityRole="button">
+              style={[
+                styles.submitHeaderBtn,
+                {backgroundColor: isSubmitDisabled ? '#94a3b8' : colors.success},
+              ]}
+              onPress={() => !isSubmitDisabled && setShowApprovalModal(true)}
+              accessibilityRole="button"
+              disabled={isSubmitDisabled}>
               <Text style={styles.submitHeaderBtnLabel}>SUBMIT</Text>
             </Pressable>
-          ) : isApprovalRequested && !isApproved ? (
-            <View style={[styles.submitHeaderBtn, {backgroundColor: '#64748b'}]}>
-              <Text style={styles.submitHeaderBtnLabel}>PENDING</Text>
-            </View>
           ) : null}
         </View>
 
-        {/* Progress bar */}
-        <View style={styles.completionTrack}>
-          <View
-            style={[
-              styles.completionFill,
-              {
-                backgroundColor: primaryColor,
-                width: `${Math.min(100, Math.max(0, profileCompletion))}%`,
-              },
-            ]}
-          />
-        </View>
+        {/* Progress bar — hidden once profile is 100% complete */}
+        {profileCompletion < 100 ? (
+          <View style={styles.completionTrack}>
+            <View
+              style={[
+                styles.completionFill,
+                {
+                  backgroundColor: primaryColor,
+                  width: `${Math.min(100, Math.max(0, profileCompletion))}%`,
+                },
+              ]}
+            />
+          </View>
+        ) : null}
 
         {/* Tab pills */}
         <ScrollView
@@ -853,10 +864,12 @@ export function RoleEditProfileScreen({
                   authService
                     .getProfileCompletion(token, accountType, investorSubtype)
                     .then(res => {
-                      const num = Number(
-                        res?.data?.percentage ?? res?.percentage,
-                      );
+                      const d = res?.data ?? res ?? {};
+                      const num = Number(d.percentage);
                       if (Number.isFinite(num)) setBackendCompletion(num);
+                      setCanRequestApproval(Boolean(d.canRequestApproval));
+                      setIsApprovalRequested(Boolean(d.isApprovalRequested));
+                      setIsApproved(Boolean(d.isApproved));
                     })
                     .catch(() => {});
                 }

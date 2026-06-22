@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -144,28 +145,6 @@ const tabCompletion = (
     default:
       return 'incomplete';
   }
-};
-
-const calculateProfileCompletion = (basicInfo: BasicInfoFormType) => {
-  const safeSocial = basicInfo.social || EMPTY_BASIC_INFO.social;
-  const checks = [
-    Boolean(basicInfo.logoUrl),
-    Boolean((basicInfo.companyName || '').trim()),
-    Boolean(basicInfo.companySize),
-    basicInfo.isIncorporated !== null,
-    Boolean(basicInfo.country),
-    Boolean(basicInfo.state),
-    Boolean(basicInfo.city),
-    Boolean((basicInfo.elevatorPitch || '').trim()),
-    Boolean((basicInfo.companyBrief || '').trim()),
-    Boolean(basicInfo.productStage),
-    (basicInfo.businessModels || []).length > 0,
-    (basicInfo.leadership || []).length > 0,
-    Object.values(safeSocial).some(link => String(link || '').trim().length > 0),
-  ];
-
-  const completed = checks.filter(Boolean).length;
-  return Math.round((completed / checks.length) * 100);
 };
 
 const ensureBasicInfoDefaults = (
@@ -341,6 +320,7 @@ const buildEditTabs = (
 export function EditProfileScreen({
   token,
   onBack,
+  onPreview,
   onProfileUpdated,
 }: EditProfileScreenProps) {
   const {theme, globalSetting, baseUrl} = useContext(TenantContext);
@@ -366,6 +346,12 @@ export function EditProfileScreen({
   const [backendCompletion, setBackendCompletion] = useState<number | null>(
     null,
   );
+  const [canRequestApproval, setCanRequestApproval] = useState(false);
+  const [canToggleStatus, setCanToggleStatus] = useState(false);
+  const [isApprovalRequested, setIsApprovalRequested] = useState(false);
+  const [isApproved, setIsApproved] = useState(false);
+  const [showApprovalModal, setShowApprovalModal] = useState(false);
+  const [isSubmittingApproval, setIsSubmittingApproval] = useState(false);
   const [customForms, setCustomForms] = useState<DynamicForm[]>([]);
   // Tab-dot status per custom form. Seeded from a prefetch of each form's
   // submission so the dot is accurate before the user opens the tab, and
@@ -481,6 +467,25 @@ export function EditProfileScreen({
     ipCountry: string | null;
   }>({haveIP: null, ipStatus: null, ipCountry: null});
 
+  const handleRequestApproval = async () => {
+    if (!accountType) return;
+    setIsSubmittingApproval(true);
+    try {
+      await authService.requestApproval(token, accountType);
+      setShowApprovalModal(false);
+      setIsApprovalRequested(true);
+      setCanRequestApproval(false);
+      toast.success('Profile submitted for approval!');
+      onProfileUpdated?.();
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : 'Could not submit for approval.',
+      );
+    } finally {
+      setIsSubmittingApproval(false);
+    }
+  };
+
   // `silent` skips the full-screen spinner — used after a successful save so
   // we can pick up server-normalized values without flashing the loading view.
   const loadProfile = async ({silent = false}: {silent?: boolean} = {}) => {
@@ -594,14 +599,13 @@ export function EditProfileScreen({
       .getProfileCompletion(token, accountType, investorSubtype)
       .then(res => {
         if (cancelled) return;
-        const raw = (res?.data?.percentage ?? res?.percentage) as
-          | number
-          | string
-          | undefined;
-        const num = Number(raw);
-        if (Number.isFinite(num)) {
-          setBackendCompletion(num);
-        }
+        const d = res?.data ?? res ?? {};
+        const num = Number(d.percentage);
+        if (Number.isFinite(num)) setBackendCompletion(num);
+        setCanRequestApproval(Boolean(d.canRequestApproval));
+        setCanToggleStatus(Boolean(d.canToggleStatus));
+        setIsApprovalRequested(Boolean(d.isApprovalRequested));
+        setIsApproved(Boolean(d.isApproved));
       })
       .catch(() => {
         // Leave backendCompletion null → local fallback applies.
@@ -1163,13 +1167,10 @@ export function EditProfileScreen({
     return () => clearTimeout(id);
   }, [activeTab]);
 
-  // Profile completion comes from the backend's profile_completeness endpoint
-  // so this screen matches the Dashboard's number exactly. The local
-  // calculateProfileCompletion fallback applies only before the backend value
-  // arrives (avoids showing 0% during the brief fetch window).
-  const localCompletion = calculateProfileCompletion(basicInfo);
-  const profileCompletion =
-    backendCompletion != null ? backendCompletion : localCompletion;
+  const profileCompletion = backendCompletion ?? 0;
+  const isUnderApproval =
+    isApprovalRequested && !canToggleStatus && !isApproved;
+  const isSubmitDisabled = !canRequestApproval && profileCompletion < 95;
 
 
   const updateBasic = <K extends keyof BasicInfoFormType>(
@@ -1530,12 +1531,12 @@ export function EditProfileScreen({
         authService
           .getProfileCompletion(token, accountType, investorSubtype)
           .then(res => {
-            const raw = (res?.data?.percentage ?? res?.percentage) as
-              | number
-              | string
-              | undefined;
-            const num = Number(raw);
+            const d = res?.data ?? res ?? {};
+            const num = Number(d.percentage);
             if (Number.isFinite(num)) setBackendCompletion(num);
+            setCanRequestApproval(Boolean(d.canRequestApproval));
+            setIsApprovalRequested(Boolean(d.isApprovalRequested));
+            setIsApproved(Boolean(d.isApproved));
           })
           .catch(() => {
             /* leave the existing value in place if the refresh fails */
@@ -1935,22 +1936,48 @@ export function EditProfileScreen({
         </View>
 
         <View style={styles.completionRow}>
-          <Text style={styles.completionLabel}>Profile completion</Text>
-          <Text style={[styles.completionValue, {color: primaryColor}]}>
-            {profileCompletion}%
-          </Text>
+          {profileCompletion >= 100 && !isApprovalRequested ? (
+            <Text style={[styles.completionLabel, {flex: 1}]}>
+              Your application is ready to be submitted
+            </Text>
+          ) : (
+            <>
+              <Text style={styles.completionLabel}>Profile completion</Text>
+              <Text style={[styles.completionValue, {color: primaryColor}]}>
+                {backendCompletion !== null ? `${backendCompletion}%` : '—'}
+              </Text>
+            </>
+          )}
+          {isUnderApproval ? (
+            <View style={[styles.submitHeaderBtn, {backgroundColor: '#64748b'}]}>
+              <Text style={styles.submitHeaderBtnLabel}>SUBMITTED</Text>
+            </View>
+          ) : !isApproved ? (
+            <Pressable
+              style={[
+                styles.submitHeaderBtn,
+                {backgroundColor: isSubmitDisabled ? '#94a3b8' : colors.success},
+              ]}
+              onPress={() => !isSubmitDisabled && setShowApprovalModal(true)}
+              accessibilityRole="button"
+              disabled={isSubmitDisabled}>
+              <Text style={styles.submitHeaderBtnLabel}>SUBMIT</Text>
+            </Pressable>
+          ) : null}
         </View>
-        <View style={styles.completionTrack}>
-          <View
-            style={[
-              styles.completionFill,
-              {
-                backgroundColor: primaryColor,
-                width: `${Math.min(100, Math.max(0, profileCompletion))}%`,
-              },
-            ]}
-          />
-        </View>
+        {profileCompletion < 100 ? (
+          <View style={styles.completionTrack}>
+            <View
+              style={[
+                styles.completionFill,
+                {
+                  backgroundColor: primaryColor,
+                  width: `${Math.min(100, Math.max(0, profileCompletion))}%`,
+                },
+              ]}
+            />
+          </View>
+        ) : null}
 
         <View style={styles.tabsSection}>
         <ScrollView
@@ -2080,6 +2107,19 @@ export function EditProfileScreen({
                   );
                   toast.success('Profile updated.');
                   onProfileUpdated?.();
+                  if (accountType) {
+                    authService
+                      .getProfileCompletion(token, accountType, investorSubtype)
+                      .then(res => {
+                        const d = res?.data ?? res ?? {};
+                        const num = Number(d.percentage);
+                        if (Number.isFinite(num)) setBackendCompletion(num);
+                        setCanRequestApproval(Boolean(d.canRequestApproval));
+                        setIsApprovalRequested(Boolean(d.isApprovalRequested));
+                        setIsApproved(Boolean(d.isApproved));
+                      })
+                      .catch(() => {});
+                  }
                 } catch (error) {
                   toast.error(
                     error instanceof Error
@@ -2384,12 +2424,12 @@ export function EditProfileScreen({
                 authService
                   .getProfileCompletion(token, accountType, investorSubtype)
                   .then(res => {
-                    const pct = (res?.data?.percentage ?? res?.percentage) as
-                      | number
-                      | string
-                      | undefined;
-                    const num = Number(pct);
+                    const d = res?.data ?? res ?? {};
+                    const num = Number(d.percentage);
                     if (Number.isFinite(num)) setBackendCompletion(num);
+                    setCanRequestApproval(Boolean(d.canRequestApproval));
+                    setIsApprovalRequested(Boolean(d.isApprovalRequested));
+                    setIsApproved(Boolean(d.isApproved));
                   })
                   .catch(() => {});
               }
@@ -2503,6 +2543,55 @@ export function EditProfileScreen({
           );
         })()}
       </View>
+
+      <Modal
+        visible={showApprovalModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowApprovalModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={[styles.modalIconWrap, {borderColor: colors.success}]}>
+              <Text style={[styles.modalCheckmark, {color: colors.success}]}>✓</Text>
+            </View>
+            <Text style={styles.modalTitle}>
+              Awesome! your profile is ready to go live.
+            </Text>
+            <Text style={styles.modalSubtitle}>
+              Submit to start connecting with the community.
+            </Text>
+            <View style={styles.modalButtons}>
+              <AppButton
+                label={isSubmittingApproval ? 'Submitting…' : 'Submit'}
+                loading={isSubmittingApproval}
+                disabled={isSubmittingApproval}
+                onPress={handleRequestApproval}
+                style={{flex: 1, backgroundColor: primaryColor}}
+                labelStyle={styles.modalBtnLabel}
+              />
+              {onPreview ? (
+                <AppButton
+                  label="Preview"
+                  disabled={isSubmittingApproval}
+                  onPress={() => {
+                    setShowApprovalModal(false);
+                    onPreview();
+                  }}
+                  style={[styles.modalPreviewBtn, {flex: 1}]}
+                  labelStyle={styles.modalBtnLabel}
+                />
+              ) : null}
+              <AppButton
+                label="Cancel"
+                disabled={isSubmittingApproval}
+                onPress={() => setShowApprovalModal(false)}
+                style={[styles.modalCancelBtn, {flex: 1}]}
+                labelStyle={styles.modalBtnLabel}
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -2758,6 +2847,77 @@ const styles = StyleSheet.create({
   // comfortably alongside PREVIOUS / NEXT in the footer row.
   actionButtonLabel: {
     fontSize: 12,
+    fontWeight: '700',
+  },
+  submitHeaderBtn: {
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginLeft: 8,
+  },
+  submitHeaderBtnLabel: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  modalCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    padding: 28,
+    alignItems: 'center',
+    width: '100%',
+    maxWidth: 400,
+    gap: 12,
+  },
+  modalIconWrap: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    borderWidth: 3,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  modalCheckmark: {
+    fontSize: 36,
+    fontWeight: '700',
+    lineHeight: 44,
+  },
+  modalTitle: {
+    color: '#0f172a',
+    fontSize: 18,
+    fontWeight: '700',
+    textAlign: 'center',
+    lineHeight: 26,
+  },
+  modalSubtitle: {
+    color: '#475569',
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 8,
+    width: '100%',
+  },
+  modalPreviewBtn: {
+    backgroundColor: '#0f172a',
+  },
+  modalCancelBtn: {
+    backgroundColor: '#94a3b8',
+  },
+  modalBtnLabel: {
+    fontSize: 13,
     fontWeight: '700',
   },
 });

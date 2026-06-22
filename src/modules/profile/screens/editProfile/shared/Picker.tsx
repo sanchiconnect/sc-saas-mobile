@@ -23,6 +23,8 @@ type PickerProps = {
   // Opt-in client-side search above the option list. Use it for long lists
   // like Country / State / City.
   searchable?: boolean;
+  // Use 'number-pad' for purely numeric lists like years.
+  searchKeyboardType?: 'default' | 'number-pad';
 };
 
 export function Picker({
@@ -35,6 +37,7 @@ export function Picker({
   onClose,
   emptyMessage,
   searchable = false,
+  searchKeyboardType = 'default',
 }: PickerProps) {
   const [query, setQuery] = useState('');
 
@@ -69,6 +72,7 @@ export function Picker({
                 onChangeText={setQuery}
                 placeholder="Search"
                 placeholderTextColor="#94a3b8"
+                keyboardType={searchKeyboardType}
                 autoCapitalize="none"
                 autoCorrect={false}
                 autoFocus

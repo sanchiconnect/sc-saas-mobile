@@ -60,6 +60,7 @@ function PartnerIndustryTab({
   const [otherIndustriesText, setOtherIndustriesText] = useState('');
   const [otherTechActive, setOtherTechActive] = useState(false);
   const [otherTechText, setOtherTechText] = useState('');
+  const [techError, setTechError] = useState('');
 
   useEffect(() => {
     setIndustries(seedIds(initialData, 'industryDomainIds', 'partnerIndustries'));
@@ -73,6 +74,11 @@ function PartnerIndustryTab({
   }, [initialData]);
 
   const onSave = async () => {
+    if (technologies.length === 0) {
+      setTechError('Please select at least one technology domain.');
+      return;
+    }
+    setTechError('');
     try {
       const splitCsv = (raw: string) =>
         raw.split(',').map(s => s.trim()).filter(Boolean);
@@ -141,11 +147,18 @@ function PartnerIndustryTab({
 
       <MultiSelectField
         label="Technologies"
+        required
         options={technologyOptions}
         selected={technologies}
         primaryColor={primaryColor}
-        onChange={setTechnologies}
+        onChange={v => {
+          setTechnologies(v);
+          if (v.length > 0) setTechError('');
+        }}
       />
+      {techError ? (
+        <Text style={styles.errorText}>{techError}</Text>
+      ) : null}
 
       <View style={styles.toggleRow}>
         <Text style={styles.toggleLabel}>Add other technologies</Text>
@@ -193,5 +206,10 @@ const styles = StyleSheet.create({
     fontSize: 15,
     paddingHorizontal: 12,
     paddingVertical: 10,
+  },
+  errorText: {
+    color: '#dc2626',
+    fontSize: 12,
+    marginTop: -4,
   },
 });
