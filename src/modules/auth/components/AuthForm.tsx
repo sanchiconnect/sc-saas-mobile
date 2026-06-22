@@ -43,6 +43,7 @@ type AuthFormProps = {
   onPrimaryPress: () => void;
   onSecondaryPress: () => void;
   onForgotPasswordPress?: () => void;
+  disabled?: boolean;
   isSubmitting?: boolean;
   message?: string;
   messageTone?: 'neutral' | 'success' | 'error';
@@ -57,6 +58,7 @@ export function AuthForm({
   fields,
   onPrimaryPress,
   onSecondaryPress,
+  disabled = false,
   isSubmitting = false,
   message,
   messageTone = 'neutral',
@@ -119,7 +121,7 @@ export function AuthForm({
             ))}
 
             <AppButton
-              disabled={isSubmitting}
+              disabled={disabled || isSubmitting}
               label={primaryLabel}
               loading={isSubmitting}
               onPress={onPrimaryPress}

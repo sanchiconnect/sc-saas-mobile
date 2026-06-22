@@ -131,7 +131,7 @@ export function SignupScreen({
   useEffect(() => {
     const mobile = form.mobile.trim();
 
-    if (!mobile || mobile.length < 4) {
+    if (!mobile || mobile.length < 10) {
       setMobileAvailabilityError('');
       setIsCheckingMobile(false);
       return;
@@ -236,7 +236,7 @@ export function SignupScreen({
 
     if (!form.mobile.trim()) {
       nextErrors.mobile = 'Mobile number is required.';
-    } else if (form.mobile.trim().length < 4) {
+    } else if (form.mobile.trim().length < 10) {
       nextErrors.mobile = 'Enter a valid mobile number.';
     } else if (mobileAvailabilityError) {
       nextErrors.mobile = mobileAvailabilityError;
@@ -475,8 +475,8 @@ export function SignupScreen({
 
             <AppButton
               label="Send OTP"
-              disabled={isSubmitting || isCheckingEmail || isCheckingMobile}
-              loading={isSubmitting || isCheckingEmail || isCheckingMobile}
+              disabled={!canSubmit || isSubmitting || isCheckingEmail || isCheckingMobile}
+              loading={isSubmitting}
               onPress={handleSubmit}
             />
 

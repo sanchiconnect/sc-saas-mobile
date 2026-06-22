@@ -43,6 +43,7 @@ export function LoginScreen({
           keyboardType: 'email-address',
         },
       ]}
+      disabled={!form.isValid}
       isSubmitting={isSubmitting}
       message={message}
       messageTone={messageTone}
