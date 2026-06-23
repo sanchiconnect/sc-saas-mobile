@@ -1163,7 +1163,7 @@ export function ConversationDetailScreen({
     <KeyboardAvoidingView
       style={styles.page}
       behavior="padding"
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 24}>
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 30}>
       <View style={styles.header}>
         <Pressable
           onPress={onBack}
