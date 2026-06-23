@@ -10,7 +10,6 @@ import {
   ActivityIndicator,
   FlatList,
   Image,
-  Keyboard,
   KeyboardAvoidingView,
   Linking,
   Modal,
@@ -472,23 +471,6 @@ export function ConversationDetailScreen({
   // viewer with a download action.
   const [mediaViewer, setMediaViewer] = useState<AttachmentInfo | null>(null);
 
-  // Track keyboard visibility to keep the composer flush with the keyboard —
-  // adjustResize + flex-end on the FlatList does most of the lift work; we
-  // only nudge a tiny 8dp on Android to clear any 1–2dp OEM cropping.
-  const [androidKeyboardLift, setAndroidKeyboardLift] = useState(0);
-  useEffect(() => {
-    if (Platform.OS !== 'android') return;
-    const showSub = Keyboard.addListener('keyboardDidShow', () => {
-      setAndroidKeyboardLift(8);
-    });
-    const hideSub = Keyboard.addListener('keyboardDidHide', () => {
-      setAndroidKeyboardLift(0);
-    });
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
-  }, []);
 
   const headerName = resolveHeaderName(conversation, currentUserUuid);
   const headerAvatar = resolveHeaderAvatar(conversation, currentUserUuid);
@@ -1180,12 +1162,8 @@ export function ConversationDetailScreen({
   return (
     <KeyboardAvoidingView
       style={styles.page}
-      // iOS needs explicit padding behavior so the content slides up.
-      // Android relies on the manifest's `adjustResize` — KAV with any
-      // behavior set on Android double-adjusts and hides the input behind
-      // the keyboard's autocomplete bar.
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}>
+      behavior="padding"
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 24}>
       <View style={styles.header}>
         <Pressable
           onPress={onBack}
@@ -1325,7 +1303,7 @@ export function ConversationDetailScreen({
         </View>
       ) : null}
 
-      <View style={[styles.composer, {paddingBottom: 10 + androidKeyboardLift}]}>
+      <View style={styles.composer}>
         <View style={styles.composerActionsRow}>
           <Pressable
             onPress={() => setEmojiPickerOpen(true)}
