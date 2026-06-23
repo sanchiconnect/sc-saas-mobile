@@ -1263,6 +1263,21 @@ export function EditProfileScreen({
     }
   };
 
+  const refreshCompletion = () => {
+    if (!accountType) return;
+    authService
+      .getProfileCompletion(token, accountType, investorSubtype)
+      .then(res => {
+        const d = res?.data ?? res ?? {};
+        const num = Number(d.percentage);
+        if (Number.isFinite(num)) setBackendCompletion(num);
+        setCanRequestApproval(Boolean(d.canRequestApproval));
+        setIsApprovalRequested(Boolean(d.isApprovalRequested));
+        setIsApproved(Boolean(d.isApproved));
+      })
+      .catch(() => {});
+  };
+
   const handleSaveCommitment = async (payload: {
     uuid?: string;
     investorName: string;
@@ -1272,6 +1287,7 @@ export function EditProfileScreen({
   }) => {
     await authService.saveOngoingCommitment(token, payload);
     await refreshOngoingCommitments();
+    refreshCompletion();
   };
 
   const handleDeleteCommitment = async (uuid: string) => {
@@ -2356,13 +2372,13 @@ export function EditProfileScreen({
               // stays in the same scroll position and active tab. The pitch
               // deck preview / file card props simply update in place from
               // the new startupInfo.
-              onUploaded={() => loadProfile({silent: true})}
+              onUploaded={async () => { await loadProfile({silent: true}); refreshCompletion(); onProfileUpdated?.(); }}
             />
             <Documents
               token={token}
               primaryColor={primaryColor}
               onCompletionChange={setDocumentsComplete}
-              onUploaded={() => loadProfile({silent: true})}
+              onUploaded={async () => { await loadProfile({silent: true}); refreshCompletion(); onProfileUpdated?.(); }}
             />
           </View>
         ) : activeTab === 'investment_details' ||
