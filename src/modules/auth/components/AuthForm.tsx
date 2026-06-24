@@ -1,19 +1,19 @@
 import React, {useContext, useEffect, useRef} from 'react';
 import {
   Image,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 
 import {AppButton} from '../../../core/components/AppButton';
-import {AppCard} from '../../../core/components/AppCard';
 import {AppTextField} from '../../../core/components/AppTextField';
-import {FormScrollView} from '../../../core/components/FormScrollView';
 import {TenantContext} from '../../../core/tenant/TenantProvider';
 import {useToast} from '../../../core/toast/ToastProvider';
-import {spacing, typography} from '../../../core/theme/colors';
 
 type AuthField = {
   key: string;
@@ -33,10 +33,6 @@ type AuthFormProps = {
   title: string;
   subtitle: string;
   primaryLabel: string;
-  // Secondary action is rendered as a subtle text link below the primary
-  // button, NOT as a full-width button. The pattern is "<prefix> <link>",
-  // e.g. "Don't have an account?  Sign up". Trim the secondaryLabel and
-  // optionally split via `secondaryPrefix` to drive the visual hierarchy.
   secondaryLabel: string;
   secondaryPrefix?: string;
   fields: AuthField[];
@@ -65,8 +61,8 @@ export function AuthForm({
 }: AuthFormProps) {
   const {theme, globalSetting} = useContext(TenantContext);
   const toast = useToast();
-  const accent = theme?.primary || '#0f172a';
-  const logoBaseUrl = globalSetting?.imgKitUrl || globalSetting?.assetsImgKitUrl;
+  const accent = theme?.primary || '#5b5fc7';
+  const logoBaseUrl = globalSetting?.imgKitUrl || globalSetting?.assetsImgKitUrl || '';
   const logoPath = globalSetting?.logo;
   const logoUri = logoPath
     ? /^https?:\/\//i.test(logoPath)
@@ -76,8 +72,8 @@ export function AuthForm({
         : null
     : null;
 
-  // Surface backend messages via Toast. Inline status text under the form
-  // looks amateur next to a real toast.
+  const onboardingTitle = globalSetting?.startupOnboardingModal?.titleText;
+
   const lastShownMessage = useRef<string | null>(null);
   useEffect(() => {
     if (!message || message === lastShownMessage.current) return;
@@ -88,120 +84,159 @@ export function AuthForm({
   }, [message, messageTone, toast]);
 
   return (
-    <FormScrollView
-      style={styles.page}
-      contentContainerStyle={styles.scroll}
-      showsVerticalScrollIndicator={false}>
-        <AppCard>
-          <View style={styles.card}>
-            {logoUri ? (
-              <Image source={{uri: logoUri}} style={styles.logo} />
-            ) : globalSetting?.brandName ? (
-              <Text style={[styles.brandFallback, {color: accent}]}>
-                {globalSetting.brandName}
-              </Text>
-            ) : null}
-            <Text style={styles.title}>{title}</Text>
-            <Text style={styles.subtitle}>{subtitle}</Text>
+    <KeyboardAvoidingView
+      style={styles.root}
+      behavior="padding"
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 24}>
+      <ScrollView
+        style={styles.root}
+        contentContainerStyle={styles.scroll}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}>
 
+        {/* ── Hero ─────────────────────────────────────────────────── */}
+        <View style={styles.hero}>
+          {logoUri ? (
+            <Image source={{uri: logoUri}} style={styles.logo} resizeMode="contain" />
+          ) : globalSetting?.brandName ? (
+            <Text style={[styles.heroBrand, {color: accent}]}>
+              {globalSetting.brandName}
+            </Text>
+          ) : null}
+          {onboardingTitle ? (
+            <Text style={styles.heroTitle}>{onboardingTitle}</Text>
+          ) : null}
+        </View>
+
+        {/* ── Form sheet ───────────────────────────────────────────── */}
+        <View style={styles.sheet}>
+          <Text style={styles.formTitle}>{title}</Text>
+          <Text style={styles.formSubtitle}>{subtitle}</Text>
+
+          <View style={styles.fields}>
             {fields.map(field => (
               <AppTextField
-                autoCapitalize={field.autoCapitalize}
                 key={field.key}
+                autoCapitalize={field.autoCapitalize}
                 keyboardType={field.keyboardType}
                 label={field.label}
+                placeholder={field.placeholder}
+                value={field.value}
                 onChangeText={field.onChangeText}
                 onBlur={field.onBlur}
                 error={field.error}
                 required={field.required}
-                placeholder={field.placeholder}
                 secureTextEntry={field.secureTextEntry}
-                value={field.value}
               />
             ))}
+          </View>
 
-            <AppButton
-              disabled={disabled || isSubmitting}
-              label={primaryLabel}
-              loading={isSubmitting}
-              onPress={onPrimaryPress}
-            />
+          <AppButton
+            disabled={disabled || isSubmitting}
+            label={primaryLabel}
+            loading={isSubmitting}
+            onPress={onPrimaryPress}
+            style={[styles.primaryBtn, {backgroundColor: accent}]}
+          />
 
-            <Pressable
-              onPress={onSecondaryPress}
-              disabled={isSubmitting}
-              style={styles.secondaryWrap}
-              hitSlop={10}>
-              {secondaryPrefix ? (
-                <Text style={styles.secondaryPrefix}>
-                  {secondaryPrefix}{' '}
-                  <Text style={[styles.secondaryLink, {color: accent}]}>
-                    {secondaryLabel}
-                  </Text>
-                </Text>
-              ) : (
+          <Pressable
+            onPress={onSecondaryPress}
+            disabled={isSubmitting}
+            style={styles.secondaryWrap}
+            hitSlop={10}>
+            {secondaryPrefix ? (
+              <Text style={styles.secondaryPrefix}>
+                {secondaryPrefix}{' '}
                 <Text style={[styles.secondaryLink, {color: accent}]}>
                   {secondaryLabel}
                 </Text>
-              )}
-            </Pressable>
-          </View>
-        </AppCard>
-    </FormScrollView>
+              </Text>
+            ) : (
+              <Text style={[styles.secondaryLink, {color: accent}]}>
+                {secondaryLabel}
+              </Text>
+            )}
+          </Pressable>
+        </View>
+
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
+const HERO_BG = '#eef0ff';
+
 const styles = StyleSheet.create({
-  page: {
-    backgroundColor: '#f8fafc',
+  root: {
     flex: 1,
+    backgroundColor: HERO_BG,
   },
   scroll: {
     flexGrow: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: spacing.xxl,
+  },
+  // ── Hero ──────────────────────────────────────────────────────────
+  hero: {
+    backgroundColor: HERO_BG,
+    paddingHorizontal: 24,
+    paddingTop: 40,
+    paddingBottom: 28,
+    gap: 16,
   },
   logo: {
-    alignSelf: 'center',
-    width: 140,
-    height: 60,
-    resizeMode: 'contain',
-    marginBottom: spacing.sm,
+    width: 150,
+    height: 56,
   },
-  brandFallback: {
-    alignSelf: 'center',
-    fontSize: typography.titleLg,
+  heroBrand: {
+    fontSize: 22,
     fontWeight: '800',
-    marginBottom: spacing.sm,
   },
-  card: {
-    gap: spacing.md,
-    width: '100%',
+  heroTitle: {
+    color: '#1e1b4b',
+    fontSize: 24,
+    fontWeight: '800',
+    lineHeight: 32,
   },
-  title: {
+  // ── Sheet ─────────────────────────────────────────────────────────
+  sheet: {
+    backgroundColor: '#ffffff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    flex: 1,
+    minHeight: 400,
+    paddingHorizontal: 24,
+    paddingTop: 32,
+    paddingBottom: 40,
+    gap: 14,
+  },
+  formTitle: {
     color: '#0f172a',
-    fontSize: typography.heading,
+    fontSize: 26,
     fontWeight: '700',
   },
-  subtitle: {
-    color: '#475569',
-    fontSize: typography.bodyLg,
-    lineHeight: 22,
-    marginBottom: spacing.xs,
+  formSubtitle: {
+    color: '#64748b',
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  fields: {
+    gap: 12,
+  },
+  primaryBtn: {
+    marginTop: 4,
+    borderRadius: 10,
   },
   secondaryWrap: {
     alignSelf: 'center',
-    paddingVertical: spacing.sm,
-    marginTop: spacing.xs,
+    marginTop: 4,
+    paddingVertical: 8,
   },
   secondaryPrefix: {
     color: '#64748b',
-    fontSize: typography.body,
+    fontSize: 14,
+    textAlign: 'center',
   },
   secondaryLink: {
     fontWeight: '700',
-    fontSize: typography.body,
+    fontSize: 14,
   },
 });
-

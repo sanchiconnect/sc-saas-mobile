@@ -220,10 +220,17 @@ export interface IMaintenance {
   maintenance_on_title: string;
 }
 
+export interface IStartupOnboardingModal {
+  titleText?: string;
+  descriptionText?: string;
+  sideImage?: string;
+}
+
 export interface IGlobalSetting {
   // Branding
   brandName?: string;
   logo?: string;
+  startupOnboardingModal?: IStartupOnboardingModal;
 
   // CDN / storage
   assetsImgKitUrl?: string;

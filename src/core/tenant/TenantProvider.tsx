@@ -60,6 +60,7 @@ export const TenantProvider = ({children}: Props) => {
         // Branding
         brandName: settingsData?.branding?.brandName,
         logo: settingsData?.branding?.logo,
+        startupOnboardingModal: settingsData?.startupOnboardingModal ?? undefined,
 
         // CDN / storage
         assetsImgKitUrl: settingsData?.assetsImgKitUrl,
