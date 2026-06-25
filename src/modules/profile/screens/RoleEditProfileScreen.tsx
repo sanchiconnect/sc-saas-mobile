@@ -124,9 +124,13 @@ type Props = {
   onBack: () => void;
   onPreview?: () => void;
   onProfileUpdated?: () => void;
+  onCompletionLoaded?: (pct: number) => void;
   // Pass the already-known accountType from HomeScreen's dashboard summary so
   // we don't need to call getProfile() and deal with its response structure.
   initialAccountType?: string;
+  // Seed the completion badge with the dashboard's current value so both
+  // screens show the same number immediately (before fresh API fetch arrives).
+  initialCompletion?: number;
 };
 
 // ─── component ───────────────────────────────────────────────────────────────
@@ -136,7 +140,9 @@ export function RoleEditProfileScreen({
   onBack,
   onPreview,
   onProfileUpdated,
+  onCompletionLoaded,
   initialAccountType,
+  initialCompletion,
 }: Props) {
   const {theme, globalSetting, baseUrl} = useContext(TenantContext);
   const toast = useToast();
@@ -343,6 +349,17 @@ export function RoleEditProfileScreen({
 
   // ── backend completion % ──────────────────────────────────────────────────
 
+  // Mirror the parent's (HomeScreen) value whenever it changes — keeps the
+  // badge in sync after saves without an extra API round-trip.
+  useEffect(() => {
+    if (initialCompletion != null) {
+      setBackendCompletion(initialCompletion);
+    }
+  }, [initialCompletion]);
+
+  // Always fetch on mount for approval flags (canRequestApproval, isApproved,
+  // etc.). Only update the percentage if no initial value was supplied by the
+  // parent — otherwise the parent is the single source of truth for that number.
   useEffect(() => {
     if (!accountType) return;
     let cancelled = false;
@@ -352,7 +369,10 @@ export function RoleEditProfileScreen({
         if (cancelled) return;
         const d = res?.data ?? res ?? {};
         const num = Number(d.percentage);
-        if (Number.isFinite(num)) setBackendCompletion(num);
+        if (Number.isFinite(num) && initialCompletion == null) {
+          setBackendCompletion(num);
+          onCompletionLoaded?.(num);
+        }
         const forms = d.forms;
         if (forms && typeof forms === 'object') {
           setCompletionForms(forms as Record<string, CompletionForm>);
@@ -366,7 +386,7 @@ export function RoleEditProfileScreen({
     return () => {
       cancelled = true;
     };
-  }, [token, accountType, investorSubtype]);
+  }, [token, accountType, investorSubtype]); // initialCompletion intentionally omitted — checked at runtime
 
   // ── role-specific option loading ──────────────────────────────────────────
 
@@ -700,7 +720,10 @@ export function RoleEditProfileScreen({
         .then(res => {
           const d = res?.data ?? res ?? {};
           const num = Number(d.percentage);
-          if (Number.isFinite(num)) setBackendCompletion(num);
+          if (Number.isFinite(num)) {
+            setBackendCompletion(num);
+            onCompletionLoaded?.(num);
+          }
           const forms = d.forms;
           if (forms && typeof forms === 'object') {
             setCompletionForms(forms as Record<string, CompletionForm>);
@@ -866,7 +889,10 @@ export function RoleEditProfileScreen({
                     .then(res => {
                       const d = res?.data ?? res ?? {};
                       const num = Number(d.percentage);
-                      if (Number.isFinite(num)) setBackendCompletion(num);
+                      if (Number.isFinite(num)) {
+                        setBackendCompletion(num);
+                        onCompletionLoaded?.(num);
+                      }
                       setCanRequestApproval(Boolean(d.canRequestApproval));
                       setIsApprovalRequested(Boolean(d.isApprovalRequested));
                       setIsApproved(Boolean(d.isApproved));

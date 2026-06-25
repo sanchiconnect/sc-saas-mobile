@@ -48,6 +48,7 @@ type DashboardContentProps = {
   userFirstName: string;
   searchText: string;
   onSearchChange: (value: string) => void;
+  onSearchSubmit?: (keyword: string, scope: string) => void;
   stats: DashboardStat[];
   profileCompletion: number;
   onEditProfile?: () => void;
@@ -399,6 +400,7 @@ export function DashboardContent({
   onPendingConnectionsPress,
   onConnectionChatPress,
   onPosted,
+  onSearchSubmit,
 }: DashboardContentProps) {
   const progress = Math.max(0, Math.min(profileCompletion, 100));
   // Pre-compute the tick positions for the progress ring. Each tick is a
@@ -499,13 +501,21 @@ export function DashboardContent({
         </View>
 
         <View style={styles.searchRow}>
-          <Icon name="magnify" size={20} color="#64748b" />
+          <Pressable
+            onPress={() => onSearchSubmit?.(searchText, scope)}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Search">
+            <Icon name="magnify" size={20} color="#64748b" />
+          </Pressable>
           <TextInput
             placeholder="Enter a keyword"
             placeholderTextColor="#94a3b8"
             style={styles.searchInput}
             value={searchText}
             onChangeText={onSearchChange}
+            returnKeyType="search"
+            onSubmitEditing={() => onSearchSubmit?.(searchText, scope)}
           />
           {visibleScopes.length > 1 ? (
             <Pressable

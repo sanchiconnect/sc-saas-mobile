@@ -19,6 +19,7 @@ export type AppSection =
 export type AppMenuSelection = {
   section: AppSection;
   item?: string;
+  initialSearch?: string;
 };
 
 export type IconName = string;

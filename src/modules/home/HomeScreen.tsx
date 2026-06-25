@@ -329,9 +329,15 @@ export function HomeScreen({
             token={session.token}
             onBack={() => setSelectedMenu({section: 'dashboard'})}
             onPreview={() => setSelectedMenu({section: 'profile'})}
+            initialCompletion={summary?.profileCompletion}
             onProfileUpdated={() => {
               loadSummary(session.token).catch(() => {});
             }}
+            onCompletionLoaded={pct =>
+              setSummary(prev =>
+                prev ? {...prev, profileCompletion: pct} : prev,
+              )
+            }
           />
         ) : (
           <RoleEditProfileScreen
@@ -339,9 +345,15 @@ export function HomeScreen({
             initialAccountType={summary?.accountType}
             onBack={() => setSelectedMenu({section: 'dashboard'})}
             onPreview={() => setSelectedMenu({section: 'profile'})}
+            initialCompletion={summary?.profileCompletion}
             onProfileUpdated={() => {
               loadSummary(session.token).catch(() => {});
             }}
+            onCompletionLoaded={pct =>
+              setSummary(prev =>
+                prev ? {...prev, profileCompletion: pct} : prev,
+              )
+            }
           />
         )}
       </View>
@@ -664,6 +676,7 @@ export function HomeScreen({
             token={session.token}
             roles={roleTabs}
             initialRoleKey={initialRoleKey}
+            initialSearch={selectedMenu.initialSearch}
             primaryColor={primaryColor}
             logoBaseUrl={logoBaseUrl ?? undefined}
             onActiveProfileChange={setConnectProfileActive}
@@ -905,6 +918,26 @@ export function HomeScreen({
             ) : null}
             <DashboardContent
               onSearchChange={setSearchText}
+              onSearchSubmit={(keyword, scopeKey) => {
+                const SCOPE_TO_ROLE: Record<string, ConnectRoleKey | undefined> = {
+                  startups: 'startups',
+                  investors: 'investors',
+                  corporates: 'corporates',
+                  mentors: 'mentors',
+                  service_providers: 'service-providers',
+                  partners: 'partners',
+                  individuals: 'individuals',
+                };
+                const roleKey = SCOPE_TO_ROLE[scopeKey];
+                setSearchText('');
+                setSelectedMenu({
+                  section: 'connect',
+                  item: roleKey
+                    ? connectItems.find(i => i.key === roleKey)?.label
+                    : undefined,
+                  initialSearch: keyword,
+                });
+              }}
               onEditProfile={() =>
                 setSelectedMenu({section: 'edit-profile'})
               }

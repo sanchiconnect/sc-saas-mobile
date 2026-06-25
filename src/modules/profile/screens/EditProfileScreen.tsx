@@ -80,6 +80,12 @@ type EditProfileScreenProps = {
   // custom form). Parent uses it to refresh dashboard widgets like the
   // profile-completion ring so they reflect the new state immediately.
   onProfileUpdated?: () => void;
+  // Fired whenever a fresh profile completion % is fetched from the backend,
+  // so the Dashboard ring stays in sync without a full summary reload.
+  onCompletionLoaded?: (pct: number) => void;
+  // Seed the completion badge with the dashboard's current value so both
+  // screens show the same number immediately (before fresh API fetch arrives).
+  initialCompletion?: number;
 };
 
 type PickerKind =
@@ -322,6 +328,8 @@ export function EditProfileScreen({
   onBack,
   onPreview,
   onProfileUpdated,
+  onCompletionLoaded,
+  initialCompletion,
 }: EditProfileScreenProps) {
   const {theme, globalSetting, baseUrl} = useContext(TenantContext);
   const toast = useToast();
@@ -343,9 +351,7 @@ export function EditProfileScreen({
     useState<InvestorSubtype>('organization');
   // Server-authoritative profile completion. Same endpoint Dashboard reads
   // from, so both screens display the identical number. null = not yet fetched.
-  const [backendCompletion, setBackendCompletion] = useState<number | null>(
-    null,
-  );
+  const [backendCompletion, setBackendCompletion] = useState<number | null>(null);
   const [canRequestApproval, setCanRequestApproval] = useState(false);
   const [canToggleStatus, setCanToggleStatus] = useState(false);
   const [isApprovalRequested, setIsApprovalRequested] = useState(false);
@@ -590,8 +596,17 @@ export function EditProfileScreen({
     };
   }, []);
 
-  // Fetch tenant-defined custom profile forms for this account type.
-  // Fetch backend-authoritative profile completion (matches Dashboard).
+  // Mirror the parent's (HomeScreen) value whenever it changes — keeps the
+  // badge in sync after saves without an extra API round-trip.
+  useEffect(() => {
+    if (initialCompletion != null) {
+      setBackendCompletion(initialCompletion);
+    }
+  }, [initialCompletion]);
+
+  // Always fetch on mount for approval flags (canRequestApproval, isApproved,
+  // etc.). Only update the percentage if no initial value was supplied by the
+  // parent — otherwise the parent is the single source of truth for that number.
   useEffect(() => {
     if (!accountType) return;
     let cancelled = false;
@@ -601,19 +616,20 @@ export function EditProfileScreen({
         if (cancelled) return;
         const d = res?.data ?? res ?? {};
         const num = Number(d.percentage);
-        if (Number.isFinite(num)) setBackendCompletion(num);
+        if (Number.isFinite(num) && initialCompletion == null) {
+          setBackendCompletion(num);
+          onCompletionLoaded?.(num);
+        }
         setCanRequestApproval(Boolean(d.canRequestApproval));
         setCanToggleStatus(Boolean(d.canToggleStatus));
         setIsApprovalRequested(Boolean(d.isApprovalRequested));
         setIsApproved(Boolean(d.isApproved));
       })
-      .catch(() => {
-        // Leave backendCompletion null → local fallback applies.
-      });
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
-  }, [token, accountType, investorSubtype]);
+  }, [token, accountType, investorSubtype]); // initialCompletion intentionally omitted — checked at runtime
 
   // Fetch corporate engagement data from its own endpoint when the user is
   // a corporate. startupInfo doesn't include engagement fields.
@@ -1270,7 +1286,10 @@ export function EditProfileScreen({
       .then(res => {
         const d = res?.data ?? res ?? {};
         const num = Number(d.percentage);
-        if (Number.isFinite(num)) setBackendCompletion(num);
+        if (Number.isFinite(num)) {
+          setBackendCompletion(num);
+          onCompletionLoaded?.(num);
+        }
         setCanRequestApproval(Boolean(d.canRequestApproval));
         setIsApprovalRequested(Boolean(d.isApprovalRequested));
         setIsApproved(Boolean(d.isApproved));

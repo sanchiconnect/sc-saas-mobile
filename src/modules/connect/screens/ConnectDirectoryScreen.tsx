@@ -35,6 +35,7 @@ type Props = {
   token: string;
   roles: RoleTab[];
   initialRoleKey?: ConnectRoleKey;
+  initialSearch?: string;
   primaryColor: string;
   logoBaseUrl?: string;
   onActiveProfileChange?: (active: boolean) => void;
@@ -60,6 +61,7 @@ export function ConnectDirectoryScreen({
   token,
   roles,
   initialRoleKey,
+  initialSearch,
   primaryColor,
   logoBaseUrl,
   onActiveProfileChange,
@@ -73,8 +75,8 @@ export function ConnectDirectoryScreen({
       ? initialRoleKey
       : roles[0]?.key,
   );
-  const [searchInput, setSearchInput] = useState('');
-  const [search, setSearch] = useState('');
+  const [searchInput, setSearchInput] = useState(initialSearch ?? '');
+  const [search, setSearch] = useState(initialSearch ?? '');
   const [sort, setSort] = useState<DirectorySort>(SORTS[0]);
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
   const [investorType, setInvestorType] =
