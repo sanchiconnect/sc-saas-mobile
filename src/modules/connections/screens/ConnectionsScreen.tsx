@@ -27,6 +27,7 @@ import {TenantContext} from '../../../core/tenant/TenantProvider';
 import {useToast} from '../../../core/toast/ToastProvider';
 import type {Conversation} from '../../chat/types';
 import {stripHtml} from '../../chat/utils';
+import {ScheduleMeetingModal} from '../../meetings/components/ScheduleMeetingModal';
 import {connectionsService} from '../services/connections.service';
 import {meetingsService} from '../services/meetings.service';
 import type {CalendarSlot} from '../services/meetings.service';
@@ -301,6 +302,7 @@ export function ConnectionsScreen({
   );
   // Card action sheet — opens when the user taps the 3-dot menu on a card.
   const [cardMenuFor, setCardMenuFor] = useState<Connection | null>(null);
+  const [scheduleFor, setScheduleFor] = useState<Connection | null>(null);
   // ConfirmModal state for remove / reject confirmations.
   const [pendingConfirm, setPendingConfirm] = useState<{
     connection: Connection;
@@ -809,9 +811,7 @@ export function ConnectionsScreen({
 
   const handleScheduleCall = (c: Connection) => {
     setCardMenuFor(null);
-    toast.info(
-      `Scheduling a call with ${resolveName(c)} will land in a future release.`,
-    );
+    setScheduleFor(c);
   };
 
   // Tabs other than active filter client-side, since the backend doesn't
@@ -2027,6 +2027,21 @@ export function ConnectionsScreen({
           </View>
         </Modal>
       </Modal>
+
+      <ScheduleMeetingModal
+        visible={scheduleFor !== null}
+        token={token}
+        currentUserName={currentUserName}
+        presetUser={
+          scheduleFor
+            ? {
+                uuid: resolveCounterparty(scheduleFor).uuid ?? '',
+                name: resolveName(scheduleFor),
+              }
+            : null
+        }
+        onClose={() => setScheduleFor(null)}
+      />
 
       <ConfirmModal
         visible={pendingConfirm !== null}
