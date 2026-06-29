@@ -1132,10 +1132,17 @@ export function EditProfileScreen({
     // documents are uploaded. Documents reports via onCompletionChange.
     if (tab.key === 'pitch') {
       const pitchFilled = tab.status === 'complete';
-      return {...tab, status: (pitchFilled && documentsComplete) ? ('complete' as const) : ('incomplete' as const)};
+      const videoPitchMandatory = globalSetting?.features?.video_pitch_mandatory === true;
+      const hasVideo = Boolean(
+        startupInfo?.pitchDeck?.powerPitchUrl ||
+        startupInfo?.pitchDeck?.powerPitchDeckUrl ||
+        startupInfo?.pitchDeck?.uploadPitchUrl,
+      );
+      const videoOk = !videoPitchMandatory || hasVideo;
+      return {...tab, status: (pitchFilled && documentsComplete && videoOk) ? ('complete' as const) : ('incomplete' as const)};
     }
     return tab;
-  }), [basicInfo, startupInfo, selectedIndustryIds, selectedTechnologyIds, startupForms, accountType, investorSubtype, engagementComplete, engagementValid, documentsComplete]);
+  }), [basicInfo, startupInfo, selectedIndustryIds, selectedTechnologyIds, startupForms, accountType, investorSubtype, engagementComplete, engagementValid, documentsComplete, globalSetting]);
 
   // Tenant-defined custom profile forms appended after the built-in tabs.
   // Each form is one tab keyed by `custom:<uuid>` so we can dispatch by key.

@@ -716,7 +716,12 @@ export function YourPitchDeck({
           <View
             style={[styles.titleBar, {backgroundColor: primaryColor}]}
           />
-          <Text style={styles.videoSectionTitle}>Your pitch video</Text>
+          <Text style={styles.videoSectionTitle}>
+            Your pitch video
+            {globalSetting?.features?.video_pitch_mandatory ? (
+              <Text style={styles.required}> *</Text>
+            ) : null}
+          </Text>
         </View>
 
         <View style={styles.modeCardsRow}>
