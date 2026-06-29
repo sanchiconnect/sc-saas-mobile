@@ -14,6 +14,7 @@ type ThemeType = {
 type TenantContextType = {
   baseUrl: string | null;
   loading: boolean;
+  tenantError: boolean;
   theme: ThemeType | null;
   // Tenant web domain (customDomain preferred, else the default domain) from
   // /verify_tenant. Used to build shareable web links to in-app content.
@@ -28,6 +29,7 @@ type Props = {
 export const TenantContext = createContext<TenantContextType>({
   baseUrl: null,
   loading: true,
+  tenantError: false,
   theme: null,
   domain: null,
   globalSetting: null,
@@ -40,6 +42,7 @@ export const TenantProvider = ({children}: Props) => {
   const [domain, setDomain] = useState<string | null>(null);
   const [globalSetting, setGlobalSetting] =
     useState<TenantContextType['globalSetting']>(null);
+  const [tenantError, setTenantError] = useState(false);
 
   const settingInit = async (
     url: string,
@@ -133,9 +136,12 @@ export const TenantProvider = ({children}: Props) => {
             subscription_active: res?.data?.subscription_active,
             customDomain: res?.data?.customDomain,
           });
+        } else {
+          setTenantError(true);
         }
       } catch (error) {
         console.log('Tenant error', error);
+        setTenantError(true);
       } finally {
         setLoading(false);
       }
@@ -146,7 +152,7 @@ export const TenantProvider = ({children}: Props) => {
 
   return (
     <TenantContext.Provider
-      value={{baseUrl, loading, theme, domain, globalSetting}}>
+      value={{baseUrl, loading, tenantError, theme, domain, globalSetting}}>
       {children}
     </TenantContext.Provider>
   );
