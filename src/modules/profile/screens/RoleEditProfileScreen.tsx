@@ -739,7 +739,7 @@ export function RoleEditProfileScreen({
   return (
     <KeyboardAvoidingView
       style={styles.page}
-      behavior="padding"
+       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 24}>
       {/* ── Header ──────────────────────────────────────────────────────── */}
       <View style={styles.header}>

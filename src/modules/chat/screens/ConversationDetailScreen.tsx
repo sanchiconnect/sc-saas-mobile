@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   FlatList,
   Image,
+  Keyboard,
   KeyboardAvoidingView,
   Linking,
   Modal,
@@ -1162,7 +1163,7 @@ export function ConversationDetailScreen({
   return (
     <KeyboardAvoidingView
       style={styles.page}
-      behavior="padding"
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 30}>
       <View style={styles.header}>
         <Pressable

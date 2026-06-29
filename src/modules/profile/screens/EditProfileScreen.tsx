@@ -1962,7 +1962,7 @@ export function EditProfileScreen({
   return (
     <KeyboardAvoidingView
       style={styles.page}
-      behavior="padding"
+       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 24}>
       <View style={styles.headerBlock}>
         <View style={styles.header}>
