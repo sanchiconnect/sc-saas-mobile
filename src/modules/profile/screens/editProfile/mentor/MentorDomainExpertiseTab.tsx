@@ -368,7 +368,7 @@ function MentorDomainExpertiseTab({
             />
           ) : null}
 
-          <View style={styles.otherToggleRow}>
+          {/* <View style={styles.otherToggleRow}>
             <Text style={styles.otherToggleLabel}>Add other industries</Text>
             <Switch
               value={othersActive}
@@ -379,7 +379,7 @@ function MentorDomainExpertiseTab({
               trackColor={{false: '#cbd5e1', true: `${primaryColor}55`}}
               thumbColor={othersActive ? primaryColor : '#f1f5f9'}
             />
-          </View>
+          </View> */}
           {othersActive ? (
             <TextInput
               style={styles.otherInput}

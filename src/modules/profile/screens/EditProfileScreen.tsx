@@ -2390,7 +2390,7 @@ export function EditProfileScreen({
             </View>
 
             <View style={styles.domainSection}>
-              <View style={styles.otherToggleRow}>
+              {/* <View style={styles.otherToggleRow}>
                 <Text style={styles.domainHeading}>Add other industries</Text>
                 <Switch
                   value={otherIndustriesActive}
@@ -2403,7 +2403,7 @@ export function EditProfileScreen({
                     otherIndustriesActive ? primaryColor : '#f1f5f9'
                   }
                 />
-              </View>
+              </View> */}
               {otherIndustriesActive ? (
                 <>
                   <Text style={styles.domainHint}>
@@ -2422,7 +2422,7 @@ export function EditProfileScreen({
             </View>
 
             <View style={styles.domainSection}>
-              <View style={styles.otherToggleRow}>
+              {/* <View style={styles.otherToggleRow}>
                 <Text style={styles.domainHeading}>Add other technologies</Text>
                 <Switch
                   value={otherTechActive}
@@ -2433,7 +2433,7 @@ export function EditProfileScreen({
                   trackColor={{false: '#cbd5e1', true: `${primaryColor}55`}}
                   thumbColor={otherTechActive ? primaryColor : '#f1f5f9'}
                 />
-              </View>
+              </View> */}
               {otherTechActive ? (
                 <>
                   <Text style={styles.domainHint}>
@@ -2671,6 +2671,14 @@ export function EditProfileScreen({
         onRequestClose={() => setShowApprovalModal(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
+            <Pressable
+              style={styles.modalCloseBtn}
+              onPress={() => setShowApprovalModal(false)}
+              disabled={isSubmittingApproval}
+              hitSlop={8}
+              accessibilityLabel="Close">
+              <Text style={styles.modalCloseIcon}>✕</Text>
+            </Pressable>
             <View style={[styles.modalIconWrap, {borderColor: colors.success}]}>
               <Text style={[styles.modalCheckmark, {color: colors.success}]}>✓</Text>
             </View>
@@ -2701,13 +2709,6 @@ export function EditProfileScreen({
                   labelStyle={styles.modalBtnLabel}
                 />
               ) : null}
-              <AppButton
-                label="Cancel"
-                disabled={isSubmittingApproval}
-                onPress={() => setShowApprovalModal(false)}
-                style={[styles.modalCancelBtn, {flex: 1}]}
-                labelStyle={styles.modalBtnLabel}
-              />
             </View>
           </View>
         </View>
@@ -2996,6 +2997,19 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 400,
     gap: 12,
+    position: 'relative',
+  },
+  modalCloseBtn: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    padding: 6,
+    zIndex: 1,
+  },
+  modalCloseIcon: {
+    fontSize: 18,
+    color: '#94a3b8',
+    lineHeight: 22,
   },
   modalIconWrap: {
     width: 72,
@@ -3032,9 +3046,6 @@ const styles = StyleSheet.create({
   },
   modalPreviewBtn: {
     backgroundColor: '#0f172a',
-  },
-  modalCancelBtn: {
-    backgroundColor: '#94a3b8',
   },
   modalBtnLabel: {
     fontSize: 13,
