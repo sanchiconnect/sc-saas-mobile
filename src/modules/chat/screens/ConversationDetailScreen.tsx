@@ -1710,7 +1710,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     flexDirection: 'row',
     gap: 8,
-    padding: 10,
+    padding: 15,
   },
   composerActionsRow: {
     alignItems: 'center',
