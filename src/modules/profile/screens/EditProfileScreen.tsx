@@ -2,6 +2,7 @@ import React, {useContext, useEffect, useMemo, useRef, useState} from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -351,6 +352,14 @@ export function EditProfileScreen({
     useState<InvestorSubtype>('organization');
   // Server-authoritative profile completion. Same endpoint Dashboard reads
   // from, so both screens display the identical number. null = not yet fetched.
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    const show = Keyboard.addListener('keyboardDidShow', () => setKeyboardOpen(true));
+    const hide = Keyboard.addListener('keyboardDidHide', () => setKeyboardOpen(false));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
+
   const [backendCompletion, setBackendCompletion] = useState<number | null>(null);
   const [canRequestApproval, setCanRequestApproval] = useState(false);
   const [canToggleStatus, setCanToggleStatus] = useState(false);
@@ -1962,7 +1971,7 @@ export function EditProfileScreen({
   return (
     <KeyboardAvoidingView
       style={styles.page}
-       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : (keyboardOpen ? 'padding' : undefined)}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 24}>
       <View style={styles.headerBlock}>
         <View style={styles.header}>

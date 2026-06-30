@@ -1,6 +1,7 @@
 import React, {useContext, useEffect, useRef, useState} from 'react';
 import {
   ActivityIndicator,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -156,6 +157,14 @@ export function RoleEditProfileScreen({
   const [investorSubtype, setInvestorSubtype] =
     useState<InvestorSubtype>('organization');
   const [profileData, setProfileData] = useState<Record<string, any> | null>(null);
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    const show = Keyboard.addListener('keyboardDidShow', () => setKeyboardOpen(true));
+    const hide = Keyboard.addListener('keyboardDidHide', () => setKeyboardOpen(false));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
+
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -739,7 +748,7 @@ export function RoleEditProfileScreen({
   return (
     <KeyboardAvoidingView
       style={styles.page}
-       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : (keyboardOpen ? 'padding' : undefined)}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 24}>
       {/* ── Header ──────────────────────────────────────────────────────── */}
       <View style={styles.header}>

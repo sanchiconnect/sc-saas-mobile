@@ -420,6 +420,14 @@ export function ConversationDetailScreen({
   const logoBaseUrl =
     globalSetting?.imgKitUrl || globalSetting?.assetsImgKitUrl || '';
 
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    const show = Keyboard.addListener('keyboardDidShow', () => setKeyboardOpen(true));
+    const hide = Keyboard.addListener('keyboardDidHide', () => setKeyboardOpen(false));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -1163,7 +1171,7 @@ export function ConversationDetailScreen({
   return (
     <KeyboardAvoidingView
       style={styles.page}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : (keyboardOpen ? 'padding' : undefined)}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 30}>
       <View style={styles.header}>
         <Pressable
