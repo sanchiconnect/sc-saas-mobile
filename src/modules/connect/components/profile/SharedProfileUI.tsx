@@ -353,24 +353,29 @@ export function ProfileShell({
   token,
   user,
   resolvedUuid,
+  currentUserId,
   connState,
   setConnState,
   primaryColor,
   isApproved,
   onBack,
+  onEditProfile,
   children,
 }: {
   name: string;
   token: string;
   user: DirectoryUser;
   resolvedUuid: string;
+  currentUserId?: string;
   connState: ConnectionState;
   setConnState: (s: ConnectionState) => void;
   primaryColor: string;
   isApproved?: boolean;
   onBack: () => void;
+  onEditProfile?: () => void;
   children: React.ReactNode;
 }) {
+  const isOwnProfile = !!currentUserId && currentUserId === resolvedUuid;
   const toast = useToast();
   const [connectOpen, setConnectOpen] = useState(false);
   const [connectMessage, setConnectMessage] = useState(DEFAULT_MSG);

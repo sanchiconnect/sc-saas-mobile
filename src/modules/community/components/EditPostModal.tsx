@@ -41,8 +41,8 @@ const FORMAT_TOOLS: {action: string; icon: string; label: string}[] = [
 
 // The editor emits empty content as '', '<br>' or '<div><br></div>'. Strip
 // tags to decide whether there's anything left to save.
-const hasText = (html: string): boolean =>
-  html.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim().length > 0;
+const hasText = (html: string | null | undefined): boolean =>
+  !!html && html.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim().length > 0;
 
 export function EditPostModal({
   visible,
@@ -55,7 +55,7 @@ export function EditPostModal({
   onSaved,
 }: Props) {
   const richText = useRef<RichEditor>(null);
-  const [html, setHtml] = useState(initialHtml);
+  const [html, setHtml] = useState(initialHtml ?? '');
   const [active, setActive] = useState<string[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,9 +63,9 @@ export function EditPostModal({
   // Re-seed the editor whenever a (different) post is opened for editing.
   useEffect(() => {
     if (visible) {
-      setHtml(initialHtml);
+      setHtml(initialHtml ?? '');
       setError(null);
-      richText.current?.setContentHTML(initialHtml);
+      richText.current?.setContentHTML(initialHtml ?? '');
     }
   }, [visible, initialHtml]);
 
