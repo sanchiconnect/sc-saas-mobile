@@ -73,8 +73,9 @@ export function BasicInfoForm({
     instagram: instagramUrl,
     youtube: youtubeUrl,
   };
-  const urlError = (key: string, val: string): string | undefined => {
+  const urlError = (key: string, val: string, isRequired?: boolean): string | undefined => {
     if (!touched[key]) return undefined;
+    if (isRequired && !val.trim()) return 'LinkedIn URL is required.';
     const validate = VALIDATORS[key] || urlValidator;
     return validate(val);
   };
@@ -617,11 +618,12 @@ export function BasicInfoForm({
         <View style={styles.field}>
           <AppTextField
             label="LinkedIn"
+            required
             placeholder="https://linkedin.com/..."
             value={value.social.linkedin}
             onChangeText={text => updateSocial('linkedin', text)}
             onBlur={() => markTouched('linkedin')}
-            error={urlError('linkedin', value.social.linkedin)}
+            error={urlError('linkedin', value.social.linkedin, true)}
             autoCapitalize="none"
             keyboardType="url"
           />

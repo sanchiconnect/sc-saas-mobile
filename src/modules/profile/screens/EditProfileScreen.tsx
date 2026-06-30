@@ -1250,6 +1250,7 @@ export function EditProfileScreen({
       if (!basicInfo.leadership.some(member => member.name?.trim())) {
         return false;
       }
+      if (!basicInfo.social?.linkedin?.trim()) return false;
       return true;
     }
     if (activeTab === 'industry') {
