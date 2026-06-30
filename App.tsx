@@ -4,6 +4,7 @@ import {
   BackHandler,
   StatusBar,
   StyleSheet,
+  Text,
   useColorScheme,
   View,
 } from 'react-native';
@@ -34,7 +35,7 @@ import {
 // an ancestor, which is why this lives in a separate component from App).
 function AppContent() {
   const isDarkMode = useColorScheme() === 'dark';
-  const {loading, theme} = useContext(TenantContext);
+  const {loading, tenantError, theme} = useContext(TenantContext);
 
   const [session, setSession] = useState<AuthSession | null>(null);
   const [authScreen, setAuthScreen] = useState<AuthScreen>('login');
@@ -123,6 +124,22 @@ function AppContent() {
     );
   }
 
+  // verify_tenant returned 502 or could not be reached — block access.
+  if (tenantError) {
+    return (
+      <View style={styles.errorWrap}>
+        <View style={styles.errorCard}>
+          <Text style={styles.errorHeading}>Direct access is not allowed</Text>
+          <View style={styles.errorDivider} />
+          <Text style={styles.errorBody}>
+            You need to have a partner account with SanchiConnect to get access
+            to the panel.
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <SafeAreaView
       style={[
@@ -183,6 +200,39 @@ const styles = StyleSheet.create({
   },
   appShellLight: {
     backgroundColor: '#e2e8f0',
+  },
+  errorWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f1f5f9',
+    padding: 24,
+  },
+  errorCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    padding: 24,
+    width: '100%',
+    alignItems: 'center',
+    elevation: 4,
+    gap: 16,
+  },
+  errorHeading: {
+    color: '#0f172a',
+    fontSize: 18,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  errorDivider: {
+    height: 1,
+    width: '100%',
+    backgroundColor: '#e2e8f0',
+  },
+  errorBody: {
+    color: 'black',
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
   },
 });
 

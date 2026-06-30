@@ -21,6 +21,7 @@ import {
   AdvisoryMember,
   BasicInfoForm as BasicInfoFormType,
   ELEVATOR_PITCH_LIMIT,
+  ELEVATOR_PITCH_MIN,
   EMPTY_ADVISORY,
   EMPTY_LEADERSHIP,
   TeamMember,
@@ -73,8 +74,9 @@ export function BasicInfoForm({
     instagram: instagramUrl,
     youtube: youtubeUrl,
   };
-  const urlError = (key: string, val: string): string | undefined => {
+  const urlError = (key: string, val: string, isRequired?: boolean): string | undefined => {
     if (!touched[key]) return undefined;
+    if (isRequired && !val.trim()) return 'LinkedIn URL is required.';
     const validate = VALIDATORS[key] || urlValidator;
     return validate(val);
   };
@@ -391,7 +393,7 @@ export function BasicInfoForm({
 
         <Subheading style={styles.spacedSubheading}>
           Elevator pitch<Text style={styles.required}> *</Text>{' '}
-          <Text style={styles.subheadingHint}>(max 300 chars)</Text>
+          <Text style={styles.subheadingHint}>(min 50, max 300 chars)</Text>
         </Subheading>
         <View style={styles.field}>
           <AppTextField
@@ -407,11 +409,17 @@ export function BasicInfoForm({
                 );
               }
             }}
+            onBlur={() => markTouched('elevatorPitch')}
             multiline
             numberOfLines={4}
             containerStyle={styles.multilineContainer}
             inputStyle={styles.multilineInput}
           />
+          {touched.elevatorPitch && pitchCount > 0 && pitchCount < ELEVATOR_PITCH_MIN && (
+            <Text style={styles.fieldError}>
+              Minimum {ELEVATOR_PITCH_MIN} characters required.
+            </Text>
+          )}
           <Text style={styles.counterText}>
             {pitchCount}/{ELEVATOR_PITCH_LIMIT} characters
           </Text>
@@ -617,11 +625,12 @@ export function BasicInfoForm({
         <View style={styles.field}>
           <AppTextField
             label="LinkedIn"
+            required
             placeholder="https://linkedin.com/..."
             value={value.social.linkedin}
             onChangeText={text => updateSocial('linkedin', text)}
             onBlur={() => markTouched('linkedin')}
-            error={urlError('linkedin', value.social.linkedin)}
+            error={urlError('linkedin', value.social.linkedin, true)}
             autoCapitalize="none"
             keyboardType="url"
           />
@@ -994,6 +1003,11 @@ const styles = StyleSheet.create({
   multilineInput: {
     minHeight: 90,
     textAlignVertical: 'top',
+  },
+  fieldError: {
+    color: colors.danger,
+    fontSize: 12,
+    marginTop: 4,
   },
   counterText: {
     color: '#94a3b8',

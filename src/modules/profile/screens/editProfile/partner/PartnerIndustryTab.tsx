@@ -122,7 +122,7 @@ function PartnerIndustryTab({
         initiallyExpanded
       />
 
-      <View style={styles.toggleRow}>
+      {/* <View style={styles.toggleRow}>
         <Text style={styles.toggleLabel}>Add other industries</Text>
         <Switch
           value={otherIndustriesActive}
@@ -133,7 +133,7 @@ function PartnerIndustryTab({
           trackColor={{false: '#cbd5e1', true: `${primaryColor}55`}}
           thumbColor={otherIndustriesActive ? primaryColor : '#f1f5f9'}
         />
-      </View>
+      </View> */}
       {otherIndustriesActive ? (
         <TextInput
           style={styles.input}
@@ -160,7 +160,7 @@ function PartnerIndustryTab({
         <Text style={styles.errorText}>{techError}</Text>
       ) : null}
 
-      <View style={styles.toggleRow}>
+      {/* <View style={styles.toggleRow}>
         <Text style={styles.toggleLabel}>Add other technologies</Text>
         <Switch
           value={otherTechActive}
@@ -171,7 +171,7 @@ function PartnerIndustryTab({
           trackColor={{false: '#cbd5e1', true: `${primaryColor}55`}}
           thumbColor={otherTechActive ? primaryColor : '#f1f5f9'}
         />
-      </View>
+      </View> */}
       {otherTechActive ? (
         <TextInput
           style={styles.input}

@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   FlatList,
   Image,
+  Keyboard,
   KeyboardAvoidingView,
   Linking,
   Modal,
@@ -418,6 +419,14 @@ export function ConversationDetailScreen({
   const primaryColor = theme?.primary || colors.primary;
   const logoBaseUrl =
     globalSetting?.imgKitUrl || globalSetting?.assetsImgKitUrl || '';
+
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    const show = Keyboard.addListener('keyboardDidShow', () => setKeyboardOpen(true));
+    const hide = Keyboard.addListener('keyboardDidHide', () => setKeyboardOpen(false));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -1162,7 +1171,7 @@ export function ConversationDetailScreen({
   return (
     <KeyboardAvoidingView
       style={styles.page}
-      behavior="padding"
+      behavior={Platform.OS === 'ios' ? 'padding' : (keyboardOpen ? 'padding' : undefined)}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 30}>
       <View style={styles.header}>
         <Pressable
@@ -1701,7 +1710,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     flexDirection: 'row',
     gap: 8,
-    padding: 10,
+    padding: 15,
   },
   composerActionsRow: {
     alignItems: 'center',

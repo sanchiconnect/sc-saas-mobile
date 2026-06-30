@@ -328,7 +328,7 @@ function InvestorInvestmentsTab({
         );
       })()}
 
-      <View style={styles.otherToggleRow}>
+      {/* <View style={styles.otherToggleRow}>
         <Text style={styles.otherLabel}>Add other sectors</Text>
         <Switch
           value={form.otherIndustriesActive}
@@ -342,7 +342,7 @@ function InvestorInvestmentsTab({
           trackColor={{false: '#cbd5e1', true: `${primaryColor}55`}}
           thumbColor={form.otherIndustriesActive ? primaryColor : '#f1f5f9'}
         />
-      </View>
+      </View> */}
       {form.otherIndustriesActive ? (
         <TextInput
           style={styles.otherInput}

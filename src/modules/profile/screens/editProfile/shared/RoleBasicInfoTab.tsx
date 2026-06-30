@@ -1115,7 +1115,7 @@ function RoleBasicInfoTab({
               })()
             : null}
 
-          <View style={styles.otherToggleRow}>
+          {/* <View style={styles.otherToggleRow}>
             <Text style={styles.otherToggleLabel}>Add other sectors</Text>
             <Switch
               value={otherIndustriesActive}
@@ -1126,7 +1126,7 @@ function RoleBasicInfoTab({
               trackColor={{false: '#cbd5e1', true: `${primaryColor}55`}}
               thumbColor={otherIndustriesActive ? primaryColor : '#f1f5f9'}
             />
-          </View>
+          </View> */}
           {otherIndustriesActive ? (
             <TextInput
               style={styles.otherInput}
