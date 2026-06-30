@@ -195,6 +195,13 @@ export const extractProfile = (
     root?.businessModels,
   );
 
+  // Only honour the R-relation IDs.  Plain registeredCountryId / stateId /
+  // cityId may be backend-assigned defaults (e.g. India for every new account)
+  // and should not pre-fill pickers the user has never touched.
+  const countryIdFromR = Number(root?.registeredCountryR?.id) || null;
+  const stateIdFromR   = Number(root?.registeredStateR?.id)   || null;
+  const cityIdFromR    = Number(root?.registeredCityR?.id)    || null;
+
   const basicInfo: BasicInfoForm = {
     ...EMPTY_BASIC_INFO,
 
@@ -266,34 +273,18 @@ export const extractProfile = (
       pickFirst(root?.dpiitNumber, company?.dpiitNumber),
     ),
 
-    countryId: Number(root?.registeredCountryR?.id ?? root?.registeredCountryId) || null,
-    country: asString(
-      pickFirst(
-        root?.registeredCountryR?.name,
-        root?.registeredCountry,
-        address?.country,
-        root?.country,
-      ),
-    ),
-    stateId: Number(root?.registeredStateR?.id ?? root?.registeredStateId) || null,
-    state: asString(
-      pickFirst(
-        root?.registeredStateR?.name,
-        root?.registeredState,
-        address?.state,
-        root?.state,
-      ),
-    ),
-    cityId: Number(root?.registeredCityR?.id ?? root?.registeredCityId) || null,
-    city: asString(
-      pickFirst(
-        root?.registeredCityR?.name,
-        root?.registeredCity,
-        address?.city,
-        company?.city,
-        root?.city,
-      ),
-    ),
+    countryId: countryIdFromR,
+    country: countryIdFromR
+      ? asString(pickFirst(root?.registeredCountryR?.name, root?.registeredCountry, address?.country, root?.country))
+      : '',
+    stateId: stateIdFromR,
+    state: stateIdFromR
+      ? asString(pickFirst(root?.registeredStateR?.name, root?.registeredState, address?.state, root?.state))
+      : '',
+    cityId: cityIdFromR,
+    city: cityIdFromR
+      ? asString(pickFirst(root?.registeredCityR?.name, root?.registeredCity, address?.city, company?.city, root?.city))
+      : '',
 
     elevatorPitch: asString(
       pickFirst(
