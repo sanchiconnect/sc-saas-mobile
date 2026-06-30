@@ -92,9 +92,15 @@ export function CreatePostModal({
   };
 
   const handleInsertLink = () => {
-    const url = linkUrl.trim();
-    if (url) {
-      richText.current?.insertLink(url, url);
+    const trimmed = linkUrl.trim();
+    if (trimmed) {
+      const url =
+        trimmed.startsWith('http://') || trimmed.startsWith('https://')
+          ? trimmed
+          : `https://${trimmed}`;
+      richText.current?.insertHTML(
+        `&nbsp;<a href="${url}">${url}</a>&nbsp;`,
+      );
     }
     setIsLinkOpen(false);
     setLinkUrl('');
