@@ -575,11 +575,11 @@ export function CommunityPostCard({
               : 0;
             const inner = (
               <>
-                {showResults ? (
+                {showResults && pct > 0 ? (
                   <View
                     style={[
                       styles.pollOptionFill,
-                      {width: `${pct}%`},
+                      {right: `${100 - pct}%`},
                       voted && {backgroundColor: withAlpha(reactedColor, 0.12)},
                     ]}
                   />
