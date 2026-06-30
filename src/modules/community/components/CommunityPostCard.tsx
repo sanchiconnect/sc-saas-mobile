@@ -12,6 +12,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import WebView from 'react-native-webview';
 
 import {Icon} from '../../../core/components/Icon';
 import {Tooltip} from '../../../core/components/Tooltip';
@@ -61,52 +62,76 @@ const resolveUrl = (raw?: string | null, baseUrl?: string): string | null => {
   return `${baseUrl.replace(/\/$/, '')}/${raw.replace(/^\//, '')}`;
 };
 
-// The feed shows a plain-text preview. Strip HTML tags and decode the few
-// entities that show up most often in the editor output.
-const stripHtml = (html?: string): string => {
-  if (!html) return '';
-  return html
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/p>/gi, '\n')
-    .replace(/<\/div>/gi, '\n')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-};
-
-const URL_REGEX = /(https?:\/\/[^\s]+)/g;
-
-const renderTextWithLinks = (
-  text: string,
-  linkStyle: object,
-  textStyle: object,
-) => {
-  const parts = text.split(URL_REGEX);
-  return parts.map((part, i) => {
-    if (URL_REGEX.test(part)) {
-      URL_REGEX.lastIndex = 0;
-      return (
-        <Text
-          key={i}
-          style={linkStyle}
-          onPress={() => Linking.openURL(part).catch(() => {})}>
-          {part}
-        </Text>
-      );
-    }
-    return (
-      <Text key={i} style={textStyle}>
-        {part}
-      </Text>
-    );
+// Wrap raw post HTML in a minimal page so the WebView renders it exactly
+// as the author typed — preserving blank lines, bold/italic, and URLs.
+// The body also sends its own height back after render so the WebView can
+// size itself correctly without a fixed height.
+const buildPostHtml = (html: string, screenWidth: number) => `<!DOCTYPE html>
+<html><head>
+<meta name="viewport" content="width=${screenWidth},initial-scale=1,maximum-scale=1,user-scalable=no">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html,body{background:transparent;width:${screenWidth}px;}
+  body{
+    font-family:-apple-system,'Helvetica Neue',Arial,sans-serif;
+    font-size:15px;line-height:1.5;color:#0f172a;
+    word-break:break-word;overflow-wrap:break-word;
+  }
+  a{color:#2563eb;text-decoration:underline;}
+  b,strong{font-weight:700;}
+  i,em{font-style:italic;}
+  u{text-decoration:underline;}
+  div:empty::after{content:'\\00a0';}
+</style>
+</head><body>${html}<script>
+(function(){
+  function sendHeight(){
+    var h=document.body.scrollHeight||document.documentElement.scrollHeight;
+    window.ReactNativeWebView.postMessage(JSON.stringify({t:'h',h:h}));
+  }
+  // Send immediately and again after a short delay to catch late reflows
+  sendHeight();
+  setTimeout(sendHeight,150);
+  document.querySelectorAll('a').forEach(function(a){
+    a.addEventListener('click',function(e){
+      e.preventDefault();
+      window.ReactNativeWebView.postMessage(JSON.stringify({t:'l',u:a.href}));
+    });
   });
-};
+})();
+</script></body></html>`;
+
+// Renders post HTML in an auto-sizing WebView so formatting, spacing, and
+// blank lines appear exactly as the author typed them.
+function PostBodyWebView({html}: {html: string}) {
+  const [height, setHeight] = useState(100);
+  // Use screen width minus card horizontal padding (2 × spacing.lg ≈ 32px).
+  const contentWidth = Dimensions.get('window').width - 32;
+  return (
+    <WebView
+      source={{html: buildPostHtml(html, contentWidth)}}
+      style={[styles.postBodyWebView, {height}]}
+      scrollEnabled={false}
+      showsVerticalScrollIndicator={false}
+      showsHorizontalScrollIndicator={false}
+      scalesPageToFit={false}
+      onShouldStartLoadWithRequest={req => {
+        if (req.url.startsWith('http')) {
+          Linking.openURL(req.url).catch(() => {});
+          return false;
+        }
+        return true;
+      }}
+      onMessage={e => {
+        try {
+          const msg = JSON.parse(e.nativeEvent.data);
+          if (msg.t === 'h' && msg.h > 0) setHeight(msg.h);
+          else if (msg.t === 'l') Linking.openURL(msg.u).catch(() => {});
+        } catch {}
+      }}
+    />
+  );
+}
 
 // Short "x ago" relative time. Falls back to the raw value if unparseable.
 const timeAgo = (iso: string): string => {
@@ -205,7 +230,7 @@ export function CommunityPostCard({
   // Seeded from the feed and updated locally after a successful edit so the
   // card reflects the new text without a full reload.
   const [isEditOpen, setIsEditOpen] = useState(false);
-  const [postHtml, setPostHtml] = useState(post.text);
+  const [postHtml, setPostHtml] = useState(post.text ?? '');
   // Screen-space anchor for the menu, measured from the "..." trigger so the
   // dropdown opens right under it instead of floating at a fixed position.
   const menuBtnRef = useRef<View>(null);
@@ -429,7 +454,6 @@ export function CommunityPostCard({
     logoBaseUrl,
   );
   const orgName = post.user.organizationName;
-  const text = stripHtml(postHtml);
   // Prefer the `images` array; fall back to the legacy single `image` field.
   const imagePaths = post.images?.length
     ? post.images
@@ -544,11 +568,12 @@ export function CommunityPostCard({
         </Modal>
       ) : null}
 
-      {/* Body text — URLs rendered as tappable links */}
-      {text ? (
-        <Text style={styles.bodyText}>
-          {renderTextWithLinks(text, styles.linkText, styles.bodyText)}
-        </Text>
+      {/* Body — rendered in a WebView so spacing, blank lines, bold/italic
+          all appear exactly as the author typed them */}
+      {postHtml ? (
+        <View style={styles.bodyContainer}>
+          <PostBodyWebView html={postHtml} />
+        </View>
       ) : null}
 
       {/* Attached image(s) */}
@@ -1114,11 +1139,12 @@ const styles = StyleSheet.create({
     fontSize: typography.small,
     marginTop: 2,
   },
-  bodyText: {
-    color: '#0f172a',
-    fontSize: typography.bodyLg,
-    lineHeight: 22,
+  bodyContainer: {
     marginTop: spacing.md,
+  },
+  postBodyWebView: {
+    backgroundColor: 'transparent',
+    width: '100%',
   },
   linkText: {
     color: '#2563eb',
