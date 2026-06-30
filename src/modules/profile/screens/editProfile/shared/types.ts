@@ -84,6 +84,7 @@ export type BasicInfoForm = {
   social: SocialLinks;
 };
 
+export const ELEVATOR_PITCH_MIN   = 50;
 export const ELEVATOR_PITCH_LIMIT = 300;
 
 export const EMPTY_LEADERSHIP: TeamMember = {

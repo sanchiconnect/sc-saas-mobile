@@ -67,6 +67,7 @@ import {
 import {
   BasicInfoForm as BasicInfoFormType,
   FinancialsForm as FinancialsFormType,
+  ELEVATOR_PITCH_MIN,
   EMPTY_LEADERSHIP,
   EMPTY_BASIC_INFO,
   EMPTY_FINANCIALS,
@@ -1244,7 +1245,7 @@ export function EditProfileScreen({
       // Business Model. Kept inline with the existing required gates so
       // the SAVE button stays disabled until every red-asterisk field
       // is populated.
-      if (!basicInfo.elevatorPitch?.trim()) return false;
+      if ((basicInfo.elevatorPitch?.trim().length ?? 0) < ELEVATOR_PITCH_MIN) return false;
       if (!basicInfo.companyBrief?.trim()) return false;
       if (basicInfo.businessModels.length === 0) return false;
       if (!basicInfo.leadership.some(member => member.name?.trim())) {
