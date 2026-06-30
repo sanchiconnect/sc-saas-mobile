@@ -23,6 +23,7 @@ import {Icon} from '../../../core/components/Icon';
 import {colors} from '../../../core/theme/colors';
 import {TenantContext} from '../../../core/tenant/TenantProvider';
 import {useToast} from '../../../core/toast/ToastProvider';
+import {linkedinUrl as validateLinkedinUrl} from '../../../core/form/validators';
 import {authService} from '../../auth/services/auth.service';
 import {BasicInfoForm} from './editProfile/startup/BasicInfoForm';
 import {CorporateEngagementTab} from './editProfile/corporate/CorporateEngagementTab';
@@ -424,6 +425,7 @@ export function EditProfileScreen({
   const [picker, setPicker] = useState<PickerKind | null>(null);
   const [countryOptions, setCountryOptions] = useState<Country[]>(COUNTRIES);
   const [stateOptions, setStateOptions] = useState<LocationOption[]>([]);
+  const [statesLoaded, setStatesLoaded] = useState(false);
   const [cityOptions, setCityOptions] = useState<LocationOption[]>([]);
   const [industryOptions, setIndustryOptions] = useState<DomainOption[]>([]);
   const [technologyOptions, setTechnologyOptions] = useState<DomainOption[]>([]);
@@ -518,9 +520,23 @@ export function EditProfileScreen({
       const root = raw?.data || raw || null;
       setStartupInfo(root);
       const normalized = ensureBasicInfoDefaults(extracted.basicInfo);
-      setBasicInfo(normalized);
+      // After fetching, strip state/city that don't belong to the already-
+      // loaded stateOptions for this country (guards against stale R-relations
+      // in the backend returning old values after a country change).
+      const stateMatchesOptions =
+        !statesLoaded || stateOptions.some(s => s.name === normalized.state);
+      const cityMatchesOptions =
+        stateMatchesOptions && cityOptions.some(c => c.name === normalized.city);
+      const validatedNormalized = ensureBasicInfoDefaults({
+        ...normalized,
+        stateId: stateMatchesOptions ? normalized.stateId : null,
+        state: stateMatchesOptions ? normalized.state : '',
+        cityId: cityMatchesOptions ? normalized.cityId : null,
+        city: cityMatchesOptions ? normalized.city : '',
+      });
+      setBasicInfo(validatedNormalized);
       // Capture a snapshot used for per-sub-resource diff detection on save.
-      initialBasicInfoRef.current = normalized;
+      initialBasicInfoRef.current = validatedNormalized;
       const productInfo = root?.productInformation || {};
       initialProductInfoRef.current = {
         haveIP: productInfo?.haveIP ?? null,
@@ -1032,10 +1048,12 @@ export function EditProfileScreen({
   }, [token, accountType]);
 
   useEffect(() => {
+    setStatesLoaded(false);
     const countryId = getCountryIdByName(basicInfo.country, countryOptions);
 
     if (!countryId || !baseUrl) {
       setStateOptions([]);
+      setStatesLoaded(true);
       return;
     }
 
@@ -1048,11 +1066,29 @@ export function EditProfileScreen({
           return;
         }
 
-        setStateOptions(readLocationList(payload));
+        const states = readLocationList(payload);
+        setStateOptions(states);
+        setStatesLoaded(true);
+
+        // If the currently-loaded state doesn't belong to this country
+        // (stale backend data from a previous country selection), clear it.
+        setBasicInfo(prev => {
+          if (prev.state && !states.some(s => s.name === prev.state)) {
+            return ensureBasicInfoDefaults({
+              ...prev,
+              state: '',
+              stateId: null,
+              city: '',
+              cityId: null,
+            });
+          }
+          return prev;
+        });
       })
       .catch(() => {
         if (!cancelled) {
           setStateOptions([]);
+          setStatesLoaded(true);
         }
       });
 
@@ -1080,7 +1116,16 @@ export function EditProfileScreen({
           return;
         }
 
-        setCityOptions(readLocationList(payload));
+        const cities = readLocationList(payload);
+        setCityOptions(cities);
+
+        // Clear city if it doesn't belong to the selected state.
+        setBasicInfo(prev => {
+          if (prev.city && !cities.some(c => c.name === prev.city)) {
+            return ensureBasicInfoDefaults({...prev, city: '', cityId: null});
+          }
+          return prev;
+        });
       })
       .catch(() => {
         if (!cancelled) {
@@ -1251,7 +1296,8 @@ export function EditProfileScreen({
       if (!basicInfo.leadership.some(member => member.name?.trim())) {
         return false;
       }
-      if (!basicInfo.social?.linkedin?.trim()) return false;
+      const linkedinVal = basicInfo.social?.linkedin?.trim() ?? '';
+      if (!linkedinVal || validateLinkedinUrl(linkedinVal) !== undefined) return false;
       return true;
     }
     if (activeTab === 'industry') {
@@ -1425,9 +1471,22 @@ export function EditProfileScreen({
         await refreshOngoingCommitments();
       } else {
         // Always update the core /startup-information record.
+        // Strip state/city IDs that don't belong to the selected country —
+        // guards against stale backend data saved before country was changed.
+        const stateInOptions = statesLoaded && stateOptions.some(s => s.name === basicInfo.state);
+        const cityInOptions = cityOptions.some(c => c.name === basicInfo.city);
+        const sanitizedBasicInfo = statesLoaded
+          ? {
+              ...basicInfo,
+              stateId: stateInOptions ? basicInfo.stateId : null,
+              state: stateInOptions ? basicInfo.state : '',
+              cityId: cityInOptions ? basicInfo.cityId : null,
+              city: cityInOptions ? basicInfo.city : '',
+            }
+          : basicInfo;
         await authService.updateProfile(
           token,
-          buildBasicInfoPayload(basicInfo),
+          buildBasicInfoPayload(sanitizedBasicInfo as typeof basicInfo),
           accountType || undefined,
         );
 
@@ -1879,7 +1938,11 @@ export function EditProfileScreen({
           primaryColor={primaryColor}
           searchable
           onClose={closePicker}
-          emptyMessage="Select a country first"
+          emptyMessage={
+            basicInfo.country
+              ? 'No states available for this country'
+              : 'Select a country first'
+          }
           onSelect={selection => {
             const selectedState =
               stateOptions.find(option => option.name === selection) || null;
@@ -1908,7 +1971,11 @@ export function EditProfileScreen({
           primaryColor={primaryColor}
           searchable
           onClose={closePicker}
-          emptyMessage="Select a state first"
+          emptyMessage={
+            basicInfo.state
+              ? 'No cities available for this state'
+              : 'Select a state first'
+          }
           onSelect={selection => {
             const selectedCity =
               cityOptions.find(option => option.name === selection) || null;
