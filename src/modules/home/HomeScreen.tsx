@@ -948,6 +948,8 @@ export function HomeScreen({
                   setSelectedMenu({section: 'connections'});
                 } else if (statKey === 'unread-messages') {
                   setSelectedMenu({section: 'chat'});
+                } else if (statKey === 'pending-meetings') {
+                  setSelectedMenu({section: 'meetings'});
                 }
               }}
               primaryColor={primaryColor}
