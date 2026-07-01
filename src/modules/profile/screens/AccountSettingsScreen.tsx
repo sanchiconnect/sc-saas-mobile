@@ -735,6 +735,12 @@ export function AccountSettingsScreen({
       return;
     }
 
+    const isDuplicate = specificDateRows.some(row => row.dateLabel === trimmedDate);
+    if (isDuplicate) {
+      toast.error('This date has already been added. Please choose a different date.');
+      return;
+    }
+
     setSpecificDateRows(current => [
       ...current,
       {
@@ -1532,6 +1538,22 @@ export function AccountSettingsScreen({
                     </Text>
                     <Icon name="chevron-down" size={18} color="#94a3b8" />
                   </Pressable>
+                  {newSpecificDate.dateLabel &&
+                    specificDateRows.some(
+                      row => row.dateLabel === newSpecificDate.dateLabel,
+                    ) ? (
+                    <View style={styles.duplicateDateWarning}>
+                      <Icon
+                        name="alert-circle-outline"
+                        size={14}
+                        color="#d97706"
+                      />
+                      <Text style={styles.duplicateDateWarningText}>
+                        This date is already added. Please choose a different
+                        date.
+                      </Text>
+                    </View>
+                  ) : null}
                 </View>
 
                 <Pressable
@@ -2533,6 +2555,18 @@ const styles = StyleSheet.create({
   datePickerTriggerPlaceholder: {
     color: '#94a3b8',
     fontWeight: '500',
+  },
+  duplicateDateWarning: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 6,
+    marginTop: 6,
+  },
+  duplicateDateWarningText: {
+    color: '#d97706',
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '600',
   },
   allDayRow: {
     alignItems: 'center',
