@@ -330,6 +330,7 @@ type Props = {
   // Used to label the user's own messages (e.g. "Brock Lesnar") so the
   // sender header matches the web design.
   currentUserName?: string;
+  currentUserAvatar?: string | null;
   onBack: () => void;
   // Fired after a batch of /mark-read PATCHes settle so the parent can
   // re-hit /notifications/count and drop the drawer's unread badge
@@ -412,6 +413,7 @@ export function ConversationDetailScreen({
   conversation,
   currentUserUuid,
   currentUserName,
+  currentUserAvatar,
   onBack,
   onUnreadCountChanged,
 }: Props) {
@@ -1022,7 +1024,7 @@ export function ConversationDetailScreen({
       .join('')
       .toUpperCase();
     const senderRawAvatar = own
-      ? messageSender?.avatar || null
+      ? messageSender?.avatar || currentUserAvatar || null
       : messageSender?.avatar || headerAvatar;
     const senderAvatar = senderRawAvatar
       ? senderRawAvatar.startsWith('http')
