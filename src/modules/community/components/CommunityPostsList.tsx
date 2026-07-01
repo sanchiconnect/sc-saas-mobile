@@ -38,6 +38,8 @@ type Props = {
   currentUserUuid?: string;
   // Called after a post is deleted, so the parent can refresh wall stats.
   onPostDeleted?: () => void;
+  // Called when a user's name/avatar is tapped, to show their posts.
+  onUserPress?: (userUuid: string, userName: string) => void;
 };
 
 // Paginated, pull-to-refresh, infinite-scroll list of community posts. The
@@ -57,6 +59,7 @@ export function CommunityPostsList({
   onReacted,
   currentUserUuid,
   onPostDeleted,
+  onUserPress,
 }: Props) {
   const [posts, setPosts] = useState<CommunityPost[]>([]);
   const [page, setPage] = useState(1);
@@ -153,6 +156,7 @@ export function CommunityPostsList({
           onReacted={onReacted}
           currentUserUuid={currentUserUuid}
           onDeleted={handleDeleted}
+          onUserPress={onUserPress}
         />
       )}
       contentContainerStyle={styles.listContent}

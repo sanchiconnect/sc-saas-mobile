@@ -63,6 +63,8 @@ export function CommunityWallScreen({
 }: Props) {
   const [stats, setStats] = useState<WallStats | null>(null);
   const [activeFilter, setActiveFilter] = useState<WallStatType | null>(null);
+  // When set, shows all posts by the tapped user instead of the main feed.
+  const [userFilter, setUserFilter] = useState<{uuid: string; name: string} | null>(null);
   // Bumped after a reaction so the stats card re-fetches (the reactions tally
   // moves without needing a full feed reload).
   const [statsRefresh, setStatsRefresh] = useState(0);
@@ -86,11 +88,23 @@ export function CommunityWallScreen({
   // A deleted post changes the user's wall tallies, so refresh the stats card.
   const handlePostDeleted = useCallback(() => setStatsRefresh(k => k + 1), []);
 
+  const handleUserPress = useCallback(
+    (uuid: string, name: string) => setUserFilter({uuid, name}),
+    [],
+  );
+
   // Stable fetcher for the main feed (reloads only when token/refreshKey move).
   const fetchFeed = useCallback(
     (page: number): Promise<CommunityPostsResponse> =>
       communityService.listPosts(token, {page}),
     [token],
+  );
+
+  // Stable fetcher for a specific user's posts.
+  const fetchUserPosts = useCallback(
+    (page: number): Promise<CommunityPostsResponse> =>
+      communityService.listUserPosts(token, userFilter?.uuid ?? '', {page}),
+    [token, userFilter?.uuid],
   );
 
   // Stable fetcher for the active filtered list.
@@ -120,6 +134,41 @@ export function CommunityWallScreen({
     [stats],
   );
 
+  if (userFilter) {
+    return (
+      <View style={styles.flex}>
+        <View style={styles.filterHeader}>
+          <Pressable
+            style={({pressed}) => [pressed && styles.backPressed]}
+            hitSlop={10}
+            onPress={() => setUserFilter(null)}
+            accessibilityRole="button"
+            accessibilityLabel="Back to community wall">
+            <Icon name="arrow-left" size={22} color="#475569" />
+          </Pressable>
+          <Text style={styles.filterTitle} numberOfLines={1}>
+            {userFilter.name}'s Posts
+          </Text>
+        </View>
+        <CommunityPostsList
+          key={`user-${userFilter.uuid}`}
+          token={token}
+          primaryColor={primaryColor}
+          logoBaseUrl={logoBaseUrl}
+          fetchPage={fetchUserPosts}
+          canInteract={canInteract}
+          onReacted={handleReacted}
+          currentUserUuid={userUuid}
+          onPostDeleted={handlePostDeleted}
+          onUserPress={handleUserPress}
+          emptyIcon="square-edit-outline"
+          emptyTitle="No posts yet"
+          emptySubtitle={`${userFilter.name} hasn't posted anything yet.`}
+        />
+      </View>
+    );
+  }
+
   if (activeFilter) {
     const meta = FILTER_META[activeFilter];
     return (
@@ -145,6 +194,7 @@ export function CommunityWallScreen({
           onReacted={handleReacted}
           currentUserUuid={userUuid}
           onPostDeleted={handlePostDeleted}
+          onUserPress={handleUserPress}
           emptyIcon={meta.emptyIcon}
           emptyTitle={meta.emptyTitle}
           emptySubtitle={meta.emptySubtitle}
@@ -165,6 +215,7 @@ export function CommunityWallScreen({
       onReacted={handleReacted}
       currentUserUuid={userUuid}
       onPostDeleted={handlePostDeleted}
+      onUserPress={handleUserPress}
       ListHeaderComponent={statsHeader}
     />
   );
