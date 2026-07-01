@@ -51,6 +51,8 @@ type Props = {
   // Called with the post uuid after the user deletes their own post, so the
   // parent can drop it from the feed and refresh wall stats.
   onDeleted?: (uuid: string) => void;
+  // Called when the user taps another user's avatar or name to view their posts.
+  onUserPress?: (userUuid: string, userName: string) => void;
 };
 
 // Resolve a relative S3 path (`users/abc/x.png`) into an absolute URL using
@@ -180,6 +182,7 @@ export function CommunityPostCard({
   onReacted,
   currentUserUuid,
   onDeleted,
+  onUserPress,
 }: Props) {
   const {domain, theme} = useContext(TenantContext);
   const toast = useToast();
@@ -484,31 +487,36 @@ export function CommunityPostCard({
     <View style={styles.card}>
       {/* Header — avatar, name (org), relative time, overflow menu */}
       <View style={styles.header}>
-        <View style={styles.avatarWrap}>
-          {avatarUri ? (
-            <Image
-              source={{uri: avatarUri}}
-              style={styles.avatarImage}
-              // Logos are often wide/transparent — "contain" shows the whole
-              // mark instead of cropping it to fill the square.
-              resizeMode="contain"
-            />
-          ) : (
-            <Text style={styles.avatarText}>
-              {post.user.name.slice(0, 2).toUpperCase()}
-            </Text>
-          )}
-        </View>
+        <Pressable
+          style={({pressed}) => [styles.authorPressable, pressed && onUserPress && styles.authorPressed]}
+          onPress={() => onUserPress?.(post.user.uuid, post.user.name)}
+          disabled={!onUserPress}>
+          <View style={styles.avatarWrap}>
+            {avatarUri ? (
+              <Image
+                source={{uri: avatarUri}}
+                style={styles.avatarImage}
+                // Logos are often wide/transparent — "contain" shows the whole
+                // mark instead of cropping it to fill the square.
+                resizeMode="contain"
+              />
+            ) : (
+              <Text style={styles.avatarText}>
+                {post.user.name.slice(0, 2).toUpperCase()}
+              </Text>
+            )}
+          </View>
 
-        <View style={styles.headerCopy}>
-          <Text style={styles.authorName} numberOfLines={1}>
-            {post.user.name}
-            {orgName ? (
-              <Text style={styles.authorOrg}>{`  (${orgName})`}</Text>
-            ) : null}
-          </Text>
-          <Text style={styles.timeText}>{timeAgo(post.createdAt)}</Text>
-        </View>
+          <View style={styles.headerCopy}>
+            <Text style={styles.authorName} numberOfLines={1}>
+              {post.user.name}
+              {orgName ? (
+                <Text style={styles.authorOrg}>{`  (${orgName})`}</Text>
+              ) : null}
+            </Text>
+            <Text style={styles.timeText}>{timeAgo(post.createdAt)}</Text>
+          </View>
+        </Pressable>
 
         {canManage ? (
           isDeleting ? (
@@ -1056,6 +1064,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     gap: spacing.md,
+  },
+  authorPressable: {
+    alignItems: 'center',
+    flex: 1,
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  authorPressed: {
+    opacity: 0.7,
   },
   // Backdrop fills the screen; the menu card is pinned near the top-right to
   // sit roughly under the "..." trigger.

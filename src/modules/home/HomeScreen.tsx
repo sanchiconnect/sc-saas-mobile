@@ -494,6 +494,7 @@ export function HomeScreen({
             conversation={activeConversation}
             currentUserUuid={summary?.userUuid || session.user.uuid || session.user.id}
             currentUserName={session.user.fullName}
+            currentUserAvatar={userAvatarUrl}
             onBack={() => setActiveConversation(null)}
             onUnreadCountChanged={refreshDrawerCounts}
           />
