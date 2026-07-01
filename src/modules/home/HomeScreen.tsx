@@ -45,6 +45,7 @@ import type {ConnectRoleKey} from '../connect/types';
 import {filterMenuItems} from './config/menus';
 import {MyMeetingsScreen} from '../meetings/screens/MyMeetingsScreen';
 import {MilestonesScreen} from '../milestones/screens/MilestonesScreen';
+import {StartupBoosterKitScreen} from '../startupKit/screens/StartupBoosterKitScreen';
 import {CreatePostModal} from '../community/components/CreatePostModal';
 import {CommunityWallScreen} from '../community/screens/CommunityWallScreen';
 import {EditProfileScreen} from '../profile/screens/EditProfileScreen';
@@ -592,6 +593,31 @@ export function HomeScreen({
           avatarUrl={userAvatarUrl}
         />
         <MilestonesScreen
+          token={session.token}
+          onBack={() => setSelectedMenu({section: 'dashboard'})}
+        />
+      </View>
+    );
+  }
+
+  if (selectedMenu.section === 'startup-booster-kit') {
+    return (
+      <View style={styles.page}>
+        <SideMenu
+          globalSetting={globalSetting}
+          isVisible={isMenuOpen}
+          onClose={() => setIsMenuOpen(false)}
+          onLogout={onLogout}
+          onSelectMenu={setSelectedMenu}
+          primaryColor={primaryColor}
+          selectedMenu={selectedMenu}
+          session={session}
+          accountType={summary?.accountType}
+          unreadMessagesCount={unreadMessagesCount}
+          pendingConnectionsCount={pendingConnectionsCount}
+          avatarUrl={userAvatarUrl}
+        />
+        <StartupBoosterKitScreen
           token={session.token}
           onBack={() => setSelectedMenu({section: 'dashboard'})}
         />
