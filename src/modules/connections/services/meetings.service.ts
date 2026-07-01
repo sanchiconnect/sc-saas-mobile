@@ -349,6 +349,38 @@ export const meetingsService = {
     return this._flatten(res);
   },
 
+  // Accept an incoming meeting request.
+  async acceptMeeting(token: string, meetingUuid: string): Promise<unknown> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson(
+      `api/v1/meetings/${meetingUuid}/accept`,
+      {method: 'PATCH', headers: getAuthHeader(token)},
+      baseUrl,
+    );
+  },
+
+  // Reject an incoming meeting request.
+  async rejectMeeting(token: string, meetingUuid: string): Promise<unknown> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson(
+      `api/v1/meetings/${meetingUuid}/reject`,
+      {method: 'PATCH', headers: getAuthHeader(token)},
+      baseUrl,
+    );
+  },
+
+  // Fetch full meeting detail (includes meetingDescription, locationType, etc.)
+  async getMeeting(token: string, meetingUuid: string): Promise<MeetingRow> {
+    const baseUrl = await resolveBaseUrl();
+    const res = await requestJson<unknown>(
+      `api/v1/meetings/${meetingUuid}`,
+      {method: 'GET', headers: getAuthHeader(token)},
+      baseUrl,
+    );
+    const r = res as Record<string, unknown>;
+    return ((r?.data as MeetingRow) || (r as MeetingRow)) ?? {};
+  },
+
   // Schedule a meeting. Called after the connection accept PATCH so the
   // chat thread starts with a server-emitted "meeting" message.
   async createMeeting(
