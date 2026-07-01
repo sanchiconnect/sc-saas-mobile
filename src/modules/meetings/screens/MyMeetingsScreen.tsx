@@ -14,6 +14,7 @@ import {TenantContext} from '../../../core/tenant/TenantProvider';
 import {useToast} from '../../../core/toast/ToastProvider';
 import {meetingsService} from '../../connections/services/meetings.service';
 import type {MeetingRow} from '../../connections/services/meetings.service';
+import {MeetingDetailModal} from '../components/MeetingDetailModal';
 import {ScheduleMeetingModal} from '../components/ScheduleMeetingModal';
 import {EditAvailabilityModal} from '../components/EditAvailabilityModal';
 
@@ -93,6 +94,9 @@ export function MyMeetingsScreen({token, currentUserName, onBack}: Props) {
   const toast = useToast();
   const [scheduleVisible, setScheduleVisible] = useState(false);
   const [availabilityVisible, setAvailabilityVisible] = useState(false);
+  const [detailMeeting, setDetailMeeting] = useState<MeetingRow | null>(null);
+  // Pre-selected user for ScheduleMeetingModal when "Propose New Time" is tapped.
+  const [proposePreset, setProposePreset] = useState<{uuid: string; name: string} | null>(null);
   // Top-level tabs at the head of the screen — "All Meetings" shows the
   // calendar + lists, "Meeting Notes" is a placeholder while the notes
   // feed isn't wired up yet (matches the web header layout).
@@ -231,10 +235,8 @@ export function MyMeetingsScreen({token, currentUserName, onBack}: Props) {
     setScheduleVisible(true);
   };
 
-  const handleMeetingTap = (_m: MeetingRow) => {
-    // TODO: route to a meeting detail screen / modal. For now we just
-    // ack the tap so the user knows the row is interactive.
-    toast.info('Meeting detail view coming soon.');
+  const handleMeetingTap = (m: MeetingRow) => {
+    setDetailMeeting(m);
   };
 
   return (
@@ -560,11 +562,28 @@ export function MyMeetingsScreen({token, currentUserName, onBack}: Props) {
         </ScrollView>
       )}
 
+      {detailMeeting ? (
+        <MeetingDetailModal
+          meeting={detailMeeting}
+          token={token}
+          onClose={() => setDetailMeeting(null)}
+          onStatusChanged={loadAll}
+          onProposeNewTime={counterparty => {
+            setProposePreset(counterparty);
+            setScheduleVisible(true);
+          }}
+        />
+      ) : null}
+
       <ScheduleMeetingModal
         visible={scheduleVisible}
         token={token}
         currentUserName={currentUserName}
-        onClose={() => setScheduleVisible(false)}
+        presetUser={proposePreset}
+        onClose={() => {
+          setScheduleVisible(false);
+          setProposePreset(null);
+        }}
         onCreated={loadAll}
       />
 
