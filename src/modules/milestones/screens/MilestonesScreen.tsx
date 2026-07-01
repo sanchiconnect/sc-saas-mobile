@@ -61,14 +61,17 @@ export function MilestonesScreen({token, onBack}: Props) {
   const [search, setSearch] = useState('');
   const [addVisible, setAddVisible] = useState(false);
 
+  const toastRef = React.useRef(toast);
+  toastRef.current = toast;
+
   const load = useCallback(async () => {
     try {
       const data = await milestonesService.listMilestones(token);
       setMilestones(data);
     } catch (e: any) {
-      toast.error(e?.message || 'Could not load milestones.');
+      toastRef.current.error(e?.message || 'Could not load milestones.');
     }
-  }, [token, toast]);
+  }, [token]);
 
   useEffect(() => {
     setIsLoading(true);
@@ -167,7 +170,7 @@ export function MilestonesScreen({token, onBack}: Props) {
             </View>
           ) : (
             filtered.map(m => (
-              <MilestoneCard key={m.uuid} milestone={m} primaryColor={primaryColor} />
+              <MilestoneCard key={m.uuid} milestone={m} />
             ))
           )}
         </ScrollView>
@@ -187,7 +190,7 @@ export function MilestonesScreen({token, onBack}: Props) {
 }
 
 // ── Milestone card ────────────────────────────────────────────────────────────
-function MilestoneCard({milestone, primaryColor}: {milestone: Milestone; primaryColor: string}) {
+function MilestoneCard({milestone}: {milestone: Milestone}) {
   const reviewerName =
     milestone.reviewer?.name ||
     milestone.reviewer?.fullName ||
