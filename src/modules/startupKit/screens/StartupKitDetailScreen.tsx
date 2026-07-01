@@ -181,43 +181,48 @@ export function StartupKitDetailScreen({
           contentContainerStyle={styles.content}>
           {/* Service header */}
           <View style={styles.header}>
-            {/* Logo */}
-            <View style={styles.logoWrap}>
-              {detail?.logo ? (
-                <Image
-                  source={{uri: detail.logo}}
-                  style={styles.logo}
-                  resizeMode="contain"
-                />
-              ) : (
-                <View style={styles.logoPlaceholder}>
-                  <Icon name="image-outline" size={36} color="#cbd5e1" />
-                </View>
-              )}
-            </View>
+            {/* Logo + Info side by side */}
+            <View style={styles.headerRow}>
+              <View style={styles.logoWrap}>
+                {detail?.logo ? (
+                  <Image
+                    source={{uri: detail.logo}}
+                    style={styles.logo}
+                    resizeMode="contain"
+                  />
+                ) : (
+                  <View style={styles.logoPlaceholder}>
+                    <Icon name="image-outline" size={28} color="#cbd5e1" />
+                  </View>
+                )}
+              </View>
 
-            {/* Info */}
-            <View style={styles.infoBlock}>
-              <Text style={styles.serviceName}>{detail?.name}</Text>
-              {detail?.shortDescription ? (
-                <Text style={styles.serviceShort}>{detail.shortDescription}</Text>
-              ) : null}
-              {detail?.category?.name ? (
-                <View style={[styles.categoryBadge, {backgroundColor: `${primaryColor}18`}]}>
-                  <Text style={[styles.categoryBadgeText, {color: primaryColor}]}>
-                    {detail.category.name}
+              <View style={styles.infoBlock}>
+                <Text style={styles.serviceName} numberOfLines={2}>
+                  {detail?.name}
+                </Text>
+                {detail?.shortDescription ? (
+                  <Text style={styles.serviceShort} numberOfLines={2}>
+                    {detail.shortDescription}
                   </Text>
-                </View>
-              ) : null}
-              {creditLabel ? (
-                <View style={styles.creditRow}>
-                  <Icon name="tag-outline" size={14} color="#16a34a" />
-                  <Text style={styles.creditLabel}>{creditLabel}</Text>
-                </View>
-              ) : null}
+                ) : null}
+                {detail?.category?.name ? (
+                  <View style={[styles.categoryBadge, {backgroundColor: `${primaryColor}18`}]}>
+                    <Text style={[styles.categoryBadgeText, {color: primaryColor}]}>
+                      {detail.category.name}
+                    </Text>
+                  </View>
+                ) : null}
+                {creditLabel ? (
+                  <View style={styles.creditRow}>
+                    <Icon name="tag-outline" size={13} color="#16a34a" />
+                    <Text style={styles.creditLabel}>{creditLabel}</Text>
+                  </View>
+                ) : null}
+              </View>
             </View>
 
-            {/* Apply button */}
+            {/* Apply button — full width below */}
             <View style={styles.applyWrap}>
               {loadingCheck || applying ? (
                 <ActivityIndicator color={primaryColor} />
@@ -351,21 +356,26 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
     borderRadius: 14,
     elevation: 2,
-    gap: 12,
+    gap: 14,
     padding: 16,
     shadowColor: '#000',
     shadowOffset: {width: 0, height: 1},
     shadowOpacity: 0.06,
     shadowRadius: 4,
   },
+  headerRow: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    gap: 12,
+  },
   logoWrap: {
-    alignSelf: 'center',
     borderColor: '#e2e8f0',
-    borderRadius: 12,
+    borderRadius: 10,
     borderWidth: 1,
-    height: 120,
+    height: 80,
     overflow: 'hidden',
-    width: 120,
+    width: 80,
+    flexShrink: 0,
   },
   logo: {height: '100%', width: '100%'},
   logoPlaceholder: {
@@ -375,28 +385,29 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  infoBlock: {alignItems: 'flex-start', gap: 6},
+  infoBlock: {flex: 1, gap: 5},
   serviceName: {
     color: '#0f172a',
-    fontSize: 20,
+    fontSize: 16,
     fontWeight: '800',
-    lineHeight: 26,
+    lineHeight: 22,
   },
-  serviceShort: {color: '#64748b', fontSize: 13, lineHeight: 18},
+  serviceShort: {color: '#64748b', fontSize: 12, lineHeight: 17},
   categoryBadge: {
+    alignSelf: 'flex-start',
     borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 3,
   },
-  categoryBadgeText: {fontSize: 12, fontWeight: '700'},
-  creditRow: {alignItems: 'center', flexDirection: 'row', gap: 4, marginTop: 2},
-  creditLabel: {color: '#16a34a', fontSize: 13, fontWeight: '700'},
+  categoryBadgeText: {fontSize: 11, fontWeight: '700'},
+  creditRow: {alignItems: 'center', flexDirection: 'row', gap: 4},
+  creditLabel: {color: '#16a34a', fontSize: 12, fontWeight: '700'},
 
-  applyWrap: {alignItems: 'flex-start', marginTop: 4},
+  applyWrap: {marginTop: 0},
   applyBtn: {
+    alignItems: 'center',
     borderRadius: 10,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
+    paddingVertical: 13,
   },
   applyBtnText: {
     color: '#ffffff',
@@ -407,6 +418,7 @@ const styles = StyleSheet.create({
   },
   appliedBadge: {
     alignItems: 'center',
+    alignSelf: 'flex-start',
     backgroundColor: '#f0fdf4',
     borderColor: '#bbf7d0',
     borderRadius: 8,

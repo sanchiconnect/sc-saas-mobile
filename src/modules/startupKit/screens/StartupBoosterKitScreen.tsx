@@ -27,7 +27,11 @@ type Props = {
 export function StartupBoosterKitScreen({token, onBack}: Props) {
   const {theme, globalSetting} = useContext(TenantContext);
   const primaryColor = theme?.primary || colors.primary;
-  const imgKitUrl = (globalSetting as any)?.imgKitUrl as string | undefined;
+  const imgKitUrl: string | undefined =
+    globalSetting?.imgKitUrl ||
+    globalSetting?.assetsImgKitUrl ||
+    (globalSetting as any)?.s3Url ||
+    undefined;
 
   const title =
     (globalSetting as any)?.startup_kit_title || 'Startup Booster Kit';
