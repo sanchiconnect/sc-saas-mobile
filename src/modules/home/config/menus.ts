@@ -89,6 +89,7 @@ export const businessChallengeItems: MenuItem[] = [
 export const actionItems: MenuItem[] = [
   {key: 'my-meetings', label: 'My Meetings', icon: 'video-outline'},
   {key: 'my-connections', label: 'My Connections', icon: 'account-multiple-outline'},
+  {key: 'milestones', label: 'Milestones', icon: 'flag-outline'},
 ];
 
 export const eventItems: MenuItem[] = [

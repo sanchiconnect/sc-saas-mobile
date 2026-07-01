@@ -362,25 +362,45 @@ export function ConnectionsScreen({
     available: boolean;
   };
   const timeChoices = useMemo<TimeChoice[]>(() => {
+    let choices: TimeChoice[];
     if (availableSlots.length > 0) {
-      return availableSlots.map(slot => ({
+      choices = availableSlots.map(slot => ({
         timeFrom: slot.timeFrom,
         timeTo:
           slot.timeTo || addMinutes24h(slot.timeFrom, acceptDuration),
         display: to12Hour(slot.timeFrom),
         available: slot.available !== false,
       }));
+    } else {
+      choices = fallbackTimeOptions.map(label => {
+        const raw = to24Hour(label);
+        return {
+          timeFrom: raw,
+          timeTo: addMinutes24h(raw, acceptDuration),
+          display: label,
+          available: true,
+        };
+      });
     }
-    return fallbackTimeOptions.map(label => {
-      const raw = to24Hour(label);
-      return {
-        timeFrom: raw,
-        timeTo: addMinutes24h(raw, acceptDuration),
-        display: label,
-        available: true,
-      };
+    // When the selected date is today, filter out slots that have already passed.
+    const todayIso = new Date().toISOString().slice(0, 10);
+    if (acceptDate === todayIso) {
+      const now = new Date();
+      const nowMins = now.getHours() * 60 + now.getMinutes();
+      choices = choices.filter(c => {
+        const m = c.timeFrom.match(/^(\d{1,2}):(\d{2})/);
+        if (!m) return true;
+        return Number(m[1]) * 60 + Number(m[2]) > nowMins;
+      });
+    }
+    // Deduplicate by timeFrom — API can return duplicate slots.
+    const seen = new Set<string>();
+    return choices.filter(c => {
+      if (seen.has(c.timeFrom)) return false;
+      seen.add(c.timeFrom);
+      return true;
     });
-  }, [availableSlots, fallbackTimeOptions, acceptDuration]);
+  }, [availableSlots, fallbackTimeOptions, acceptDuration, acceptDate]);
 
   // Selected slot — derived from acceptTime (the canonical 24-hour
   // string) so the submit handler can pull timeTo without re-parsing.
