@@ -33,6 +33,7 @@ export type DetailScreenProps = {
   onBack: () => void;
   isApproved?: boolean;
   currentUserId?: string;
+  onEditProfile?: () => void;
 };
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -358,6 +359,7 @@ export function ProfileShell({
   setConnState,
   primaryColor,
   isApproved,
+  isLoading,
   onBack,
   onEditProfile,
   children,
@@ -371,11 +373,14 @@ export function ProfileShell({
   setConnState: (s: ConnectionState) => void;
   primaryColor: string;
   isApproved?: boolean;
+  isLoading?: boolean;
   onBack: () => void;
   onEditProfile?: () => void;
   children: React.ReactNode;
 }) {
-  const isOwnProfile = !!currentUserId && currentUserId === resolvedUuid;
+  const isOwnProfile =
+    !!currentUserId &&
+    (currentUserId === resolvedUuid || currentUserId === user.uuid);
   const toast = useToast();
   const [connectOpen, setConnectOpen] = useState(false);
   const [connectMessage, setConnectMessage] = useState(DEFAULT_MSG);
@@ -443,7 +448,7 @@ export function ProfileShell({
 
       {/* Footer: connect button or status */}
       <View style={shStyles.footer}>
-        {isApproved === false ? (
+        {/* {isApproved === false ? (
           <View style={shStyles.approvalNotice}>
             <Text style={shStyles.approvalNoticeText}>
               Prior to initiating connections, your profile must be approved by the admin.
@@ -468,7 +473,56 @@ export function ProfileShell({
             <Icon name={connectIcon} size={18} color="#ffffff" />
             <Text style={shStyles.connectBtnText}>{connectLabel}</Text>
           </Pressable>
-        )}
+        )} */}
+        {isOwnProfile ? (
+  <Pressable
+    onPress={onEditProfile}
+    style={[shStyles.connectBtn, {backgroundColor: primaryColor}]}>
+    <Icon name="account-edit-outline" size={18} color="#fff" />
+    <Text style={shStyles.connectBtnText}>Edit Profile</Text>
+  </Pressable>
+) : isLoading ? (
+  <ActivityIndicator color={primaryColor} />
+) : isApproved === false ? (
+  <View style={shStyles.approvalNotice}>
+    <Text style={shStyles.approvalNoticeText}>
+      Prior to initiating connections, your profile must be approved by the admin.
+    </Text>
+  </View>
+) : connState === 'connected' ? (
+  <View
+    style={[
+      shStyles.connectedBadge,
+      { backgroundColor: withAlpha(primaryColor, 0.12) },
+    ]}>
+    <Icon name="account-check" size={18} color={primaryColor} />
+    <Text
+      style={[
+        shStyles.connectedBadgeText,
+        { color: primaryColor },
+      ]}>
+      Connected
+    </Text>
+  </View>
+) : (
+  <Pressable
+    disabled={connectDisabled}
+    onPress={() => {
+      setConnectMessage(DEFAULT_MSG);
+      setConnectOpen(true);
+    }}
+    style={[
+      shStyles.connectBtn,
+      {
+        backgroundColor: connectDisabled
+          ? colors.borderStrong
+          : primaryColor,
+      },
+    ]}>
+    <Icon name={connectIcon} size={18} color="#fff" />
+    <Text style={shStyles.connectBtnText}>{connectLabel}</Text>
+  </Pressable>
+)}
       </View>
 
       {/* Connect request modal */}

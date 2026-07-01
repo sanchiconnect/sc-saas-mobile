@@ -78,6 +78,7 @@ export type DirectoryUser = {
   // (startup-information, forms-management, increment_views). Distinct from the
   // user uuid: a startup row carries both.
   profileUuid: string;
+  startupId:number;
   // Numeric id when present — some write endpoints key on it.
   id?: string;
   accountType?: string;

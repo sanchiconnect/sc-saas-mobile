@@ -39,6 +39,7 @@ export function CorporateProfileScreen({
   onBack,
   isApproved,
   currentUserId,
+  onEditProfile,
 }: Props) {
   const {profile, isLoading, connState, setConnState, resolvedUuid} =
     useProfileDetail(token, 'corporates', user, currentUserId);
@@ -97,7 +98,10 @@ export function CorporateProfileScreen({
       setConnState={setConnState}
       primaryColor={primaryColor}
       isApproved={isApproved}
-      onBack={onBack}>
+      isLoading={isLoading}
+      onBack={onBack}
+      currentUserId={currentUserId}
+      onEditProfile={onEditProfile}>
 
       <ProfileHero profile={profile} primaryColor={primaryColor} logoBaseUrl={logoBaseUrl} />
 

@@ -19,6 +19,7 @@ type Props = {
   onBack: () => void;
   isApproved?: boolean;
   currentUserId?: string;
+  onEditProfile?: () => void;
 };
 
 export function ConnectProfileScreen({role, ...rest}: Props) {

@@ -41,6 +41,7 @@ type Props = {
   onActiveProfileChange?: (active: boolean) => void;
   isApproved?: boolean;
   currentUserId?: string;
+  onEditProfile?: () => void;
 };
 
 const SORTS: DirectorySort[] = [
@@ -67,6 +68,7 @@ export function ConnectDirectoryScreen({
   onActiveProfileChange,
   isApproved,
   currentUserId,
+  onEditProfile,
 }: Props) {
   useToast(); // keep provider happy; no wishlist toasts needed currently
 
@@ -235,6 +237,7 @@ export function ConnectDirectoryScreen({
         onBack={closeProfile}
         isApproved={isApproved}
         currentUserId={currentUserId}
+        onEditProfile={onEditProfile}
       />
     );
   }

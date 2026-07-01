@@ -35,6 +35,7 @@ export function InvestorProfileScreen({
   onBack,
   isApproved,
   currentUserId,
+  onEditProfile,
 }: Props) {
   const {globalSetting, baseUrl: tenantBaseUrl} = useContext(TenantContext);
   const {profile, isLoading, connState, setConnState, resolvedUuid} =
@@ -152,7 +153,10 @@ export function InvestorProfileScreen({
       setConnState={setConnState}
       primaryColor={primaryColor}
       isApproved={isApproved}
-      onBack={onBack}>
+      isLoading={isLoading}
+      onBack={onBack}
+      currentUserId={currentUserId}
+      onEditProfile={onEditProfile}>
 
       {/* Hero */}
       <ProfileHero profile={profile} primaryColor={primaryColor} logoBaseUrl={logoBaseUrl}>

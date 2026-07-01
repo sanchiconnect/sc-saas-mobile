@@ -36,6 +36,7 @@ export function ServiceProviderProfileScreen({
   onBack,
   isApproved,
   currentUserId,
+  onEditProfile,
 }: Props) {
   const {profile, isLoading, connState, setConnState, resolvedUuid} =
     useProfileDetail(token, 'service-providers', user, currentUserId);
@@ -75,7 +76,10 @@ export function ServiceProviderProfileScreen({
       setConnState={setConnState}
       primaryColor={primaryColor}
       isApproved={isApproved}
-      onBack={onBack}>
+      isLoading={isLoading}
+      onBack={onBack}
+      currentUserId={currentUserId}
+      onEditProfile={onEditProfile}>
 
       {/* Hero — website shown as child since field is `website` not `displayWebsite` */}
       <ProfileHero profile={profile} primaryColor={primaryColor} logoBaseUrl={logoBaseUrl}>

@@ -45,6 +45,7 @@ export function PartnerProfileScreen({
   onBack,
   isApproved,
   currentUserId,
+  onEditProfile,
 }: Props) {
   const {profile, isLoading, connState, setConnState, resolvedUuid} =
     useProfileDetail(token, 'partners', user, currentUserId);
@@ -107,7 +108,10 @@ export function PartnerProfileScreen({
       setConnState={setConnState}
       primaryColor={primaryColor}
       isApproved={isApproved}
-      onBack={onBack}>
+      isLoading={isLoading}
+      onBack={onBack}
+      currentUserId={currentUserId}
+      onEditProfile={onEditProfile}>
 
       {/* Hero — tagline as child subtitle (web: h4 below name) */}
       <ProfileHero profile={profile} primaryColor={primaryColor} logoBaseUrl={logoBaseUrl}>

@@ -41,6 +41,7 @@ export function MentorProfileScreen({
   onBack,
   isApproved,
   currentUserId,
+  onEditProfile,
 }: Props) {
   const {profile, isLoading, connState, setConnState, resolvedUuid} =
     useProfileDetail(token, 'mentors', user, currentUserId);
@@ -103,7 +104,10 @@ export function MentorProfileScreen({
       setConnState={setConnState}
       primaryColor={primaryColor}
       isApproved={isApproved}
-      onBack={onBack}>
+      isLoading={isLoading}
+      onBack={onBack}
+      currentUserId={currentUserId}
+      onEditProfile={onEditProfile}>
 
       {/* Hero — designation + currentOrganization as children (below location) */}
       <ProfileHero profile={profile} primaryColor={primaryColor} logoBaseUrl={logoBaseUrl}>

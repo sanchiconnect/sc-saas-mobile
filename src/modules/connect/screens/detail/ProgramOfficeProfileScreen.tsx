@@ -44,6 +44,7 @@ export function ProgramOfficeProfileScreen({
   onBack,
   isApproved,
   currentUserId,
+  onEditProfile,
 }: Props) {
   const {profile, isLoading, connState, setConnState, resolvedUuid} =
     useProfileDetail(token, 'program-office-team', user, currentUserId);
@@ -88,7 +89,10 @@ export function ProgramOfficeProfileScreen({
       setConnState={setConnState}
       primaryColor={primaryColor}
       isApproved={isApproved}
-      onBack={onBack}>
+      isLoading={isLoading}
+      onBack={onBack}
+      currentUserId={currentUserId}
+      onEditProfile={onEditProfile}>
 
       <ProfileHero profile={profile} primaryColor={primaryColor} logoBaseUrl={logoBaseUrl} />
 

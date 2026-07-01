@@ -681,7 +681,8 @@ export function HomeScreen({
             logoBaseUrl={logoBaseUrl ?? undefined}
             onActiveProfileChange={setConnectProfileActive}
             isApproved={Boolean(summary?.isApproved)}
-            currentUserId={session.user.id}
+            currentUserId={summary?.userUuid || session.user.uuid || session.user.id}
+            onEditProfile={() => setSelectedMenu({section: 'edit-profile'})}
           />
         )}
       </View>

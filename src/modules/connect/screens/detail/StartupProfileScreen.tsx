@@ -38,6 +38,7 @@ export function StartupProfileScreen({
   onBack,
   isApproved,
   currentUserId,
+  onEditProfile,
 }: Props) {
   const {globalSetting, baseUrl: tenantBaseUrl} = useContext(TenantContext);
   const {profile, isLoading, connState, setConnState, resolvedUuid} =
@@ -98,10 +99,13 @@ export function StartupProfileScreen({
       user={user}
       resolvedUuid={resolvedUuid}
       connState={connState}
+      currentUserId={currentUserId}
       setConnState={setConnState}
       primaryColor={primaryColor}
       isApproved={isApproved}
-      onBack={onBack}>
+      isLoading={isLoading}
+      onBack={onBack}
+      onEditProfile={onEditProfile}>
 
       {/* Hero */}
       <ProfileHero profile={profile} primaryColor={primaryColor} logoBaseUrl={logoBaseUrl} />
