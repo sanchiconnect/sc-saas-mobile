@@ -262,6 +262,7 @@ export interface IGlobalSetting {
 
   // Tenant-configurable enums
   CorporateSizes?: Array<{name: string; value: string}>;
+  StartupCompanySize?: Array<{name: string; value: string}>;
   memberRoles?: Array<{name: string; value: string}>;
   WhyDoYouWantToConnectWithStartupsOptions?: Array<{name: string; value: string}>;
 }
