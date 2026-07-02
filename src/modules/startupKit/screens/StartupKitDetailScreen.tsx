@@ -418,7 +418,7 @@ const styles = StyleSheet.create({
   },
   appliedBadge: {
     alignItems: 'center',
-    alignSelf: 'flex-start',
+    alignSelf: 'flex-end',
     backgroundColor: '#f0fdf4',
     borderColor: '#bbf7d0',
     borderRadius: 8,

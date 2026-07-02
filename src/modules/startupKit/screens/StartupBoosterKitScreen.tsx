@@ -182,9 +182,9 @@ export function StartupBoosterKitScreen({token, onBack}: Props) {
                 <View style={styles.logoWrap}>
                   {service.logo ? (
                     <Image
-                      source={{uri: service.logo}}
+                      source={{uri: service.logo as string}}
                       style={styles.logo}
-                      resizeMode="contain"
+                      resizeMode="cover"
                     />
                   ) : (
                     <View style={styles.logoPlaceholder}>
@@ -202,6 +202,9 @@ export function StartupBoosterKitScreen({token, onBack}: Props) {
                     {service.shortDescription}
                   </Text>
                 ) : null}
+
+                {/* Pushes Explore to bottom */}
+                <View style={styles.cardSpacer} />
 
                 {/* Explore button */}
                 <Pressable
@@ -308,9 +311,11 @@ const styles = StyleSheet.create({
     width: '47%',
   },
   cardInner: {
+    flex: 1,
     gap: 8,
     padding: 12,
   },
+  cardSpacer: {flex: 1},
   logoWrap: {
     borderColor: '#e2e8f0',
     borderRadius: 8,
