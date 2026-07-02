@@ -119,10 +119,7 @@ export function StartupBoosterKitScreen({token, onBack}: Props) {
             onPress={() => handleCategoryPress(null)}
             style={[
               styles.chip,
-              selectedCategory === null && {
-                backgroundColor: primaryColor,
-                borderColor: primaryColor,
-              },
+              selectedCategory === null && {backgroundColor: primaryColor},
             ]}>
             <Text
               style={[
@@ -141,10 +138,7 @@ export function StartupBoosterKitScreen({token, onBack}: Props) {
                 onPress={() => handleCategoryPress(cat)}
                 style={[
                   styles.chip,
-                  isActive && {
-                    backgroundColor: primaryColor,
-                    borderColor: primaryColor,
-                  },
+                  isActive && {backgroundColor: primaryColor},
                 ]}>
                 <Text
                   style={[
@@ -263,24 +257,23 @@ const styles = StyleSheet.create({
     flexGrow: 0,
   },
   categoriesRow: {
-    alignItems: 'center',
     flexDirection: 'row',
+    flexWrap: 'nowrap',
     gap: 8,
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     paddingVertical: 10,
   },
   chip: {
-    borderColor: '#cbd5e1',
+    backgroundColor: colors.surfaceMuted,
     borderRadius: 999,
-    borderWidth: 1,
+    flexShrink: 0,
     paddingHorizontal: 14,
-    paddingVertical: 6,
+    paddingVertical: 8,
   },
   chipText: {
-    color: '#475569',
-    fontSize: 11,
+    color: colors.textMuted,
+    fontSize: 13,
     fontWeight: '700',
-    letterSpacing: 0.4,
   },
   chipTextActive: {color: '#ffffff'},
 
