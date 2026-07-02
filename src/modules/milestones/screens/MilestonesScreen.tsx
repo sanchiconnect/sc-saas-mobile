@@ -1,22 +1,38 @@
 import React, {useCallback, useContext, useEffect, useMemo, useState} from 'react';
 import {
   ActivityIndicator,
+  Alert,
+  Linking,
   Modal,
   Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
 } from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import {
+  errorCodes,
+  isErrorWithCode,
+  pick,
+  types as DocumentPickerTypes,
+} from '@react-native-documents/picker';
 
 import {Icon} from '../../../core/components/Icon';
 import {TenantContext} from '../../../core/tenant/TenantProvider';
 import {useToast} from '../../../core/toast/ToastProvider';
 import {milestonesService} from '../services/milestones.service';
-import type {Milestone, QuantitativeTask} from '../services/milestones.service';
+import type {
+  Milestone,
+  MilestoneDetail,
+  MilestoneNote,
+  MilestoneQuantitativeItem,
+} from '../services/milestones.service';
+
+type QuantTaskInput = {parameter: string; quantifiedValue: string; unit: string};
 
 type Props = {
   token: string;
@@ -24,6 +40,10 @@ type Props = {
 };
 
 const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const MONTH_FULL = [
+  'January','February','March','April','May','June',
+  'July','August','September','October','November','December',
+];
 
 const formatDeadline = (iso?: string): string => {
   if (!iso) return '';
@@ -33,17 +53,38 @@ const formatDeadline = (iso?: string): string => {
   return `${d.getDate()} ${MONTH_SHORT[d.getMonth()]} ${d.getFullYear()}`;
 };
 
-const statusColor = (s?: string): string => {
-  const st = (s || '').toLowerCase();
+const formatNoteDate = (iso?: string): string => {
+  if (!iso) return '—';
+  const m = iso.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (!m) return iso;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return `${MONTH_FULL[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+};
+
+const formatLogDate = (iso?: string): string => {
+  if (!iso) return '—';
+  const m = iso.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (!m) return iso;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return `${MONTH_SHORT[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+};
+
+const statusColor = (label: string): string => {
+  const st = label.toLowerCase();
   if (st === 'completed') return '#16a34a';
-  if (st === 'in_progress' || st === 'in progress') return '#2563eb';
-  if (st === 'pending') return '#d97706';
+  if (st === 'in progress') return '#2563eb';
+  if (st === 'inactive' || st === 'pending') return '#d97706';
   return '#64748b';
 };
 
-const humanizeStatus = (s?: string): string => {
-  if (!s) return 'Active';
-  return s.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+// API returns `status` as a boolean and completion via `completedOnDate`,
+// not a lifecycle string — derive a human label from those instead.
+const getStatusLabel = (m: Milestone): string => {
+  if (m.completedOnDate) return 'Completed';
+  if (typeof m.status === 'string') {
+    return m.status.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  }
+  return m.status === false ? 'Inactive' : 'Active';
 };
 
 // ── Main Screen ───────────────────────────────────────────────────────────────
@@ -60,6 +101,7 @@ export function MilestonesScreen({token, onBack}: Props) {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [search, setSearch] = useState('');
   const [addVisible, setAddVisible] = useState(false);
+  const [detailUuid, setDetailUuid] = useState<string | null>(null);
 
   const toastRef = React.useRef(toast);
   toastRef.current = toast;
@@ -94,9 +136,56 @@ export function MilestonesScreen({token, onBack}: Props) {
   }, [milestones, search]);
 
   const activeCount = useMemo(
-    () => milestones.filter(m => (m.status || '').toLowerCase() !== 'completed').length,
+    () => milestones.filter(m => getStatusLabel(m) !== 'Completed').length,
     [milestones],
   );
+
+  const handleDelete = useCallback((m: Milestone) => {
+    if (!m.uuid) return;
+    Alert.alert(
+      'Delete milestone?',
+      `"${m.title || 'This milestone'}" will be permanently deleted.`,
+      [
+        {text: 'Cancel', style: 'cancel'},
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await milestonesService.deleteMilestone(token, m.uuid as string);
+              toastRef.current.success('Milestone deleted.');
+              load();
+            } catch (e: any) {
+              toastRef.current.error(e?.message || 'Could not delete milestone.');
+            }
+          },
+        },
+      ],
+    );
+  }, [token, load]);
+
+  if (detailUuid) {
+    return (
+      <>
+        <MilestoneDetailView
+          token={token}
+          uuid={detailUuid}
+          primaryColor={primaryColor}
+          onBack={() => setDetailUuid(null)}
+          onAddMilestone={() => setAddVisible(true)}
+        />
+        {addVisible ? (
+          <AddMilestoneModal
+            token={token}
+            primaryColor={primaryColor}
+            insetBottom={insets.bottom}
+            onClose={() => setAddVisible(false)}
+            onCreated={() => { setAddVisible(false); load(); }}
+          />
+        ) : null}
+      </>
+    );
+  }
 
   return (
     <View style={styles.page}>
@@ -170,7 +259,13 @@ export function MilestonesScreen({token, onBack}: Props) {
             </View>
           ) : (
             filtered.map(m => (
-              <MilestoneCard key={m.uuid} milestone={m} />
+              <MilestoneCard
+                key={m.uuid}
+                milestone={m}
+                primaryColor={primaryColor}
+                onDetails={() => m.uuid && setDetailUuid(m.uuid)}
+                onDelete={() => handleDelete(m)}
+              />
             ))
           )}
         </ScrollView>
@@ -190,12 +285,23 @@ export function MilestonesScreen({token, onBack}: Props) {
 }
 
 // ── Milestone card ────────────────────────────────────────────────────────────
-function MilestoneCard({milestone}: {milestone: Milestone}) {
+function MilestoneCard({
+  milestone,
+  primaryColor,
+  onDetails,
+  onDelete,
+}: {
+  milestone: Milestone;
+  primaryColor: string;
+  onDetails: () => void;
+  onDelete: () => void;
+}) {
   const reviewerName =
     milestone.reviewer?.name ||
     milestone.reviewer?.fullName ||
     (milestone.reviewer as any)?.otherUser?.name ||
     null;
+  const statusLabel = getStatusLabel(milestone);
 
   return (
     <View style={styles.card}>
@@ -203,9 +309,9 @@ function MilestoneCard({milestone}: {milestone: Milestone}) {
         <Text style={styles.cardTitle} numberOfLines={2}>
           {milestone.title || 'Untitled Milestone'}
         </Text>
-        <View style={[styles.statusBadge, {backgroundColor: statusColor(milestone.status) + '22'}]}>
-          <Text style={[styles.statusText, {color: statusColor(milestone.status)}]}>
-            {humanizeStatus(milestone.status)}
+        <View style={[styles.statusBadge, {backgroundColor: statusColor(statusLabel) + '22'}]}>
+          <Text style={[styles.statusText, {color: statusColor(statusLabel)}]}>
+            {statusLabel}
           </Text>
         </View>
       </View>
@@ -227,6 +333,22 @@ function MilestoneCard({milestone}: {milestone: Milestone}) {
             </Text>
           </View>
         ) : null}
+      </View>
+      <View style={styles.cardFooter}>
+        <Pressable
+          style={[styles.detailsBtn, {borderColor: primaryColor}]}
+          onPress={onDetails}
+          accessibilityRole="button"
+          accessibilityLabel="View details">
+          <Text style={[styles.detailsBtnText, {color: primaryColor}]}>DETAILS</Text>
+        </Pressable>
+        <Pressable
+          onPress={onDelete}
+          hitSlop={10}
+          accessibilityRole="button"
+          accessibilityLabel="Delete milestone">
+          <Icon name="delete-outline" size={20} color="#dc2626" />
+        </Pressable>
       </View>
     </View>
   );
@@ -255,7 +377,7 @@ function AddMilestoneModal({
   const [description, setDescription] = useState('');
   const [startDate, setStartDate] = useState('');
   const [targetDate, setTargetDate] = useState('');
-  const [progressReporting, setProgressReporting] = useState<'weekly' | 'monthly' | 'quarterly'>('monthly');
+  const [progressFrequency, setProgressFrequency] = useState<'every_week' | 'every_month' | 'every_quarter'>('every_month');
 
   // Reviewers
   const [reviewers, setReviewers] = useState<Reviewer[]>([]);
@@ -266,7 +388,7 @@ function AddMilestoneModal({
   const [qualTasks, setQualTasks] = useState<string[]>(['']);
 
   // Quantitative tasks — list of {parameter, quantifiedValue, unit}
-  const [quantTasks, setQuantTasks] = useState<QuantitativeTask[]>([
+  const [quantTasks, setQuantTasks] = useState<QuantTaskInput[]>([
     {parameter: '', quantifiedValue: '', unit: ''},
   ]);
 
@@ -302,7 +424,7 @@ function AddMilestoneModal({
     setQualTasks(prev => prev.filter((_, i) => i !== idx));
 
   // Quantitative task helpers
-  const updateQuantTask = (idx: number, field: keyof QuantitativeTask, val: string) =>
+  const updateQuantTask = (idx: number, field: keyof QuantTaskInput, val: string) =>
     setQuantTasks(prev =>
       prev.map((t, i) => (i === idx ? {...t, [field]: val} : t)),
     );
@@ -322,12 +444,21 @@ function AddMilestoneModal({
       await milestonesService.createMilestone(token, {
         title: title.trim(),
         description: description.trim(),
-        reviewerIds: selectedReviewers.map(r => r.uuid),
+        // TODO: backend rejects reviewer UUIDs here ("must be an integer number") — send empty until that's fixed server-side.
+        reviewersIds: [],
         startDate: startDate.trim(),
         targetDate: targetDate.trim(),
-        progressReporting,
-        qualitativeTasks: qualTasks.filter(t => t.trim()),
-        quantitativeTasks: quantTasks.filter(t => t.parameter.trim()),
+        progressFrequency,
+        qualitativeMilestones: qualTasks
+          .filter(t => t.trim())
+          .map(t => ({title: t.trim()})),
+        quantitativeMilestones: quantTasks
+          .filter(t => t.parameter.trim())
+          .map(t => ({
+            parameter: t.parameter.trim(),
+            unit: t.unit.trim(),
+            value: Number(t.quantifiedValue) || 0,
+          })),
       });
       toast.success('Milestone created!');
       onCreated();
@@ -423,21 +554,21 @@ function AddMilestoneModal({
               The platform will share updates on progress as per below mentioned frequency.
             </Text>
             <View style={styles.radioRow}>
-              {(['weekly', 'monthly', 'quarterly'] as const).map(opt => (
+              {(['every_week', 'every_month', 'every_quarter'] as const).map(opt => (
                 <Pressable
                   key={opt}
                   style={styles.radioItem}
-                  onPress={() => setProgressReporting(opt)}>
+                  onPress={() => setProgressFrequency(opt)}>
                   <View style={[
                     styles.radioCircle,
-                    progressReporting === opt && {borderColor: primaryColor},
+                    progressFrequency === opt && {borderColor: primaryColor},
                   ]}>
-                    {progressReporting === opt ? (
+                    {progressFrequency === opt ? (
                       <View style={[styles.radioDot, {backgroundColor: primaryColor}]} />
                     ) : null}
                   </View>
                   <Text style={styles.radioLabel}>
-                    {opt === 'weekly' ? 'Every Week' : opt === 'monthly' ? 'Every Month' : 'Every Quarter'}
+                    {opt === 'every_week' ? 'Every Week' : opt === 'every_month' ? 'Every Month' : 'Every Quarter'}
                   </Text>
                 </Pressable>
               ))}
@@ -570,6 +701,725 @@ function AddMilestoneModal({
   );
 }
 
+// ── Milestone Detail View ─────────────────────────────────────────────────────
+const humanizeFrequency = (f?: string): string => {
+  if (!f) return '—';
+  if (f === 'every_week') return 'Every Week';
+  if (f === 'every_month') return 'Every Month';
+  if (f === 'every_quarter') return 'Every Quarter';
+  return f.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+};
+
+function MilestoneDetailView({
+  token,
+  uuid,
+  primaryColor,
+  onBack,
+  onAddMilestone,
+}: {
+  token: string;
+  uuid: string;
+  primaryColor: string;
+  onBack: () => void;
+  onAddMilestone: () => void;
+}) {
+  const toast = useToast();
+  const insets = useSafeAreaInsets();
+  const [detail, setDetail] = useState<MilestoneDetail | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [quantInputs, setQuantInputs] = useState<Record<string, string>>({});
+  const [updatingQuantId, setUpdatingQuantId] = useState<string | null>(null);
+  const [completingQualId, setCompletingQualId] = useState<string | null>(null);
+  const [logsFor, setLogsFor] = useState<MilestoneQuantitativeItem | null>(null);
+
+  const [editTargetDateOpen, setEditTargetDateOpen] = useState(false);
+  const [targetDateInput, setTargetDateInput] = useState('');
+  const [savingTargetDate, setSavingTargetDate] = useState(false);
+
+  const [editReviewersOpen, setEditReviewersOpen] = useState(false);
+  const [reviewers, setReviewers] = useState<Array<{uuid: string; name: string}>>([]);
+  const [selectedReviewerUuids, setSelectedReviewerUuids] = useState<string[]>([]);
+
+  const [notes, setNotes] = useState<MilestoneNote[]>([]);
+  const [addNoteOpen, setAddNoteOpen] = useState(false);
+  const [editingNote, setEditingNote] = useState<MilestoneNote | null>(null);
+  const [togglingNotification, setTogglingNotification] = useState(false);
+
+  const toastRef = React.useRef(toast);
+  toastRef.current = toast;
+
+  const loadDetail = useCallback(() => {
+    return milestonesService
+      .getMilestoneDetail(token, uuid)
+      .then(data => setDetail(data))
+      .catch((e: any) => {
+        toastRef.current.error(e?.message || 'Could not load milestone.');
+      });
+  }, [token, uuid]);
+
+  const loadNotes = useCallback(() => {
+    return milestonesService
+      .listNotes(token, uuid)
+      .then(data => setNotes(data))
+      .catch(() => {});
+  }, [token, uuid]);
+
+  useEffect(() => {
+    setIsLoading(true);
+    loadDetail().finally(() => setIsLoading(false));
+    loadNotes();
+  }, [loadDetail, loadNotes]);
+
+  const notReady = () => toast.info('This action needs the backend endpoint — coming soon.');
+
+  const handleToggleNotification = async () => {
+    if (!detail || togglingNotification) return;
+    const previous = detail.notifyProgress;
+    setTogglingNotification(true);
+    setDetail(prev => (prev ? {...prev, notifyProgress: !prev.notifyProgress} : prev));
+    try {
+      await milestonesService.toggleNotification(token, uuid);
+    } catch (e: any) {
+      setDetail(prev => (prev ? {...prev, notifyProgress: previous} : prev));
+      toast.error(e?.message || 'Could not update notification setting.');
+    } finally {
+      setTogglingNotification(false);
+    }
+  };
+
+  const handleDownloadFiles = (note: MilestoneNote) => {
+    const files = note.files || [];
+    if (files.length === 0) return;
+    files.forEach(f => {
+      if (f.url) {
+        Linking.openURL(f.url).catch(() => toast.error(`Could not open ${f.name || 'file'}.`));
+      }
+    });
+  };
+
+  const handleDeleteNote = (note: MilestoneNote) => {
+    if (!note.uuid) return;
+    Alert.alert(
+      'Delete note?',
+      'This note will be permanently deleted.',
+      [
+        {text: 'Cancel', style: 'cancel'},
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await milestonesService.deleteNote(token, uuid, note.uuid as string);
+              toast.success('Note deleted.');
+              loadNotes();
+            } catch (e: any) {
+              toast.error(e?.message || 'Could not delete note.');
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const openTargetDateEditor = () => {
+    setTargetDateInput(detail?.targetDate || '');
+    setEditTargetDateOpen(true);
+  };
+
+  const handleSaveTargetDate = async () => {
+    if (!targetDateInput.trim()) {
+      toast.error('Target Date is required.');
+      return;
+    }
+    setSavingTargetDate(true);
+    try {
+      await milestonesService.updateTargetDate(token, uuid, targetDateInput.trim());
+      toast.success('Target date updated.');
+      setEditTargetDateOpen(false);
+      await loadDetail();
+    } catch (e: any) {
+      toast.error(e?.message || 'Could not update target date.');
+    } finally {
+      setSavingTargetDate(false);
+    }
+  };
+
+  const openReviewersEditor = () => {
+    setSelectedReviewerUuids(detail?.reviewerIds || []);
+    setEditReviewersOpen(true);
+    if (reviewers.length === 0) {
+      milestonesService.listReviewers(token).then(rows => {
+        const mapped = rows
+          .map(r => {
+            const u = (r as any).otherUser || r;
+            return {uuid: String(u?.uuid || ''), name: String(u?.name || u?.fullName || '')};
+          })
+          .filter(r => r.uuid.length > 0 && r.name.length > 0);
+        setReviewers(mapped);
+      }).catch(() => {});
+    }
+  };
+
+  const toggleReviewerSelection = (reviewerUuid: string) => {
+    setSelectedReviewerUuids(prev =>
+      prev.includes(reviewerUuid) ? prev.filter(id => id !== reviewerUuid) : [...prev, reviewerUuid],
+    );
+  };
+
+  const handleMarkQualitativeCompleted = async (itemUuid?: string) => {
+    if (!itemUuid) return;
+    setCompletingQualId(itemUuid);
+    try {
+      await milestonesService.markQualitativeCompleted(token, uuid, itemUuid);
+      toast.success('Task marked as completed.');
+      await loadDetail();
+    } catch (e: any) {
+      toast.error(e?.message || 'Could not mark task completed.');
+    } finally {
+      setCompletingQualId(null);
+    }
+  };
+
+  const handleUpdateQuantValue = async (item: MilestoneQuantitativeItem) => {
+    const itemUuid = item.uuid;
+    if (!itemUuid) return;
+    const raw = quantInputs[itemUuid];
+    const numeric = Number(raw);
+    if (!raw || !raw.trim() || Number.isNaN(numeric)) {
+      toast.error('Enter a valid number.');
+      return;
+    }
+    setUpdatingQuantId(itemUuid);
+    try {
+      await milestonesService.updateQuantitativeValue(token, uuid, itemUuid, numeric);
+      toast.success('Value updated.');
+      setQuantInputs(prev => ({...prev, [itemUuid]: ''}));
+      await loadDetail();
+    } catch (e: any) {
+      toast.error(e?.message || 'Could not update value.');
+    } finally {
+      setUpdatingQuantId(null);
+    }
+  };
+
+  const qualPercent = Math.round(
+    (detail?.qualitativeMilestonePercent ?? detail?.qualitativePercent ?? 0) as number,
+  );
+  const quantPercent = Math.round(
+    (detail?.quantitativeMilestoneStats ?? detail?.quantitativeStats ?? 0) as number,
+  );
+
+  return (
+    <View style={styles.page}>
+      <View style={styles.header}>
+        <Pressable onPress={onBack} hitSlop={8} accessibilityRole="button" accessibilityLabel="Back">
+          <Icon name="arrow-left" size={22} color="#0f172a" />
+        </Pressable>
+        <Text style={styles.headerTitle} numberOfLines={1}>
+          {detail?.title || 'Milestone'}
+        </Text>
+        <Pressable
+          style={[styles.addBtn, {backgroundColor: primaryColor}]}
+          onPress={onAddMilestone}
+          accessibilityRole="button"
+          accessibilityLabel="Add milestone">
+          <Icon name="plus" size={14} color="#ffffff" />
+          <Text style={styles.addBtnText}>ADD MILESTONE</Text>
+        </Pressable>
+      </View>
+
+      {isLoading || !detail ? (
+        <View style={styles.centered}>
+          <ActivityIndicator size="large" color={primaryColor} />
+        </View>
+      ) : (
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          {/* Brief + Progress */}
+          <View style={styles.detailRow}>
+            <View style={[styles.detailCard, styles.detailCardHalf]}>
+              <View style={styles.detailSectionTitleRow}>
+                <View style={[styles.detailAccentBar, {backgroundColor: primaryColor}]} />
+                <Text style={styles.detailSectionTitle}>Brief</Text>
+              </View>
+              <Text style={styles.detailBrief}>{detail.description || '—'}</Text>
+              <View style={styles.detailDivider} />
+              <View style={styles.detailMetaRow}>
+                <View style={styles.detailMetaCol}>
+                  <Text style={styles.detailMetaLabel}>Start Date</Text>
+                  <Text style={styles.detailMetaValue}>{formatDeadline(detail.startDate)}</Text>
+                </View>
+                <View style={styles.detailMetaCol}>
+                  <Text style={styles.detailMetaLabel}>Target Date</Text>
+                  <View style={styles.metaValueRow}>
+                    <Text style={styles.detailMetaValue}>{formatDeadline(detail.targetDate)}</Text>
+                    <Pressable onPress={openTargetDateEditor} hitSlop={8} accessibilityRole="button" accessibilityLabel="Edit target date">
+                      <Icon name="pencil-outline" size={15} color="#0f172a" />
+                    </Pressable>
+                  </View>
+                </View>
+              </View>
+              <View style={styles.detailMetaRow}>
+                <View style={styles.detailMetaCol}>
+                  <Text style={styles.detailMetaLabel}>Notification Frequency</Text>
+                  <View style={styles.notifyRow}>
+                    <Switch
+                      value={!!detail.notifyProgress}
+                      onValueChange={handleToggleNotification}
+                      disabled={togglingNotification}
+                      trackColor={{false: '#e2e8f0', true: primaryColor}}
+                      thumbColor="#ffffff"
+                    />
+                    <Text style={styles.detailMetaValue}>{humanizeFrequency(detail.progressFrequency)}</Text>
+                  </View>
+                </View>
+                <View style={styles.detailMetaCol}>
+                  <Text style={styles.detailMetaLabel}>Reviewers</Text>
+                  <Pressable onPress={openReviewersEditor} accessibilityRole="button" accessibilityLabel="Edit reviewers">
+                    <Icon name="pencil-outline" size={15} color="#0f172a" />
+                  </Pressable>
+                </View>
+              </View>
+            </View>
+
+            <View style={[styles.detailCard, styles.detailCardHalf]}>
+              <View style={styles.detailSectionTitleRow}>
+                <View style={[styles.detailAccentBar, {backgroundColor: primaryColor}]} />
+                <Text style={styles.detailSectionTitle}>Your progress</Text>
+              </View>
+              <View style={styles.progressRingRow}>
+                <View style={styles.progressTile}>
+                  <View style={[styles.progressCircle, {borderColor: primaryColor}]}>
+                    <Text style={styles.progressCircleText}>{qualPercent}%</Text>
+                  </View>
+                  <Text style={styles.progressTileLabel}>Qualitative</Text>
+                </View>
+                <View style={styles.progressTile}>
+                  <View style={[styles.progressCircle, {borderColor: primaryColor}]}>
+                    <Text style={styles.progressCircleText}>{quantPercent}%</Text>
+                  </View>
+                  <Text style={styles.progressTileLabel}>Quantitative</Text>
+                </View>
+              </View>
+            </View>
+          </View>
+
+          {/* Qualitative Tasks */}
+          <View style={styles.detailCard}>
+            <View style={styles.detailSectionHeaderRow}>
+              <View style={styles.detailSectionTitleRow}>
+                <View style={[styles.detailAccentBar, {backgroundColor: primaryColor}]} />
+                <Text style={styles.detailSectionTitle}>Qualitative Tasks</Text>
+              </View>
+              <Text style={styles.detailSectionCount}>
+                {(detail.milestoneQualitative || []).filter(t => t.isCompleted).length}/
+                {(detail.milestoneQualitative || []).length} completed
+              </Text>
+            </View>
+            {(detail.milestoneQualitative || []).length === 0 ? (
+              <Text style={styles.detailEmptyText}>No qualitative tasks added.</Text>
+            ) : (
+              (detail.milestoneQualitative || []).map(t => {
+                const isCompleting = completingQualId === t.uuid;
+                return (
+                  <View key={t.uuid || t.id} style={styles.taskListRow}>
+                    <Text style={styles.taskListRowText} numberOfLines={2}>{t.title}</Text>
+                    {t.isCompleted ? (
+                      <View style={styles.completedPill}>
+                        <Icon name="check" size={14} color="#16a34a" />
+                        <Text style={styles.completedPillText}>Completed</Text>
+                      </View>
+                    ) : (
+                      <Pressable
+                        style={[styles.markCompleteBtn, isCompleting && {opacity: 0.6}]}
+                        onPress={() => handleMarkQualitativeCompleted(t.uuid)}
+                        disabled={isCompleting}>
+                        {isCompleting
+                          ? <ActivityIndicator size="small" color="#ffffff" />
+                          : <Text style={styles.markCompleteBtnText}>Mark Completed</Text>}
+                      </Pressable>
+                    )}
+                  </View>
+                );
+              })
+            )}
+          </View>
+
+          {/* Quantitative Tasks */}
+          <View style={styles.detailCard}>
+            <View style={styles.detailSectionHeaderRow}>
+              <View style={styles.detailSectionTitleRow}>
+                <View style={[styles.detailAccentBar, {backgroundColor: primaryColor}]} />
+                <Text style={styles.detailSectionTitle}>Quantitative Tasks</Text>
+              </View>
+            </View>
+            {(detail.milestoneQuantitative || []).length === 0 ? (
+              <Text style={styles.detailEmptyText}>No quantitative tasks added.</Text>
+            ) : (
+              (detail.milestoneQuantitative || []).map(t => {
+                const itemUuid = t.uuid || '';
+                const isUpdating = updatingQuantId === itemUuid;
+                return (
+                  <View key={itemUuid || t.id} style={styles.quantDetailRow}>
+                    <View style={styles.quantTextRow}>
+                      <Text style={styles.taskListRowText} numberOfLines={1}>
+                        {t.parameter}{'  '}
+                        <Text style={styles.taskListRowBold}>
+                          {t.valueCompleted ?? 0}/{t.value ?? 0}
+                        </Text>{' '}
+                        {t.unit}
+                      </Text>
+                      <Pressable onPress={() => setLogsFor(t)} hitSlop={8} accessibilityRole="button" accessibilityLabel="View update logs">
+                        <Icon name="information-outline" size={16} color="#94a3b8" />
+                      </Pressable>
+                    </View>
+                    <View style={styles.quantUpdateGroup}>
+                      <TextInput
+                        style={styles.quantValueInput}
+                        value={quantInputs[itemUuid] || ''}
+                        onChangeText={val => setQuantInputs(prev => ({...prev, [itemUuid]: val}))}
+                        placeholder="Add Value"
+                        placeholderTextColor="#94a3b8"
+                        keyboardType="numeric"
+                        editable={!isUpdating}
+                      />
+                      <Pressable
+                        style={[styles.markCompleteBtn, isUpdating && {opacity: 0.6}]}
+                        onPress={() => handleUpdateQuantValue(t)}
+                        disabled={isUpdating}>
+                        {isUpdating
+                          ? <ActivityIndicator size="small" color="#ffffff" />
+                          : <Text style={styles.markCompleteBtnText}>+ Update</Text>}
+                      </Pressable>
+                    </View>
+                  </View>
+                );
+              })
+            )}
+          </View>
+
+          {/* Notes */}
+          <View style={[styles.detailCard, {marginBottom: insets.bottom + 20}]}>
+            <View style={styles.detailSectionHeaderRow}>
+              <View style={styles.detailSectionTitleRow}>
+                <View style={[styles.detailAccentBar, {backgroundColor: primaryColor}]} />
+                <Text style={styles.detailSectionTitle}>Notes</Text>
+              </View>
+              <Pressable style={[styles.addNoteBtn, {backgroundColor: primaryColor}]} onPress={() => setAddNoteOpen(true)}>
+                <Text style={styles.addNoteBtnText}>+ ADD NOTE</Text>
+              </Pressable>
+            </View>
+            {notes.length === 0 ? (
+              <Text style={styles.detailEmptyText}>No notes found</Text>
+            ) : (
+              notes.map(n => {
+                const hasFiles = (n.files || []).length > 0;
+                return (
+                  <View key={n.uuid} style={styles.noteRow}>
+                    <Text style={styles.noteText}>{n.text}</Text>
+                    <Text style={styles.noteMetaText}>
+                      Created: <Text style={styles.noteMetaBold}>{formatNoteDate(n.createdAt as string)}</Text>
+                      {'   '}Creator: <Text style={styles.noteMetaBold}>{n.user?.name || '—'}</Text>
+                    </Text>
+                    <View style={styles.noteActionsRow}>
+                      <Pressable
+                        style={[styles.noteActionBtn, !hasFiles && {opacity: 0.4}]}
+                        onPress={() => handleDownloadFiles(n)}
+                        disabled={!hasFiles}>
+                        <Text style={styles.noteActionBtnText}>Download Files</Text>
+                      </Pressable>
+                      <Pressable style={styles.noteActionBtn} onPress={() => setEditingNote(n)}>
+                        <Text style={styles.noteActionBtnText}>Edit</Text>
+                      </Pressable>
+                      <Pressable onPress={() => handleDeleteNote(n)} hitSlop={8}>
+                        <Icon name="delete-outline" size={20} color="#dc2626" />
+                      </Pressable>
+                    </View>
+                  </View>
+                );
+              })
+            )}
+          </View>
+        </ScrollView>
+      )}
+
+      {/* Edit Target Date modal */}
+      {editTargetDateOpen ? (
+        <Modal visible transparent animationType="fade" onRequestClose={() => setEditTargetDateOpen(false)}>
+          <Pressable style={styles.pickerBackdrop} onPress={() => setEditTargetDateOpen(false)}>
+            <Pressable style={styles.editSheet} onPress={e => e.stopPropagation()}>
+              <Text style={styles.fieldLabel}>Target Date <Text style={styles.req}>*</Text></Text>
+              <TextInput
+                style={styles.fieldInput}
+                value={targetDateInput}
+                onChangeText={setTargetDateInput}
+                placeholder="yyyy-mm-dd"
+                placeholderTextColor="#94a3b8"
+                keyboardType="numbers-and-punctuation"
+              />
+              <Pressable
+                style={[styles.submitBtn, {backgroundColor: primaryColor}, savingTargetDate && {opacity: 0.7}]}
+                onPress={handleSaveTargetDate}
+                disabled={savingTargetDate}>
+                {savingTargetDate
+                  ? <ActivityIndicator size="small" color="#ffffff" />
+                  : <Text style={styles.submitBtnText}>SAVE</Text>}
+              </Pressable>
+            </Pressable>
+          </Pressable>
+        </Modal>
+      ) : null}
+
+      {/* Edit Reviewers modal */}
+      {editReviewersOpen ? (
+        <Modal visible transparent animationType="fade" onRequestClose={() => setEditReviewersOpen(false)}>
+          <Pressable style={styles.pickerBackdrop} onPress={() => setEditReviewersOpen(false)}>
+            <Pressable style={styles.editSheet} onPress={e => e.stopPropagation()}>
+              <Text style={styles.fieldLabel}>Reviewers</Text>
+              <ScrollView style={styles.reviewerEditList} showsVerticalScrollIndicator={false}>
+                {reviewers.length === 0 ? (
+                  <Text style={styles.pickerEmpty}>No reviewers available.</Text>
+                ) : (
+                  reviewers.map(r => {
+                    const selected = selectedReviewerUuids.includes(r.uuid);
+                    return (
+                      <Pressable
+                        key={r.uuid}
+                        style={[styles.pickerRow, selected && styles.pickerRowSelected]}
+                        onPress={() => toggleReviewerSelection(r.uuid)}>
+                        <Text style={[styles.pickerRowText, selected && {fontWeight: '700'}]}>{r.name}</Text>
+                        {selected ? <Icon name="check" size={18} color="#16a34a" /> : null}
+                      </Pressable>
+                    );
+                  })
+                )}
+              </ScrollView>
+              <Pressable
+                style={[styles.submitBtn, {backgroundColor: primaryColor}]}
+                onPress={() => { setEditReviewersOpen(false); notReady(); }}>
+                <Text style={styles.submitBtnText}>SAVE</Text>
+              </Pressable>
+            </Pressable>
+          </Pressable>
+        </Modal>
+      ) : null}
+
+      {/* Quantitative update Logs modal */}
+      {logsFor ? (
+        <Modal visible transparent animationType="fade" onRequestClose={() => setLogsFor(null)}>
+          <View style={styles.pickerBackdrop}>
+            <View style={styles.logsSheet}>
+              <View style={styles.noteModalHeader}>
+                <Text style={styles.noteModalTitle}>Logs</Text>
+                <Pressable onPress={() => setLogsFor(null)} hitSlop={10} style={styles.noteCloseBtn}>
+                  <Icon name="close" size={18} color="#0f172a" />
+                </Pressable>
+              </View>
+              <View style={styles.noteModalDivider} />
+              <ScrollView style={styles.logsList} showsVerticalScrollIndicator={false}>
+                {(logsFor.updateLogs || []).length === 0 ? (
+                  <Text style={[styles.detailEmptyText, {padding: 20}]}>No update logs yet.</Text>
+                ) : (
+                  (logsFor.updateLogs || []).map((log, idx) => (
+                    <View key={idx} style={styles.logRow}>
+                      <Text style={styles.logValue}>{log.value ?? 0}</Text>
+                      <Text style={styles.logDate}>{formatLogDate(log.createdAt)}</Text>
+                    </View>
+                  ))
+                )}
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+      ) : null}
+
+      {addNoteOpen || editingNote ? (
+        <AddNoteModal
+          token={token}
+          milestoneUuid={uuid}
+          note={editingNote || undefined}
+          primaryColor={primaryColor}
+          onClose={() => { setAddNoteOpen(false); setEditingNote(null); }}
+          onCreated={() => { setAddNoteOpen(false); setEditingNote(null); loadNotes(); }}
+        />
+      ) : null}
+    </View>
+  );
+}
+
+// ── Add Note Modal ────────────────────────────────────────────────────────────
+const NOTE_ATTACHMENT_TYPES = [
+  DocumentPickerTypes.images,
+  DocumentPickerTypes.pdf,
+  DocumentPickerTypes.doc,
+  DocumentPickerTypes.docx,
+  DocumentPickerTypes.ppt,
+  DocumentPickerTypes.pptx,
+  DocumentPickerTypes.xls,
+  DocumentPickerTypes.xlsx,
+];
+
+type PendingAttachment = {url?: string; name: string};
+
+// GET returns a presigned S3 URL; PATCH/POST expect the raw storage key back
+// (the same relative path the upload endpoint originally returned).
+const toStorageKey = (url?: string): string | undefined => {
+  if (!url) return undefined;
+  const withoutQuery = url.split('?')[0];
+  const match = withoutQuery.match(/(users\/.+)$/);
+  return match ? match[1] : withoutQuery;
+};
+
+function AddNoteModal({
+  token,
+  milestoneUuid,
+  note,
+  primaryColor,
+  onClose,
+  onCreated,
+}: {
+  token: string;
+  milestoneUuid: string;
+  note?: MilestoneNote;
+  primaryColor: string;
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const toast = useToast();
+  const [description, setDescription] = useState(note?.text || '');
+  const [attachments, setAttachments] = useState<PendingAttachment[]>(
+    () => (note?.files || []).map(f => ({url: toStorageKey(f.url), name: f.name || 'Attachment'})),
+  );
+  const [isUploading, setIsUploading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleUpload = async () => {
+    if (isUploading) return;
+    try {
+      const [picked] = await pick({type: NOTE_ATTACHMENT_TYPES});
+      if (!picked?.uri) return;
+      const name = picked.name || `file-${attachments.length + 1}`;
+      const type = picked.type || 'application/octet-stream';
+      setIsUploading(true);
+      const res = await milestonesService.uploadNoteFile(token, milestoneUuid, {uri: picked.uri, name, type});
+      const list = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : [];
+      const item = list[0] || {};
+      setAttachments(prev => [...prev, {url: item?.url, name: item?.name || name}]);
+    } catch (err: any) {
+      if (isErrorWithCode(err) && err.code === errorCodes.OPERATION_CANCELED) {
+        return;
+      }
+      toast.error(err?.message || 'Could not upload file.');
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const removeAttachment = (idx: number) =>
+    setAttachments(prev => prev.filter((_, i) => i !== idx));
+
+  const handleSubmit = async () => {
+    if (!description.trim()) {
+      toast.error('Description is required.');
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      const files = attachments
+        .filter((a): a is PendingAttachment & {url: string} => !!a.url)
+        .map(a => ({url: a.url, name: a.name}));
+      const payload = {text: description.trim(), ...(files.length ? {files} : {})};
+      if (note?.uuid) {
+        await milestonesService.updateNote(token, milestoneUuid, note.uuid, payload);
+        toast.success('Note updated.');
+      } else {
+        await milestonesService.createNote(token, milestoneUuid, payload);
+        toast.success('Note added.');
+      }
+      onCreated();
+    } catch (e: any) {
+      toast.error(e?.message || 'Could not save note.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.pickerBackdrop}>
+        <View style={styles.noteModalSheet}>
+          <View style={styles.noteModalHeader}>
+            <Text style={styles.noteModalTitle}>{note ? 'Edit note' : 'Add Note'}</Text>
+            <Pressable onPress={onClose} hitSlop={10} style={styles.noteCloseBtn}>
+              <Icon name="close" size={18} color="#0f172a" />
+            </Pressable>
+          </View>
+          <View style={styles.noteModalDivider} />
+
+          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.noteModalBody}>
+            <Text style={styles.fieldLabel}>Description <Text style={styles.req}>*</Text></Text>
+            <TextInput
+              style={[styles.fieldInput, styles.textarea]}
+              value={description}
+              onChangeText={setDescription}
+              placeholder="Enter text..."
+              placeholderTextColor="#94a3b8"
+              multiline
+              textAlignVertical="top"
+            />
+
+            <Text style={[styles.fieldLabel, {marginTop: 20}]}>Add Attachments</Text>
+            <View style={styles.uploadBox}>
+              <Text style={styles.uploadBoxText}>
+                Click or Drop file in this box to upload.{'\n'}
+                Accepted formats: png, jpg, jpeg, ppt, pptx, doc, docx, pdf, xls, xlsx
+              </Text>
+              <Pressable style={styles.uploadBtn} onPress={handleUpload} disabled={isUploading}>
+                {isUploading ? (
+                  <ActivityIndicator size="small" color="#0f172a" />
+                ) : (
+                  <>
+                    <Icon name="cloud-upload-outline" size={16} color="#0f172a" />
+                    <Text style={styles.uploadBtnText}>Upload</Text>
+                  </>
+                )}
+              </Pressable>
+            </View>
+
+            {attachments.length > 0 ? (
+              <View style={styles.noteAttachmentRow}>
+                {attachments.map((a, idx) => (
+                  <View key={a.url || idx} style={styles.noteAttachmentChip}>
+                    <Icon name="paperclip" size={12} color="#64748b" />
+                    <Text style={styles.noteAttachmentText} numberOfLines={1}>{a.name}</Text>
+                    <Pressable onPress={() => removeAttachment(idx)} hitSlop={6}>
+                      <Icon name="close" size={12} color="#64748b" />
+                    </Pressable>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+          </ScrollView>
+
+          <View style={styles.noteModalDivider} />
+          <View style={styles.noteModalFooter}>
+            <Pressable style={styles.noteCancelBtn} onPress={onClose}>
+              <Text style={styles.noteCancelBtnText}>CANCEL</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.noteSubmitBtn, {backgroundColor: primaryColor}, isSubmitting && {opacity: 0.7}]}
+              onPress={handleSubmit}
+              disabled={isSubmitting}>
+              {isSubmitting
+                ? <ActivityIndicator size="small" color="#ffffff" />
+                : <Text style={styles.noteSubmitBtnText}>SUBMIT</Text>}
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 // ── Styles ────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   page: {backgroundColor: '#f1f5f9', flex: 1},
@@ -658,6 +1508,22 @@ const styles = StyleSheet.create({
   cardMeta: {flexDirection: 'row', flexWrap: 'wrap', gap: 12},
   metaRow: {alignItems: 'center', flexDirection: 'row', gap: 4},
   metaText: {color: '#64748b', fontSize: 12, fontWeight: '600'},
+  cardFooter: {
+    alignItems: 'center',
+    borderTopColor: '#f1f5f9',
+    borderTopWidth: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 12,
+    paddingTop: 12,
+  },
+  detailsBtn: {
+    borderRadius: 8,
+    borderWidth: 1.5,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+  },
+  detailsBtnText: {fontSize: 12, fontWeight: '800', letterSpacing: 0.4},
   // Modal
   backdrop: {backgroundColor: 'rgba(15,23,42,0.4)', flex: 1, justifyContent: 'flex-end'},
   modalSheet: {
@@ -753,4 +1619,231 @@ const styles = StyleSheet.create({
   pickerRowText: {color: '#0f172a', fontSize: 14},
   pickerDoneBtn: {alignItems: 'center', borderRadius: 10, marginTop: 14, paddingVertical: 12},
   pickerDoneText: {color: '#ffffff', fontSize: 14, fontWeight: '800'},
+  // Detail view
+  detailRow: {flexDirection: 'row', flexWrap: 'wrap', gap: 14},
+  detailCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 14,
+    marginBottom: 14,
+    padding: 16,
+    shadowColor: '#0f172a',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  detailCardHalf: {flexBasis: '100%', flexGrow: 1},
+  detailSectionTitleRow: {alignItems: 'center', flexDirection: 'row', gap: 8, marginBottom: 12},
+  detailAccentBar: {borderRadius: 2, height: 16, width: 4},
+  detailSectionTitle: {color: '#0f172a', fontSize: 15, fontWeight: '800'},
+  detailSectionHeaderRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  detailSectionCount: {color: '#64748b', fontSize: 12, fontWeight: '700'},
+  detailBrief: {color: '#475569', fontSize: 13, lineHeight: 19},
+  detailDivider: {backgroundColor: '#e2e8f0', height: 1, marginVertical: 14},
+  detailMetaRow: {flexDirection: 'row', gap: 20, marginBottom: 14},
+  detailMetaCol: {flex: 1},
+  detailMetaLabel: {color: '#94a3b8', fontSize: 11, fontWeight: '700', marginBottom: 4},
+  detailMetaValue: {color: '#0f172a', fontSize: 14, fontWeight: '700'},
+  progressRingRow: {flexDirection: 'row', gap: 16, justifyContent: 'space-around'},
+  progressTile: {alignItems: 'center', gap: 8},
+  progressCircle: {
+    alignItems: 'center',
+    borderRadius: 50,
+    borderWidth: 4,
+    height: 92,
+    justifyContent: 'center',
+    width: 92,
+  },
+  progressCircleText: {color: '#0f172a', fontSize: 18, fontWeight: '800'},
+  progressTileLabel: {color: '#64748b', fontSize: 12, fontWeight: '700'},
+  detailEmptyText: {color: '#94a3b8', fontSize: 13, paddingVertical: 10, textAlign: 'center'},
+  taskListRow: {
+    alignItems: 'center',
+    borderColor: '#e2e8f0',
+    borderRadius: 10,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 10,
+    justifyContent: 'space-between',
+    marginBottom: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  taskListRowText: {color: '#0f172a', flex: 1, fontSize: 13, fontWeight: '600'},
+  taskListRowBold: {fontWeight: '800'},
+  quantDetailRow: {
+    alignItems: 'center',
+    borderColor: '#e2e8f0',
+    borderRadius: 10,
+    borderWidth: 1,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    justifyContent: 'space-between',
+    marginBottom: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  quantTextRow: {alignItems: 'center', flex: 1, flexDirection: 'row', gap: 6},
+  quantUpdateGroup: {alignItems: 'center', flexDirection: 'row', gap: 8},
+  quantValueInput: {
+    borderColor: '#e2e8f0',
+    borderRadius: 8,
+    borderWidth: 1,
+    color: '#0f172a',
+    fontSize: 13,
+    minWidth: 90,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  markCompleteBtn: {
+    backgroundColor: '#0f172a',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  markCompleteBtnText: {color: '#ffffff', fontSize: 11, fontWeight: '700'},
+  completedPill: {
+    alignItems: 'center',
+    backgroundColor: '#f0fdf4',
+    borderRadius: 8,
+    flexDirection: 'row',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  completedPillText: {color: '#16a34a', fontSize: 11, fontWeight: '700'},
+  addNoteBtn: {borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8},
+  addNoteBtnText: {color: '#ffffff', fontSize: 11, fontWeight: '800', letterSpacing: 0.3},
+  metaValueRow: {alignItems: 'center', flexDirection: 'row', gap: 8},
+  notifyRow: {alignItems: 'center', flexDirection: 'row', gap: 8},
+  editSheet: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    maxHeight: '75%',
+    padding: 20,
+    width: '85%',
+  },
+  reviewerEditList: {marginBottom: 14, maxHeight: 260},
+  noteRow: {
+    borderColor: '#e2e8f0',
+    borderRadius: 10,
+    borderWidth: 1,
+    marginBottom: 10,
+    padding: 14,
+  },
+  noteText: {color: '#0f172a', fontSize: 14, fontWeight: '600', marginBottom: 8},
+  noteMetaText: {color: '#94a3b8', fontSize: 12},
+  noteMetaBold: {color: '#64748b', fontWeight: '700'},
+  noteActionsRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 12,
+  },
+  noteActionBtn: {
+    backgroundColor: '#0f172a',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  noteActionBtnText: {color: '#ffffff', fontSize: 12, fontWeight: '700'},
+  noteAttachmentRow: {flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8},
+  noteAttachmentChip: {
+    alignItems: 'center',
+    backgroundColor: '#f1f5f9',
+    borderRadius: 8,
+    flexDirection: 'row',
+    gap: 6,
+    maxWidth: 180,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  noteAttachmentText: {color: '#475569', fontSize: 11, fontWeight: '600'},
+  noteModalSheet: {
+    alignSelf: 'center',
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    maxHeight: '85%',
+    width: '90%',
+  },
+  logsSheet: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    maxHeight: '70%',
+    width: '85%',
+  },
+  logsList: {padding: 20},
+  logRow: {
+    borderBottomColor: '#f1f5f9',
+    borderBottomWidth: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+  },
+  logValue: {color: '#0f172a', fontSize: 14, fontWeight: '800'},
+  logDate: {color: '#64748b', fontSize: 13},
+  noteModalHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 18,
+  },
+  noteModalTitle: {color: '#0f172a', fontSize: 20, fontWeight: '800'},
+  noteCloseBtn: {
+    borderColor: '#fcd9b8',
+    borderRadius: 8,
+    borderWidth: 1,
+    padding: 6,
+  },
+  noteModalDivider: {backgroundColor: '#e2e8f0', height: 1},
+  noteModalBody: {padding: 20},
+  uploadBox: {
+    alignItems: 'center',
+    borderColor: '#cbd5e1',
+    borderRadius: 12,
+    borderStyle: 'dashed',
+    borderWidth: 1.5,
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 24,
+  },
+  uploadBoxText: {color: '#64748b', fontSize: 12, textAlign: 'center'},
+  uploadBtn: {
+    alignItems: 'center',
+    backgroundColor: '#e2e8f0',
+    borderRadius: 8,
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  uploadBtnText: {color: '#0f172a', fontSize: 13, fontWeight: '700'},
+  noteModalFooter: {
+    flexDirection: 'row',
+    gap: 12,
+    padding: 20,
+  },
+  noteCancelBtn: {
+    alignItems: 'center',
+    backgroundColor: '#f1f5f9',
+    borderRadius: 12,
+    flex: 1,
+    paddingVertical: 14,
+  },
+  noteCancelBtnText: {color: '#475569', fontSize: 14, fontWeight: '800', letterSpacing: 0.5},
+  noteSubmitBtn: {
+    alignItems: 'center',
+    borderRadius: 12,
+    flex: 1,
+    paddingVertical: 14,
+  },
+  noteSubmitBtnText: {color: '#ffffff', fontSize: 14, fontWeight: '800', letterSpacing: 0.5},
 });
