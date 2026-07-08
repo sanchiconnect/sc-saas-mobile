@@ -21,6 +21,7 @@ import {
   types as DocumentPickerTypes,
 } from '@react-native-documents/picker';
 
+import {CalendarPicker} from '../../../core/components/CalendarPicker';
 import {Icon} from '../../../core/components/Icon';
 import {TenantContext} from '../../../core/tenant/TenantProvider';
 import {useToast} from '../../../core/toast/ToastProvider';
@@ -44,6 +45,12 @@ const MONTH_FULL = [
   'January','February','March','April','May','June',
   'July','August','September','October','November','December',
 ];
+
+const todayIso = (): string => {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+};
 
 const formatDeadline = (iso?: string): string => {
   if (!iso) return '';
@@ -102,6 +109,7 @@ export function MilestonesScreen({token, onBack}: Props) {
   const [search, setSearch] = useState('');
   const [addVisible, setAddVisible] = useState(false);
   const [detailUuid, setDetailUuid] = useState<string | null>(null);
+  const [reviewers, setReviewers] = useState<Reviewer[]>([]);
 
   const toastRef = React.useRef(toast);
   toastRef.current = toast;
@@ -118,7 +126,10 @@ export function MilestonesScreen({token, onBack}: Props) {
   useEffect(() => {
     setIsLoading(true);
     load().finally(() => setIsLoading(false));
-  }, [load]);
+    milestonesService.listReviewers(token).then(rows => {
+      setReviewers(mapReviewerRows(rows as Array<Record<string, any>>));
+    }).catch(() => {});
+  }, [load, token]);
 
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
@@ -262,6 +273,7 @@ export function MilestonesScreen({token, onBack}: Props) {
               <MilestoneCard
                 key={m.uuid}
                 milestone={m}
+                reviewers={reviewers}
                 primaryColor={primaryColor}
                 onDetails={() => m.uuid && setDetailUuid(m.uuid)}
                 onDelete={() => handleDelete(m)}
@@ -287,21 +299,28 @@ export function MilestonesScreen({token, onBack}: Props) {
 // ── Milestone card ────────────────────────────────────────────────────────────
 function MilestoneCard({
   milestone,
+  reviewers,
   primaryColor,
   onDetails,
   onDelete,
 }: {
   milestone: Milestone;
+  reviewers: Reviewer[];
   primaryColor: string;
   onDetails: () => void;
   onDelete: () => void;
 }) {
-  const reviewerName =
-    milestone.reviewer?.name ||
-    milestone.reviewer?.fullName ||
-    (milestone.reviewer as any)?.otherUser?.name ||
-    null;
+  const reviewerIds = (milestone.reviewerIds || []).map(Number);
+  const reviewerName = reviewerIds
+    .map(id => reviewers.find(r => r.id === id)?.name)
+    .filter((n): n is string => !!n)
+    .join(', ') || null;
   const statusLabel = getStatusLabel(milestone);
+
+  const qualRaw = milestone.qualitativeMilestonePercent ?? milestone.qualitativePercent;
+  const quantRaw = milestone.quantitativeMilestoneStats ?? milestone.quantitativeStats;
+  const qualPercent = typeof qualRaw === 'number' ? Math.round(qualRaw) : null;
+  const quantPercent = typeof quantRaw === 'number' ? Math.round(quantRaw) : null;
 
   return (
     <View style={styles.card}>
@@ -334,6 +353,16 @@ function MilestoneCard({
           </View>
         ) : null}
       </View>
+      <View style={styles.cardProgressRow}>
+        <View style={styles.cardProgressCol}>
+          <Text style={styles.cardProgressLabel}>Qualitative Tasks</Text>
+          <CardProgressBar percent={qualPercent} color={primaryColor} />
+        </View>
+        <View style={styles.cardProgressCol}>
+          <Text style={styles.cardProgressLabel}>Quantitative Tasks</Text>
+          <CardProgressBar percent={quantPercent} color={primaryColor} />
+        </View>
+      </View>
       <View style={styles.cardFooter}>
         <Pressable
           style={[styles.detailsBtn, {borderColor: primaryColor}]}
@@ -354,8 +383,34 @@ function MilestoneCard({
   );
 }
 
+function CardProgressBar({percent, color}: {percent: number | null; color: string}) {
+  if (percent === null) {
+    return <Text style={styles.cardProgressNA}>N/A</Text>;
+  }
+  const clamped = Math.min(100, Math.max(0, percent));
+  return (
+    <View style={styles.progressBarTrack}>
+      <View style={[styles.progressBarFill, {width: `${clamped}%`, backgroundColor: color}]} />
+      <Text style={styles.progressBarText}>{percent}%</Text>
+    </View>
+  );
+}
+
 // ── Add Milestone Modal ───────────────────────────────────────────────────────
-type Reviewer = {uuid: string; name: string};
+type Reviewer = {uuid: string; id: number; name: string};
+
+// The reviewers-list endpoint nests the actual person under `otherUser`
+// (connection-request shape) and keys writes by that numeric `id`, not uuid.
+const mapReviewerRows = (rows: Array<Record<string, any>>): Reviewer[] =>
+  rows
+    .map(r => {
+      const u = r?.otherUser || r;
+      const id = Number(u?.id);
+      const uuid = String(u?.uuid || '');
+      const name = String(u?.name || u?.fullName || '');
+      return {uuid, id, name};
+    })
+    .filter((r): r is Reviewer => !Number.isNaN(r.id) && r.name.length > 0);
 
 function AddMilestoneModal({
   token,
@@ -377,6 +432,8 @@ function AddMilestoneModal({
   const [description, setDescription] = useState('');
   const [startDate, setStartDate] = useState('');
   const [targetDate, setTargetDate] = useState('');
+  const [startDatePickerOpen, setStartDatePickerOpen] = useState(false);
+  const [targetDatePickerOpen, setTargetDatePickerOpen] = useState(false);
   const [progressFrequency, setProgressFrequency] = useState<'every_week' | 'every_month' | 'every_quarter'>('every_month');
 
   // Reviewers
@@ -396,15 +453,7 @@ function AddMilestoneModal({
 
   useEffect(() => {
     milestonesService.listReviewers(token).then(rows => {
-      const mapped = rows
-        .map(r => {
-          const u = (r as any).otherUser || r;
-          const uuid: string = String(u?.uuid || '');
-          const name: string = String(u?.name || u?.fullName || '');
-          return {uuid, name};
-        })
-        .filter((r): r is Reviewer => r.uuid.length > 0 && r.name.length > 0);
-      setReviewers(mapped);
+      setReviewers(mapReviewerRows(rows as Array<Record<string, any>>));
     }).catch(() => {});
   }, [token]);
 
@@ -444,8 +493,7 @@ function AddMilestoneModal({
       await milestonesService.createMilestone(token, {
         title: title.trim(),
         description: description.trim(),
-        // TODO: backend rejects reviewer UUIDs here ("must be an integer number") — send empty until that's fixed server-side.
-        reviewersIds: [],
+        reviewersIds: selectedReviewers.map(r => r.id),
         startDate: startDate.trim(),
         targetDate: targetDate.trim(),
         progressFrequency,
@@ -524,27 +572,38 @@ function AddMilestoneModal({
             <View style={styles.dateRow}>
               <View style={styles.dateField}>
                 <Text style={styles.fieldLabel}>Start Date <Text style={styles.req}>*</Text></Text>
-                <TextInput
-                  style={styles.fieldInput}
-                  value={startDate}
-                  onChangeText={setStartDate}
-                  placeholder="yyyy-mm-dd"
-                  placeholderTextColor="#94a3b8"
-                  keyboardType="numbers-and-punctuation"
-                />
+                <Pressable style={[styles.fieldInput, styles.dateDropdown]} onPress={() => setStartDatePickerOpen(true)}>
+                  <Text style={startDate ? styles.pickerValueText : styles.pickerPlaceholderText}>
+                    {startDate || 'yyyy-mm-dd'}
+                  </Text>
+                  <Icon name="calendar" size={16} color="#64748b" />
+                </Pressable>
               </View>
               <View style={styles.dateField}>
                 <Text style={styles.fieldLabel}>Target Date <Text style={styles.req}>*</Text></Text>
-                <TextInput
-                  style={styles.fieldInput}
-                  value={targetDate}
-                  onChangeText={setTargetDate}
-                  placeholder="yyyy-mm-dd"
-                  placeholderTextColor="#94a3b8"
-                  keyboardType="numbers-and-punctuation"
-                />
+                <Pressable style={[styles.fieldInput, styles.dateDropdown]} onPress={() => setTargetDatePickerOpen(true)}>
+                  <Text style={targetDate ? styles.pickerValueText : styles.pickerPlaceholderText}>
+                    {targetDate || 'yyyy-mm-dd'}
+                  </Text>
+                  <Icon name="calendar" size={16} color="#64748b" />
+                </Pressable>
               </View>
             </View>
+
+            <CalendarPicker
+              visible={startDatePickerOpen}
+              value={startDate || todayIso()}
+              minDate={todayIso()}
+              onClose={() => setStartDatePickerOpen(false)}
+              onSelect={iso => { setStartDate(iso); setStartDatePickerOpen(false); }}
+            />
+            <CalendarPicker
+              visible={targetDatePickerOpen}
+              value={targetDate || startDate || todayIso()}
+              minDate={startDate || todayIso()}
+              onClose={() => setTargetDatePickerOpen(false)}
+              onSelect={iso => { setTargetDate(iso); setTargetDatePickerOpen(false); }}
+            />
 
             {/* Progress Reporting */}
             <Text style={styles.fieldLabel}>
@@ -734,11 +793,13 @@ function MilestoneDetailView({
 
   const [editTargetDateOpen, setEditTargetDateOpen] = useState(false);
   const [targetDateInput, setTargetDateInput] = useState('');
+  const [targetDateCalendarOpen, setTargetDateCalendarOpen] = useState(false);
   const [savingTargetDate, setSavingTargetDate] = useState(false);
 
   const [editReviewersOpen, setEditReviewersOpen] = useState(false);
-  const [reviewers, setReviewers] = useState<Array<{uuid: string; name: string}>>([]);
-  const [selectedReviewerUuids, setSelectedReviewerUuids] = useState<string[]>([]);
+  const [reviewers, setReviewers] = useState<Reviewer[]>([]);
+  const [selectedReviewerIds, setSelectedReviewerIds] = useState<number[]>([]);
+  const [savingReviewers, setSavingReviewers] = useState(false);
 
   const [notes, setNotes] = useState<MilestoneNote[]>([]);
   const [addNoteOpen, setAddNoteOpen] = useState(false);
@@ -768,9 +829,10 @@ function MilestoneDetailView({
     setIsLoading(true);
     loadDetail().finally(() => setIsLoading(false));
     loadNotes();
-  }, [loadDetail, loadNotes]);
-
-  const notReady = () => toast.info('This action needs the backend endpoint — coming soon.');
+    milestonesService.listReviewers(token).then(rows => {
+      setReviewers(mapReviewerRows(rows as Array<Record<string, any>>));
+    }).catch(() => {});
+  }, [loadDetail, loadNotes, token]);
 
   const handleToggleNotification = async () => {
     if (!detail || togglingNotification) return;
@@ -845,25 +907,33 @@ function MilestoneDetailView({
   };
 
   const openReviewersEditor = () => {
-    setSelectedReviewerUuids(detail?.reviewerIds || []);
+    setSelectedReviewerIds((detail?.reviewerIds || []).map(Number));
     setEditReviewersOpen(true);
     if (reviewers.length === 0) {
       milestonesService.listReviewers(token).then(rows => {
-        const mapped = rows
-          .map(r => {
-            const u = (r as any).otherUser || r;
-            return {uuid: String(u?.uuid || ''), name: String(u?.name || u?.fullName || '')};
-          })
-          .filter(r => r.uuid.length > 0 && r.name.length > 0);
-        setReviewers(mapped);
+        setReviewers(mapReviewerRows(rows as Array<Record<string, any>>));
       }).catch(() => {});
     }
   };
 
-  const toggleReviewerSelection = (reviewerUuid: string) => {
-    setSelectedReviewerUuids(prev =>
-      prev.includes(reviewerUuid) ? prev.filter(id => id !== reviewerUuid) : [...prev, reviewerUuid],
+  const toggleReviewerSelection = (reviewerId: number) => {
+    setSelectedReviewerIds(prev =>
+      prev.includes(reviewerId) ? prev.filter(id => id !== reviewerId) : [...prev, reviewerId],
     );
+  };
+
+  const handleSaveReviewers = async () => {
+    setSavingReviewers(true);
+    try {
+      await milestonesService.updateReviewers(token, uuid, selectedReviewerIds);
+      toast.success('Reviewers updated.');
+      setEditReviewersOpen(false);
+      await loadDetail();
+    } catch (e: any) {
+      toast.error(e?.message || 'Could not update reviewers.');
+    } finally {
+      setSavingReviewers(false);
+    }
   };
 
   const handleMarkQualitativeCompleted = async (itemUuid?: string) => {
@@ -908,6 +978,19 @@ function MilestoneDetailView({
   const quantPercent = Math.round(
     (detail?.quantitativeMilestoneStats ?? detail?.quantitativeStats ?? 0) as number,
   );
+
+  const reviewerIds = (detail?.reviewerIds || []).map(Number);
+  const reviewerNames = reviewerIds
+    .map(id => reviewers.find(r => r.id === id)?.name)
+    .filter((n): n is string => !!n);
+  // Some ids may not resolve if the reviewers list hasn't loaded yet or the
+  // person is no longer connected — fall back to a count instead of hiding
+  // or disabling the field.
+  const reviewerDisplayText = reviewerIds.length === 0
+    ? 'None assigned'
+    : reviewerNames.length > 0
+      ? reviewerNames.join(', ')
+      : `${reviewerIds.length} assigned`;
 
   return (
     <View style={styles.page}>
@@ -974,9 +1057,12 @@ function MilestoneDetailView({
                 </View>
                 <View style={styles.detailMetaCol}>
                   <Text style={styles.detailMetaLabel}>Reviewers</Text>
-                  <Pressable onPress={openReviewersEditor} accessibilityRole="button" accessibilityLabel="Edit reviewers">
-                    <Icon name="pencil-outline" size={15} color="#0f172a" />
-                  </Pressable>
+                  <View style={styles.metaValueRow}>
+                    <Text style={styles.detailMetaValue}>{reviewerDisplayText}</Text>
+                    <Pressable onPress={openReviewersEditor} accessibilityRole="button" accessibilityLabel="Edit reviewers">
+                      <Icon name="pencil-outline" size={15} color="#0f172a" />
+                    </Pressable>
+                  </View>
                 </View>
               </View>
             </View>
@@ -1148,13 +1234,18 @@ function MilestoneDetailView({
           <Pressable style={styles.pickerBackdrop} onPress={() => setEditTargetDateOpen(false)}>
             <Pressable style={styles.editSheet} onPress={e => e.stopPropagation()}>
               <Text style={styles.fieldLabel}>Target Date <Text style={styles.req}>*</Text></Text>
-              <TextInput
-                style={styles.fieldInput}
-                value={targetDateInput}
-                onChangeText={setTargetDateInput}
-                placeholder="yyyy-mm-dd"
-                placeholderTextColor="#94a3b8"
-                keyboardType="numbers-and-punctuation"
+              <Pressable style={[styles.fieldInput, styles.dateDropdown]} onPress={() => setTargetDateCalendarOpen(true)}>
+                <Text style={targetDateInput ? styles.pickerValueText : styles.pickerPlaceholderText}>
+                  {targetDateInput || 'yyyy-mm-dd'}
+                </Text>
+                <Icon name="calendar" size={16} color="#64748b" />
+              </Pressable>
+              <CalendarPicker
+                visible={targetDateCalendarOpen}
+                value={targetDateInput || detail?.startDate || todayIso()}
+                minDate={detail?.startDate || todayIso()}
+                onClose={() => setTargetDateCalendarOpen(false)}
+                onSelect={iso => { setTargetDateInput(iso); setTargetDateCalendarOpen(false); }}
               />
               <Pressable
                 style={[styles.submitBtn, {backgroundColor: primaryColor}, savingTargetDate && {opacity: 0.7}]}
@@ -1180,12 +1271,12 @@ function MilestoneDetailView({
                   <Text style={styles.pickerEmpty}>No reviewers available.</Text>
                 ) : (
                   reviewers.map(r => {
-                    const selected = selectedReviewerUuids.includes(r.uuid);
+                    const selected = selectedReviewerIds.includes(r.id);
                     return (
                       <Pressable
                         key={r.uuid}
                         style={[styles.pickerRow, selected && styles.pickerRowSelected]}
-                        onPress={() => toggleReviewerSelection(r.uuid)}>
+                        onPress={() => toggleReviewerSelection(r.id)}>
                         <Text style={[styles.pickerRowText, selected && {fontWeight: '700'}]}>{r.name}</Text>
                         {selected ? <Icon name="check" size={18} color="#16a34a" /> : null}
                       </Pressable>
@@ -1194,9 +1285,12 @@ function MilestoneDetailView({
                 )}
               </ScrollView>
               <Pressable
-                style={[styles.submitBtn, {backgroundColor: primaryColor}]}
-                onPress={() => { setEditReviewersOpen(false); notReady(); }}>
-                <Text style={styles.submitBtnText}>SAVE</Text>
+                style={[styles.submitBtn, {backgroundColor: primaryColor}, savingReviewers && {opacity: 0.7}]}
+                onPress={handleSaveReviewers}
+                disabled={savingReviewers}>
+                {savingReviewers
+                  ? <ActivityIndicator size="small" color="#ffffff" />
+                  : <Text style={styles.submitBtnText}>SAVE</Text>}
               </Pressable>
             </Pressable>
           </Pressable>
@@ -1508,6 +1602,30 @@ const styles = StyleSheet.create({
   cardMeta: {flexDirection: 'row', flexWrap: 'wrap', gap: 12},
   metaRow: {alignItems: 'center', flexDirection: 'row', gap: 4},
   metaText: {color: '#64748b', fontSize: 12, fontWeight: '600'},
+  cardProgressRow: {flexDirection: 'row', gap: 16, marginTop: 12},
+  cardProgressCol: {flex: 1},
+  cardProgressLabel: {color: '#94a3b8', fontSize: 11, fontWeight: '700', marginBottom: 6},
+  cardProgressNA: {color: '#94a3b8', fontSize: 12, fontWeight: '700'},
+  progressBarTrack: {
+    backgroundColor: '#f1f5f9',
+    borderRadius: 6,
+    height: 22,
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    borderRadius: 6,
+    bottom: 0,
+    left: 0,
+    position: 'absolute',
+    top: 0,
+  },
+  progressBarText: {
+    color: '#0f172a',
+    fontSize: 11,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
   cardFooter: {
     alignItems: 'center',
     borderTopColor: '#f1f5f9',
@@ -1561,6 +1679,7 @@ const styles = StyleSheet.create({
   pickerPlaceholderText: {color: '#94a3b8', fontSize: 14},
   dateRow: {flexDirection: 'row', gap: 10},
   dateField: {flex: 1},
+  dateDropdown: {alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between'},
   radioRow: {flexDirection: 'row', flexWrap: 'wrap', gap: 16, marginTop: 6},
   radioItem: {alignItems: 'center', flexDirection: 'row', gap: 8},
   radioCircle: {

@@ -16,7 +16,9 @@ export type Milestone = {
   deadline?: string;  // YYYY-MM-DD
   startDate?: string;
   targetDate?: string;
-  reviewerIds?: string[];
+  // Confirmed via a real create request: this API keys reviewers by numeric
+  // id, not uuid, unlike every other reference field in this API family.
+  reviewerIds?: Array<string | number>;
   reviewer?: {
     uuid?: string;
     name?: string;
@@ -87,7 +89,7 @@ export type MilestoneNote = {
 export type CreateMilestonePayload = {
   title: string;
   description: string;
-  reviewersIds?: string[];
+  reviewersIds?: number[];
   startDate: string;
   targetDate: string;
   progressFrequency: 'every_week' | 'every_month' | 'every_quarter';
@@ -172,6 +174,23 @@ export const milestonesService = {
         method: 'PATCH',
         headers: getAuthHeader(token),
         body: JSON.stringify({targetDate}),
+      },
+      baseUrl,
+    );
+  },
+
+  async updateReviewers(
+    token: string,
+    milestoneUuid: string,
+    reviewersIds: number[],
+  ): Promise<unknown> {
+    const baseUrl = await resolveBaseUrl();
+    return requestJson(
+      `api/v1/milestones/${milestoneUuid}/reviewers`,
+      {
+        method: 'PUT',
+        headers: getAuthHeader(token),
+        body: JSON.stringify({reviewersIds}),
       },
       baseUrl,
     );

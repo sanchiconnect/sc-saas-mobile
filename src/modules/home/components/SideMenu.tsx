@@ -436,6 +436,10 @@ export function SideMenu({
                   onSelectMenu({section: 'milestones'});
                   return;
                 }
+                if (selection.item === 'Mentor Hours') {
+                  onSelectMenu({section: 'mentor-hours'});
+                  return;
+                }
                 onSelectMenu(selection);
               }}
               onClose={onClose}
