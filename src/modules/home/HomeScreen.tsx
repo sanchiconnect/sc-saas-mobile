@@ -46,6 +46,7 @@ import {filterMenuItems} from './config/menus';
 import {MyMeetingsScreen} from '../meetings/screens/MyMeetingsScreen';
 import {MilestonesScreen} from '../milestones/screens/MilestonesScreen';
 import {StartupBoosterKitScreen} from '../startupKit/screens/StartupBoosterKitScreen';
+import {GrowthMetricsScreen} from '../growthMetrics/screens/GrowthMetricsScreen';
 import {CreatePostModal} from '../community/components/CreatePostModal';
 import {CommunityWallScreen} from '../community/screens/CommunityWallScreen';
 import {EditProfileScreen} from '../profile/screens/EditProfileScreen';
@@ -619,6 +620,38 @@ export function HomeScreen({
         />
         <StartupBoosterKitScreen
           token={session.token}
+          onBack={() => setSelectedMenu({section: 'dashboard'})}
+        />
+      </View>
+    );
+  }
+
+  if (selectedMenu.section === 'growth-metrics') {
+    return (
+      <View style={styles.page}>
+        <SideMenu
+          globalSetting={globalSetting}
+          isVisible={isMenuOpen}
+          onClose={() => setIsMenuOpen(false)}
+          onLogout={onLogout}
+          onSelectMenu={setSelectedMenu}
+          primaryColor={primaryColor}
+          selectedMenu={selectedMenu}
+          session={session}
+          accountType={summary?.accountType}
+          unreadMessagesCount={unreadMessagesCount}
+          pendingConnectionsCount={pendingConnectionsCount}
+          avatarUrl={userAvatarUrl}
+        />
+        <GrowthMetricsScreen
+          token={session.token}
+          primaryColor={primaryColor}
+          accountType={summary?.accountType}
+          title={
+            (globalSetting?.features as any)?.growth_metrics_title ||
+            'Growth Metrics'
+          }
+          currency={(globalSetting?.features as any)?.currency}
           onBack={() => setSelectedMenu({section: 'dashboard'})}
         />
       </View>

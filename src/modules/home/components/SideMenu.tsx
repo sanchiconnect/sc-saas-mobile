@@ -437,6 +437,10 @@ export function SideMenu({
                   onSelectMenu({section: 'milestones'});
                   return;
                 }
+                if (selection.item === 'Growth Metrics') {
+                  onSelectMenu({section: 'growth-metrics'});
+                  return;
+                }
                 onSelectMenu(selection);
               }}
               onClose={onClose}

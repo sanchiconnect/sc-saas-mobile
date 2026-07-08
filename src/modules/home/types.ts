@@ -15,7 +15,8 @@ export type AppSection =
   | 'chat'
   | 'connections'
   | 'meetings'
-  | 'milestones';
+  | 'milestones'
+  | 'growth-metrics';
 
 export type AppMenuSelection = {
   section: AppSection;
