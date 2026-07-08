@@ -96,6 +96,7 @@ export const actionItems: MenuItem[] = [
     icon: 'chart-line',
     accountTypes: ['startup', 'mentor', 'investor', 'corporate', 'partner'],
   },
+  {key: 'mentor-hours', label: 'Mentor Hours', icon: 'clock-outline'},
 ];
 
 export const eventItems: MenuItem[] = [

@@ -45,6 +45,7 @@ import type {ConnectRoleKey} from '../connect/types';
 import {filterMenuItems} from './config/menus';
 import {MyMeetingsScreen} from '../meetings/screens/MyMeetingsScreen';
 import {MilestonesScreen} from '../milestones/screens/MilestonesScreen';
+import {MentorHoursScreen} from '../mentorHours/screens/MentorHoursScreen';
 import {StartupBoosterKitScreen} from '../startupKit/screens/StartupBoosterKitScreen';
 import {GrowthMetricsScreen} from '../growthMetrics/screens/GrowthMetricsScreen';
 import {CreatePostModal} from '../community/components/CreatePostModal';
@@ -594,6 +595,31 @@ export function HomeScreen({
           avatarUrl={userAvatarUrl}
         />
         <MilestonesScreen
+          token={session.token}
+          onBack={() => setSelectedMenu({section: 'dashboard'})}
+        />
+      </View>
+    );
+  }
+
+  if (selectedMenu.section === 'mentor-hours') {
+    return (
+      <View style={styles.page}>
+        <SideMenu
+          globalSetting={globalSetting}
+          isVisible={isMenuOpen}
+          onClose={() => setIsMenuOpen(false)}
+          onLogout={onLogout}
+          onSelectMenu={setSelectedMenu}
+          primaryColor={primaryColor}
+          selectedMenu={selectedMenu}
+          session={session}
+          accountType={summary?.accountType}
+          unreadMessagesCount={unreadMessagesCount}
+          pendingConnectionsCount={pendingConnectionsCount}
+          avatarUrl={userAvatarUrl}
+        />
+        <MentorHoursScreen
           token={session.token}
           onBack={() => setSelectedMenu({section: 'dashboard'})}
         />
