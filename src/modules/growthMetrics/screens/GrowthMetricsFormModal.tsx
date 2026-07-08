@@ -70,6 +70,7 @@ export function GrowthMetricsFormModal({
   const [values, setValues] = useState<Record<number, string>>({});
   const [errors, setErrors] = useState<Record<number, string>>({});
   const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const allExisting = block ? [...block.list, ...block.programSpecific] : [];
   const isEditing = allExisting.length > 0;
@@ -77,28 +78,30 @@ export function GrowthMetricsFormModal({
   // Fetch metric type definitions whenever the modal opens
   useEffect(() => {
     if (!visible || !token) return;
+    let cancelled = false;
     setFieldsLoading(true);
     growthMetricsService
       .getMetricTypes(token)
       .then(types => {
-        setMetricTypes(types || []);
+        if (!cancelled) setMetricTypes(types || []);
       })
       .catch(() => {})
-      .finally(() => setFieldsLoading(false));
+      .finally(() => { if (!cancelled) setFieldsLoading(false); });
+    return () => { cancelled = true; };
   }, [visible, token]);
 
-  // Pre-fill values once types are loaded
+  // Pre-fill values once types are loaded (re-runs if block changes)
   useEffect(() => {
     if (!visible || !block || metricTypes.length === 0) return;
+    const existing = [...block.list, ...block.programSpecific];
     const init: Record<number, string> = {};
     metricTypes.forEach(t => {
-      const found = allExisting.find(item => item.metricType.id === t.id);
+      const found = existing.find(item => item.metricType.id === t.id);
       init[t.id] = found?.metricValue != null ? String(found.metricValue) : '';
     });
     setValues(init);
     setErrors({});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, metricTypes]);
+  }, [visible, metricTypes, block]);
 
   const setValue = (id: number, val: string) => {
     setValues(prev => ({...prev, [id]: val}));
@@ -134,6 +137,7 @@ export function GrowthMetricsFormModal({
   const handleSubmit = async () => {
     if (!block || !validate()) return;
     setSubmitting(true);
+    setSubmitError(null);
     try {
       const date = parseQuarterToDate(block.date);
       const result = metricTypes.map(t => ({
@@ -143,10 +147,12 @@ export function GrowthMetricsFormModal({
       }));
 
       if (isEditing) {
-        const patchData = allExisting.map(item => ({
-          metricUUID: item.uuid,
-          metricValue: values[item.metricType.id!] ?? null,
-        }));
+        const patchData = allExisting
+          .filter(item => item.metricType.id != null)
+          .map(item => ({
+            metricUUID: item.uuid,
+            metricValue: values[item.metricType.id as number] ?? null,
+          }));
         const toAdd = result.filter(
           r => !allExisting.find(e => e.metricType.id === r.metricTypeId),
         );
@@ -161,8 +167,10 @@ export function GrowthMetricsFormModal({
       }
 
       onSuccess();
-    } catch {
-      // API errors handled by service layer
+    } catch (e) {
+      setSubmitError(
+        e instanceof Error ? e.message : 'Failed to save metrics. Please try again.',
+      );
     } finally {
       setSubmitting(false);
     }
@@ -395,23 +403,30 @@ export function GrowthMetricsFormModal({
 
           {/* Footer */}
           <View style={styles.footer}>
-            <Pressable onPress={onClose} style={styles.cancelBtn}>
-              <Text style={styles.cancelBtnText}>CANCEL</Text>
-            </Pressable>
-            <Pressable
-              onPress={handleSubmit}
-              disabled={submitting || fieldsLoading}
-              style={[
-                styles.submitBtn,
-                {backgroundColor: primaryColor},
-                (submitting || fieldsLoading) && {opacity: 0.6},
-              ]}>
-              {submitting ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <Text style={styles.submitBtnText}>SUBMIT</Text>
-              )}
-            </Pressable>
+            {submitError ? (
+              <Text style={styles.submitErrorText} numberOfLines={2}>
+                {submitError}
+              </Text>
+            ) : null}
+            <View style={styles.footerButtons}>
+              <Pressable onPress={onClose} style={styles.cancelBtn}>
+                <Text style={styles.cancelBtnText}>CANCEL</Text>
+              </Pressable>
+              <Pressable
+                onPress={handleSubmit}
+                disabled={submitting || fieldsLoading}
+                style={[
+                  styles.submitBtn,
+                  {backgroundColor: primaryColor},
+                  (submitting || fieldsLoading) && {opacity: 0.6},
+                ]}>
+                {submitting ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.submitBtnText}>SUBMIT</Text>
+                )}
+              </Pressable>
+            </View>
           </View>
         </KeyboardAvoidingView>
       </View>
@@ -517,14 +532,23 @@ const styles = StyleSheet.create({
   optionBtnText: {color: '#475569', fontSize: 13, fontWeight: '500'},
 
   footer: {
-    alignItems: 'center',
     borderTopColor: '#e2e8f0',
     borderTopWidth: 1,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    gap: 8,
+  },
+  submitErrorText: {
+    color: '#ef4444',
+    fontSize: 12,
+    lineHeight: 17,
+    marginBottom: 4,
+  },
+  footerButtons: {
+    alignItems: 'center',
     flexDirection: 'row',
     gap: 12,
     justifyContent: 'flex-end',
-    paddingHorizontal: 20,
-    paddingVertical: 14,
   },
   cancelBtn: {
     borderColor: '#cbd5e1',

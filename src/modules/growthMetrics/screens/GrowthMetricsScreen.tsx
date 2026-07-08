@@ -1,4 +1,4 @@
-import React, {useCallback, useEffect, useRef, useState} from 'react';
+import React, {useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState} from 'react';
 import {
   ActivityIndicator,
   Animated,
@@ -80,6 +80,7 @@ export function GrowthMetricsScreen({
   const [formBlock, setFormBlock] = useState<MetricBlock | null>(null);
   const [charts, setCharts] = useState<MetricChart[]>([]);
   const [chartsLoading, setChartsLoading] = useState(false);
+  const [chartsError, setChartsError] = useState<string | null>(null);
   const [requestEditBlock, setRequestEditBlock] = useState<MetricBlock | null>(null);
   const [requestEditMsg, setRequestEditMsg] = useState('');
   const [requestEditSending, setRequestEditSending] = useState(false);
@@ -98,6 +99,8 @@ export function GrowthMetricsScreen({
     async (uuid: string) => {
       setLoading(true);
       setError(null);
+      setCharts([]); // clear stale chart data when switching connections
+      setChartsError(null);
       try {
         const data = await growthMetricsService.getMetricsOfReviewee(
           token,
@@ -114,37 +117,45 @@ export function GrowthMetricsScreen({
   );
 
   useEffect(() => {
+    let cancelled = false;
     if (isStartup) {
       setLoading(true);
       growthMetricsService
         .getMetrics(token)
-        .then(setMetrics)
-        .catch(() => setError('Failed to load metrics.'))
-        .finally(() => setLoading(false));
+        .then(data => { if (!cancelled) setMetrics(data); })
+        .catch(() => { if (!cancelled) setError('Failed to load metrics.'); })
+        .finally(() => { if (!cancelled) setLoading(false); });
     } else {
       growthMetricsService
         .getReviews(token)
         .then(async data => {
+          if (cancelled) return;
           setReviews(data);
           if (data[0]) {
             setSelectedReview(data[0]);
             await loadRevieweeMetrics(data[0].uuid);
           } else {
-            setLoading(false);
+            if (!cancelled) setLoading(false);
           }
         })
         .catch(() => {
-          setError('Failed to load connections.');
-          setLoading(false);
+          if (!cancelled) {
+            setError('Failed to load connections.');
+            setLoading(false);
+          }
         });
     }
+    return () => { cancelled = true; };
   }, [isStartup, token, loadRevieweeMetrics]);
 
-  // Lazy-load chart data when Chart View tab is opened
+  // Lazy-load chart data when Chart View tab is opened.
+  // charts.length and chartsLoading are intentionally excluded from deps —
+  // the guard inside prevents double-fetching; the deps drive when to re-fetch.
   useEffect(() => {
     if (activeTab !== 'chart') return;
     if (charts.length > 0 || chartsLoading) return;
     setChartsLoading(true);
+    setChartsError(null);
     const fetchCharts = isStartup
       ? growthMetricsService.getCharts(token)
       : selectedReview
@@ -152,9 +163,10 @@ export function GrowthMetricsScreen({
       : Promise.resolve([]);
     fetchCharts
       .then(data => setCharts(data.filter(c => c.data.length > 0)))
-      .catch(() => {})
+      .catch(() => setChartsError('Failed to load charts.'))
       .finally(() => setChartsLoading(false));
-  }, [activeTab, isStartup, token, selectedReview, charts.length, chartsLoading]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, isStartup, token, selectedReview]);
 
   const handleRequestEdit = (block: MetricBlock) => {
     setRequestEditMsg('');
@@ -193,8 +205,9 @@ export function GrowthMetricsScreen({
     }
   };
 
-  const hasAnyData = metrics.some(
-    b => b.list.length > 0 || b.programSpecific.length > 0,
+  const hasAnyData = useMemo(
+    () => metrics.some(b => b.list.length > 0 || b.programSpecific.length > 0),
+    [metrics],
   );
 
   const retryLoad = () => {
@@ -313,6 +326,18 @@ export function GrowthMetricsScreen({
         chartsLoading ? (
           <View style={styles.centered}>
             <ActivityIndicator size="large" color={primaryColor} />
+          </View>
+        ) : chartsError ? (
+          <View style={styles.centered}>
+            <Icon name="alert-circle-outline" size={40} color="#f87171" />
+            <Text style={styles.errorText}>{chartsError}</Text>
+            <Pressable
+              onPress={() => { setChartsError(null); setCharts([]); }}
+              style={[styles.retryBtn, {borderColor: primaryColor}]}>
+              <Text style={[styles.retryBtnText, {color: primaryColor}]}>
+                Retry
+              </Text>
+            </Pressable>
           </View>
         ) : charts.length === 0 ? (
           <View style={styles.centered}>
@@ -575,6 +600,7 @@ const TOOLTIP_W = 152;
 
 function ChartCard({
   chart,
+  primaryColor = BAR_SELECTED_COLOR,
 }: {
   chart: MetricChart;
   primaryColor?: string;
@@ -588,19 +614,19 @@ function ChartCard({
   const [selectedBar, setSelectedBar] = useState<number | null>(null);
   const [plotWidth, setPlotWidth] = useState(0);
 
-  // One Animated.Value per bar — recreate when bar count changes
   const animsRef = useRef<Animated.Value[]>([]);
-  if (animsRef.current.length !== vals.length) {
-    animsRef.current = vals.map(() => new Animated.Value(0));
-  }
-  const anims = animsRef.current;
 
-  // Animate bars growing upward on mount; re-mounts on each tab switch
-  useEffect(() => {
-    anims.forEach(a => a.setValue(0));
+  // Sync anims array with bar count and run entrance animation post-paint.
+  // Keeps Animated.Value allocation out of the synchronous render path.
+  useLayoutEffect(() => {
+    if (animsRef.current.length !== vals.length) {
+      animsRef.current = vals.map(() => new Animated.Value(0));
+    }
+    const currentAnims = animsRef.current;
+    currentAnims.forEach(a => a.setValue(0));
     Animated.stagger(
       55,
-      anims.map(a =>
+      currentAnims.map(a =>
         Animated.timing(a, {
           toValue: 1,
           duration: 480,
@@ -608,8 +634,9 @@ function ChartCard({
         }),
       ),
     ).start();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // vals.length is a stable primitive proxy for the bar count
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vals.length]);
 
   // Compute tooltip horizontal position, clamped inside the card
   const tooltipLeft = (idx: number): number => {
@@ -701,10 +728,10 @@ function ChartCard({
                         onPress={() => setSelectedBar(selectedBar === i ? null : i)}>
                         <Animated.View
                           style={{
-                            backgroundColor: selectedBar === i ? BAR_SELECTED_COLOR : BAR_COLOR,
+                            backgroundColor: selectedBar === i ? primaryColor : BAR_COLOR,
                             borderTopLeftRadius: 3,
                             borderTopRightRadius: 3,
-                            height: anims[i].interpolate({
+                            height: animsRef.current[i]?.interpolate({
                               inputRange: [0, 1],
                               outputRange: [0, targetH],
                             }),
@@ -737,7 +764,7 @@ function ChartCard({
                   {chart.data[selectedBar]?.formattedDate}
                 </Text>
                 <View style={styles.chartTooltipRow}>
-                  <View style={[styles.chartTooltipDot, {backgroundColor: BAR_SELECTED_COLOR}]} />
+                  <View style={[styles.chartTooltipDot, {backgroundColor: primaryColor}]} />
                   <Text style={styles.chartTooltipVal} numberOfLines={1}>
                     {chart.title}: {Number(vals[selectedBar]).toLocaleString()}
                   </Text>

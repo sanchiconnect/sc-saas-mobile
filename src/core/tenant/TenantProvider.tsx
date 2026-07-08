@@ -58,7 +58,6 @@ export const TenantProvider = ({children}: Props) => {
       // Fall back to `res` itself so all keys resolve correctly.
       const settingsData = res?.data ?? res ?? {};
       const branding = settingsData?.branding;
-      console.log('settingsData', settingsData?.WhyDoYouWantToConnectWithStartupsOptions);
       setGlobalSetting({
         // Branding
         brandName: settingsData?.branding?.brandName,
@@ -121,9 +120,11 @@ export const TenantProvider = ({children}: Props) => {
   };
 
   useEffect(() => {
+    let active = true;
     const init = async () => {
       try {
         const res = await fetchTenantsSetting();
+        if (!active) return;
         const url = res?.data?.apiUrl;
         // Prefer a tenant's custom domain over the default for share links.
         const tenantDomain = res?.data?.customDomain || res?.data?.domain;
@@ -140,17 +141,17 @@ export const TenantProvider = ({children}: Props) => {
             customDomain: res?.data?.customDomain,
           });
         } else {
-          setTenantError(true);
+          if (active) setTenantError(true);
         }
-      } catch (error) {
-        console.log('Tenant error', error);
-        setTenantError(true);
+      } catch {
+        if (active) setTenantError(true);
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     };
 
     init();
+    return () => { active = false; };
   }, []);
 
   return (

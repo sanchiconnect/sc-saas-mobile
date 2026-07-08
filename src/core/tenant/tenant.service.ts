@@ -20,9 +20,17 @@ export type TenantVerifyResponse = ApiResponse<{
   users?: Partial<IFeatureUsers>;
 }>;
 
+const requireOk = async (response: Response): Promise<Response> => {
+  if (!response.ok) {
+    throw new Error(`Tenant API ${response.status}: ${response.statusText}`);
+  }
+  return response;
+};
+
 export const fetchTenantsSetting = async (): Promise<TenantVerifyResponse> => {
   const url = `${env.apiBaseUrl}api/v1/public/global/verify_tenant/${env.tenantSlug}`;
   const response = await fetch(url);
+  await requireOk(response);
   return response.json();
 };
 
@@ -30,13 +38,15 @@ export const fetchSettingStyle = async (
   baseUrl: string,
 ): Promise<ApiResponse> => {
   const response = await fetch(`${baseUrl}api/v1/public/global/settings`);
-   return response.json();
+  await requireOk(response);
+  return response.json();
 };
 
 export const fetchFundingStages = async (
   baseUrl: string,
 ): Promise<ApiResponse> => {
   const response = await fetch(`${baseUrl}api/v1/public/global/funding_stages`);
+  await requireOk(response);
   return response.json();
 };
 
@@ -46,6 +56,7 @@ export const fetchInvestmentMechanisms = async (
   const response = await fetch(
     `${baseUrl}api/v1/public/global/custom/investment_mechanisms`,
   );
+  await requireOk(response);
   return response.json();
 };
 
@@ -55,8 +66,9 @@ export const verifyEmail = async (
   userType: string = 'startup',
   investorType: string = '',
 ): Promise<ApiResponse> => {
-  const url = `${baseUrl}api/v1/public/auth/verify/email/${email}?userType=${userType}&investorType=${investorType}`;
+  const url = `${baseUrl}api/v1/public/auth/verify/email/${encodeURIComponent(email)}?userType=${encodeURIComponent(userType)}&investorType=${encodeURIComponent(investorType)}`;
   const response = await fetch(url);
+  await requireOk(response);
   return response.json();
 };
 
@@ -66,7 +78,8 @@ export const verifyMobileNumber = async (
   userType: string = 'startup',
   investorType: string = '',
 ): Promise<ApiResponse> => {
-  const url = `${baseUrl}api/v1/public/auth/verify/mobile/${mobileNumber}?userType=${userType}&investorType=${investorType}`;
+  const url = `${baseUrl}api/v1/public/auth/verify/mobile/${encodeURIComponent(mobileNumber)}?userType=${encodeURIComponent(userType)}&investorType=${encodeURIComponent(investorType)}`;
   const response = await fetch(url);
+  await requireOk(response);
   return response.json();
 };
