@@ -100,6 +100,9 @@ export const TenantProvider = ({children}: Props) => {
         CorporateSizes: Array.isArray(settingsData?.CorporateSizes)
           ? settingsData.CorporateSizes
           : [],
+        StartupCompanySize: Array.isArray(settingsData?.StartupCompanySize)
+          ? settingsData.StartupCompanySize
+          : [],
         memberRoles: Array.isArray(settingsData?.memberRoles)
           ? settingsData.memberRoles
           : [],

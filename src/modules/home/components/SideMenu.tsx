@@ -18,6 +18,7 @@ import {
   connectItems,
   filterMenuItems,
   programItems,
+  startupBoosterKitItems,
   ticketItems,
 } from '../config/menus';
 import {AppMenuSelection, AppSection, MenuItem} from '../types';
@@ -436,6 +437,10 @@ export function SideMenu({
                   onSelectMenu({section: 'milestones'});
                   return;
                 }
+                if (selection.item === 'Growth Metrics') {
+                  onSelectMenu({section: 'growth-metrics'});
+                  return;
+                }
                 if (selection.item === 'Mentor Hours') {
                   onSelectMenu({section: 'mentor-hours'});
                   return;
@@ -455,6 +460,24 @@ export function SideMenu({
               icon="briefcase-outline"
               items={visibleProgramItems}
               onSelectMenu={onSelectMenu}
+              onClose={onClose}
+              primaryColor={primaryColor}
+              selectedMenu={selectedMenu}
+            />
+          ) : null}
+
+          {/* Startup Booster Kit — shown for startup accounts regardless of
+              the startup_kit feature flag (backend enforces access). Mirrors
+              the Tickets always-visible pattern. */}
+          {(accountType || '').toLowerCase() === 'startup' ? (
+            <SingleSection
+              title="Startup Booster Kit"
+              section="startup-booster-kit"
+              icon="currency-usd"
+              item={startupBoosterKitItems[0]}
+              onSelectMenu={() => {
+                onSelectMenu({section: 'startup-booster-kit'});
+              }}
               onClose={onClose}
               primaryColor={primaryColor}
               selectedMenu={selectedMenu}

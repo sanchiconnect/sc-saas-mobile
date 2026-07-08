@@ -1881,11 +1881,15 @@ export function EditProfileScreen({
     }
 
     if (picker === 'companySize') {
+      const companySizeOptions =
+        globalSetting?.StartupCompanySize?.length
+          ? globalSetting.StartupCompanySize.map(s => s.name)
+          : COMPANY_SIZES;
       return (
         <Picker
           visible
           title="Choose a team size"
-          options={COMPANY_SIZES}
+          options={companySizeOptions}
           selected={basicInfo.companySize}
           primaryColor={primaryColor}
           onClose={closePicker}

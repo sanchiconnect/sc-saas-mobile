@@ -90,6 +90,12 @@ export const actionItems: MenuItem[] = [
   {key: 'my-meetings', label: 'My Meetings', icon: 'video-outline'},
   {key: 'my-connections', label: 'My Connections', icon: 'account-multiple-outline'},
   {key: 'milestones', label: 'Milestones', icon: 'flag-outline'},
+  {
+    key: 'growth-metrics',
+    label: 'Growth Metrics',
+    icon: 'chart-line',
+    accountTypes: ['startup', 'mentor', 'investor', 'corporate', 'partner'],
+  },
   {key: 'mentor-hours', label: 'Mentor Hours', icon: 'clock-outline'},
 ];
 
