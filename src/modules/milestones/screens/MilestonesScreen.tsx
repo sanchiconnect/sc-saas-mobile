@@ -493,7 +493,12 @@ function AddMilestoneModal({
       await milestonesService.createMilestone(token, {
         title: title.trim(),
         description: description.trim(),
-        reviewersIds: selectedReviewers.map(r => r.id),
+        // Omit entirely when empty — the backend rejects an explicit `[]`
+        // for this optional field, even though it accepts the key being
+        // absent.
+        ...(selectedReviewers.length > 0
+          ? {reviewersIds: selectedReviewers.map(r => r.id)}
+          : {}),
         startDate: startDate.trim(),
         targetDate: targetDate.trim(),
         progressFrequency,
