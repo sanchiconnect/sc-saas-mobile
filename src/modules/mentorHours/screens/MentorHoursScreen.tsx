@@ -12,8 +12,12 @@ import {
 import {Icon} from '../../../core/components/Icon';
 import {TenantContext} from '../../../core/tenant/TenantProvider';
 import {useToast} from '../../../core/toast/ToastProvider';
+import {LogHoursModal} from '../components/LogHoursModal';
+import {MentorHourCard} from '../components/MentorHourCard';
+import {RatingModal} from '../components/RatingModal';
 import {
   APPROVAL_STATUS_OPTIONS,
+  ENTRY_MODE_LABELS,
   ENTRY_MODE_OPTIONS,
   ENTRY_TYPE_OPTIONS,
   mentorHoursService,
@@ -24,11 +28,15 @@ import type {
   EntryType,
   MentorHourEntry,
   MentorHoursSummary,
+  MentorshipParty,
 } from '../services/mentorHours.service';
 
 type Props = {
   token: string;
   onBack: () => void;
+  accountType?: string;
+  ownStartupId?: number | string | null;
+  ownMentorId?: number | string | null;
 };
 
 type FilterKey = 'approvalStatus' | 'entryType' | 'mode';
@@ -36,21 +44,35 @@ type FilterKey = 'approvalStatus' | 'entryType' | 'mode';
 const humanize = (s: string): string =>
   s.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 
-export function MentorHoursScreen({token, onBack}: Props) {
+export function MentorHoursScreen({
+  token,
+  onBack,
+  accountType,
+  ownStartupId,
+  ownMentorId,
+}: Props) {
   const {theme, globalSetting} = useContext(TenantContext);
   const primaryColor = theme?.primary || '#0b0aa3';
   const toast = useToast();
+  const isStartupAccount = accountType === 'startup';
+  const partyLabel = isStartupAccount ? 'mentor' : 'startup';
+  const ownId = isStartupAccount ? ownStartupId : ownMentorId;
 
   const title = (globalSetting as any)?.mentor_hours_title || 'Mentor Hours';
 
   const [entries, setEntries] = useState<MentorHourEntry[]>([]);
   const [summary, setSummary] = useState<MentorHoursSummary>({timeMeterMinutes: 0, avgRating: 0});
   const [isLoading, setIsLoading] = useState(true);
+  const [parties, setParties] = useState<MentorshipParty[]>([]);
+  const [loadingParties, setLoadingParties] = useState(false);
+  const hasParties = parties.length > 0;
 
   const [approvalStatus, setApprovalStatus] = useState<ApprovalStatus | null>(null);
   const [entryType, setEntryType] = useState<EntryType | null>(null);
   const [mode, setMode] = useState<EntryMode | null>(null);
   const [pickerFor, setPickerFor] = useState<FilterKey | null>(null);
+  const [showLogHoursModal, setShowLogHoursModal] = useState(false);
+  const [ratingEntry, setRatingEntry] = useState<MentorHourEntry | null>(null);
 
   const toastRef = React.useRef(toast);
   toastRef.current = toast;
@@ -70,7 +92,50 @@ export function MentorHoursScreen({token, onBack}: Props) {
     load().finally(() => setIsLoading(false));
   }, [load]);
 
-  const notReady = () => toast.info('This action needs the backend endpoint — coming soon.');
+  useEffect(() => {
+    setLoadingParties(true);
+    const request = isStartupAccount
+      ? mentorHoursService.getMentors(token)
+      : mentorHoursService.getStartups(token);
+    request
+      .then(setParties)
+      .catch(() => setParties([]))
+      .finally(() => setLoadingParties(false));
+  }, [token, isStartupAccount]);
+
+  const handleAddHours = () => {
+    if (!hasParties) {
+      toast.info(`Connect with a ${partyLabel} before adding mentor hours.`);
+      return;
+    }
+    setShowLogHoursModal(true);
+  };
+
+  const handleHoursLogged = () => {
+    load();
+  };
+
+  const handleApprove = async (entry: MentorHourEntry) => {
+    if (!entry.uuid) return;
+    try {
+      await mentorHoursService.approveOrReject(token, entry.uuid, 'approve');
+      toast.success('Hours approved.');
+      load();
+    } catch (e: any) {
+      toast.error(e?.message || 'Could not approve hours.');
+    }
+  };
+
+  const handleReject = async (entry: MentorHourEntry) => {
+    if (!entry.uuid) return;
+    try {
+      await mentorHoursService.approveOrReject(token, entry.uuid, 'reject');
+      toast.success('Hours rejected.');
+      load();
+    } catch (e: any) {
+      toast.error(e?.message || 'Could not reject hours.');
+    }
+  };
 
   const handleClearFilters = () => {
     setApprovalStatus(null);
@@ -110,9 +175,14 @@ export function MentorHoursScreen({token, onBack}: Props) {
           <Text style={styles.statLabel}>Avg. Ratings</Text>
         </View>
         <Pressable
-          style={[styles.addBtn, {backgroundColor: primaryColor}]}
-          onPress={notReady}
+          style={[
+            styles.addBtn,
+            {backgroundColor: hasParties ? primaryColor : '#cbd5e1'},
+          ]}
+          disabled={!hasParties}
+          onPress={handleAddHours}
           accessibilityRole="button"
+          accessibilityState={{disabled: !hasParties}}
           accessibilityLabel="Add hours">
           <Icon name="plus" size={14} color="#ffffff" />
           <Text style={styles.addBtnText}>ADD HOURS</Text>
@@ -150,7 +220,7 @@ export function MentorHoursScreen({token, onBack}: Props) {
                 <Text style={styles.filterLabel}>Mode</Text>
                 <View style={styles.filterValueRow}>
                   <Text style={mode ? styles.filterValue : styles.filterPlaceholder}>
-                    {mode ? humanize(mode) : 'Choose a mode'}
+                    {mode ? ENTRY_MODE_LABELS[mode] : 'Choose a mode'}
                   </Text>
                   <Icon name="chevron-down" size={16} color="#64748b" />
                 </View>
@@ -168,13 +238,37 @@ export function MentorHoursScreen({token, onBack}: Props) {
               </View>
               <Text style={styles.emptyTitle}>No hours added</Text>
               <Pressable
-                style={[styles.addBtn, {backgroundColor: primaryColor, alignSelf: 'center', marginTop: 20}]}
-                onPress={notReady}>
+                style={[
+                  styles.addBtn,
+                  {
+                    backgroundColor: hasParties ? primaryColor : '#cbd5e1',
+                    alignSelf: 'center',
+                    marginTop: 20,
+                  },
+                ]}
+                disabled={!hasParties}
+                accessibilityState={{disabled: !hasParties}}
+                onPress={handleAddHours}>
                 <Icon name="plus" size={14} color="#ffffff" />
                 <Text style={styles.addBtnText}>ADD HOURS</Text>
               </Pressable>
+              {!hasParties ? (
+                <Text style={styles.connectHint}>Connect with a {partyLabel} to add mentor hours.</Text>
+              ) : null}
             </View>
-          ) : null}
+          ) : (
+            entries.map((entry, index) => (
+              <MentorHourCard
+                key={entry.uuid || index}
+                entry={entry}
+                isStartupAccount={isStartupAccount}
+                primaryColor={primaryColor}
+                onApprove={() => handleApprove(entry)}
+                onReject={() => handleReject(entry)}
+                onRate={() => setRatingEntry(entry)}
+              />
+            ))
+          )}
         </ScrollView>
       )}
 
@@ -195,7 +289,9 @@ export function MentorHoursScreen({token, onBack}: Props) {
                     key={opt}
                     style={[styles.pickerRow, selected && styles.pickerRowSelected]}
                     onPress={() => selectOption(opt)}>
-                    <Text style={[styles.pickerRowText, selected && {fontWeight: '700'}]}>{humanize(opt)}</Text>
+                    <Text style={[styles.pickerRowText, selected && {fontWeight: '700'}]}>
+                      {pickerFor === 'mode' ? ENTRY_MODE_LABELS[opt as EntryMode] : humanize(opt)}
+                    </Text>
                     {selected ? <Icon name="check" size={18} color="#16a34a" /> : null}
                   </Pressable>
                 );
@@ -204,6 +300,26 @@ export function MentorHoursScreen({token, onBack}: Props) {
           </Pressable>
         </Modal>
       ) : null}
+
+      <LogHoursModal
+        visible={showLogHoursModal}
+        token={token}
+        parties={parties}
+        loadingParties={loadingParties}
+        partyLabel={partyLabel}
+        isStartupAccount={isStartupAccount}
+        ownId={ownId}
+        onClose={() => setShowLogHoursModal(false)}
+        onSubmitted={handleHoursLogged}
+      />
+
+      <RatingModal
+        visible={!!ratingEntry}
+        token={token}
+        entryUuid={ratingEntry?.uuid}
+        onClose={() => setRatingEntry(null)}
+        onRated={load}
+      />
     </View>
   );
 }
@@ -290,6 +406,7 @@ const styles = StyleSheet.create({
     width: 96,
   },
   emptyTitle: {color: '#0f172a', fontSize: 16, fontWeight: '700', marginTop: 20},
+  connectHint: {color: '#94a3b8', fontSize: 12, marginTop: 10, textAlign: 'center'},
   pickerBackdrop: {
     alignItems: 'center',
     backgroundColor: 'rgba(15,23,42,0.4)',

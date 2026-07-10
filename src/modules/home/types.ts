@@ -81,6 +81,10 @@ export type DashboardSummary = {
   // `users/abc/xyz.png`, or already-absolute). Consumers resolve it against
   // the tenant's imgKitUrl when they render the image.
   avatar?: string;
+  // Own numeric startup/mentor id from /users/profile — needed as the
+  // "self" side of mentorship payloads (e.g. logging mentor hours).
+  startupId?: number | string | null;
+  mentorId?: number | string | null;
 };
 
 export type EditProfileTab = {
