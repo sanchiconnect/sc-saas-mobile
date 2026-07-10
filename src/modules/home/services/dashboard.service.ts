@@ -157,6 +157,8 @@ export const dashboardService = {
         (typeof profileData?.profilePicture === 'string' &&
           profileData.profilePicture) ||
         undefined,
+      startupId: profileData?.startupId ?? null,
+      mentorId: profileData?.mentorId ?? null,
       stats: buildStatsFor(accountType, counts),
       roleDashboard: dashboardRes?.data || dashboardRes || undefined,
       // `show_dashboard` is a tenant feature flag, but the completeness

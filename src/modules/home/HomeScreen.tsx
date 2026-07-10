@@ -622,6 +622,9 @@ export function HomeScreen({
         <MentorHoursScreen
           token={session.token}
           onBack={() => setSelectedMenu({section: 'dashboard'})}
+          accountType={summary?.accountType}
+          ownStartupId={summary?.startupId}
+          ownMentorId={summary?.mentorId}
         />
       </View>
     );
