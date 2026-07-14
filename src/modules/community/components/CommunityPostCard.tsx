@@ -12,6 +12,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import {KeyboardStickyView} from 'react-native-keyboard-controller';
 import WebView from 'react-native-webview';
 
 import {Icon} from '../../../core/components/Icon';
@@ -201,6 +202,11 @@ export function CommunityPostCard({
   const [isShareOpen, setIsShareOpen] = useState(false);
   const [comment, setComment] = useState('');
   const [isPosting, setIsPosting] = useState(false);
+  // Only the actively-focused card's comment bar should ride up with the
+  // keyboard — every card renders one of these, and the keyboard height is
+  // global, so an unconditional sticky wrapper would shift every visible
+  // card's bar at once.
+  const [commentFocused, setCommentFocused] = useState(false);
   // Locally tracked so the footer count bumps right after a successful post,
   // without waiting for a full feed reload.
   const [commentCount, setCommentCount] = useState(post.stats.totalComments);
@@ -927,9 +933,11 @@ export function CommunityPostCard({
                       </View>
                     ) : null}
 
-                    {/* Reply composer (only for the active comment) */}
+                    {/* Reply composer (only for the active comment) — sticky
+                        so it rides above the keyboard instead of hiding
+                        behind it while it's the active editor. */}
                     {replyingTo === c.uuid ? (
-                      <View style={styles.replyBar}>
+                      <KeyboardStickyView style={styles.replyBar}>
                         <TextInput
                           style={styles.replyInput}
                           value={replyText}
@@ -961,7 +969,7 @@ export function CommunityPostCard({
                             />
                           </Pressable>
                         )}
-                      </View>
+                      </KeyboardStickyView>
                     ) : null}
                   </View>
                 </View>
@@ -972,8 +980,12 @@ export function CommunityPostCard({
       ) : null}
 
       {/* Comment composer — disabled in readOnly mode so a signed-out viewer
-          sees, but cannot use, the input. */}
-      <View
+          sees, but cannot use, the input. Sticky only while focused: every
+          card in the feed renders one of these, and the keyboard height is
+          global, so an unconditional sticky wrapper would shift every
+          visible card's bar at once instead of just the one being typed in. */}
+      <KeyboardStickyView
+        enabled={commentFocused}
         style={[
           styles.commentBar,
           (readOnly || locked) && styles.commentBarMuted,
@@ -992,6 +1004,8 @@ export function CommunityPostCard({
           placeholderTextColor="#94a3b8"
           multiline
           editable={!readOnly && !locked && !isPosting}
+          onFocus={() => setCommentFocused(true)}
+          onBlur={() => setCommentFocused(false)}
           onSubmitEditing={submitComment}
           returnKeyType="send"
         />
@@ -1014,7 +1028,7 @@ export function CommunityPostCard({
             />
           </Pressable>
         )}
-      </View>
+      </KeyboardStickyView>
 
       {/* Edit modal (text-only) — author's own posts only. */}
       {canManage ? (

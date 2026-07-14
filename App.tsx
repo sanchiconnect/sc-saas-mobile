@@ -8,6 +8,7 @@ import {
   useColorScheme,
   View,
 } from 'react-native';
+import {KeyboardProvider} from 'react-native-keyboard-controller';
 import {SafeAreaProvider, SafeAreaView} from 'react-native-safe-area-context';
 
 import {FeedbackWidget} from './src/modules/feedback/FeedbackWidget';
@@ -175,13 +176,15 @@ function AppContent() {
 
 function App() {
   return (
-    <TenantProvider>
-      <SafeAreaProvider>
-        <ToastProvider>
-          <AppContent />
-        </ToastProvider>
-      </SafeAreaProvider>
-    </TenantProvider>
+    <KeyboardProvider>
+      <TenantProvider>
+        <SafeAreaProvider>
+          <ToastProvider>
+            <AppContent />
+          </ToastProvider>
+        </SafeAreaProvider>
+      </TenantProvider>
+    </KeyboardProvider>
   );
 }
 
