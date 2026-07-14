@@ -1,7 +1,7 @@
 import React, {useState} from 'react';
 import {
-  Alert,
   Image,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -211,6 +211,8 @@ export function SideMenu({
   pendingConnectionsCount,
   avatarUrl,
 }: SideMenuProps) {
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+
   if (!isVisible) {
     return null;
   }
@@ -514,25 +516,49 @@ export function SideMenu({
         <View style={styles.logoutWrap}>
           <Pressable
             style={styles.logoutButton}
-            onPress={() =>
-              Alert.alert(
-                'Sign out?',
-                'You will need to sign in again to access your account.',
-                [
-                  {text: 'Cancel', style: 'cancel'},
-                  {
-                    text: 'Sign out',
-                    style: 'destructive',
-                    onPress: onLogout,
-                  },
-                ],
-              )
-            }>
+            onPress={() => setShowLogoutConfirm(true)}>
             <Icon name="logout" size={18} color="#ffffff" />
             <Text style={styles.logoutText}>Logout</Text>
           </Pressable>
         </View>
       </View>
+
+      <Modal
+        transparent
+        visible={showLogoutConfirm}
+        animationType="fade"
+        onRequestClose={() => setShowLogoutConfirm(false)}>
+        <View style={styles.logoutModalOverlay}>
+          <Pressable
+            style={styles.logoutModalBackdrop}
+            onPress={() => setShowLogoutConfirm(false)}
+          />
+          <View style={styles.logoutModalCard}>
+            <View style={[styles.logoutModalIconWrap, {borderColor: primaryColor}]}>
+              <Text style={[styles.logoutModalIcon, {color: primaryColor}]}>!</Text>
+            </View>
+            <Text style={styles.logoutModalTitle}>Logout</Text>
+            <Text style={styles.logoutModalSubtitle}>
+              Are you sure you want to proceed?
+            </Text>
+            <View style={styles.logoutModalButtons}>
+              <Pressable
+                style={[styles.logoutModalBtn, {backgroundColor: primaryColor}]}
+                onPress={() => {
+                  setShowLogoutConfirm(false);
+                  onLogout();
+                }}>
+                <Text style={styles.logoutModalBtnLabel}>Yes</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.logoutModalBtn, styles.logoutModalCancelBtn]}
+                onPress={() => setShowLogoutConfirm(false)}>
+                <Text style={styles.logoutModalBtnLabel}>Cancel</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -824,5 +850,69 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 15,
     fontWeight: '600',
+  },
+  logoutModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  logoutModalBackdrop: {
+    ...StyleSheet.absoluteFill,
+  },
+  logoutModalCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    padding: 28,
+    alignItems: 'center',
+    width: '100%',
+    maxWidth: 360,
+    gap: 10,
+  },
+  logoutModalIconWrap: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    borderWidth: 3,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 6,
+  },
+  logoutModalIcon: {
+    fontSize: 34,
+    fontWeight: '800',
+    lineHeight: 40,
+  },
+  logoutModalTitle: {
+    color: '#0f172a',
+    fontSize: 19,
+    fontWeight: '700',
+  },
+  logoutModalSubtitle: {
+    color: '#475569',
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  logoutModalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  logoutModalBtn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
+    paddingVertical: 12,
+  },
+  logoutModalCancelBtn: {
+    backgroundColor: '#6b7280',
+  },
+  logoutModalBtnLabel: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '700',
   },
 });
