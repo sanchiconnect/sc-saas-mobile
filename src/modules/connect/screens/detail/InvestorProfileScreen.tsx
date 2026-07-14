@@ -35,11 +35,15 @@ export function InvestorProfileScreen({
   onBack,
   isApproved,
   currentUserId,
+  currentUserNumericId,
+  currentUserAccountType,
   onEditProfile,
+  onOpenChat,
 }: Props) {
   const {globalSetting, baseUrl: tenantBaseUrl} = useContext(TenantContext);
-  const {profile, isLoading, connState, setConnState, resolvedUuid} =
-    useProfileDetail(token, 'investors', user, currentUserId);
+  const {profile, isLoading, connDetail, setConnDetail, resolvedUuid} =
+    useProfileDetail(token, 'investors', user, currentUserNumericId);
+  const connState = connDetail?.state ?? 'none';
 
   const name = resolveName(profile);
 
@@ -147,16 +151,20 @@ export function InvestorProfileScreen({
     <ProfileShell
       name={name}
       token={token}
+      role="investors"
       user={user}
       resolvedUuid={resolvedUuid}
-      connState={connState}
-      setConnState={setConnState}
+      connDetail={connDetail}
+      setConnDetail={setConnDetail}
       primaryColor={primaryColor}
       isApproved={isApproved}
       isLoading={isLoading}
       onBack={onBack}
       currentUserId={currentUserId}
-      onEditProfile={onEditProfile}>
+      currentUserNumericId={currentUserNumericId}
+      currentUserAccountType={currentUserAccountType}
+      onEditProfile={onEditProfile}
+      onOpenChat={onOpenChat}>
 
       {/* Hero */}
       <ProfileHero profile={profile} primaryColor={primaryColor} logoBaseUrl={logoBaseUrl}>

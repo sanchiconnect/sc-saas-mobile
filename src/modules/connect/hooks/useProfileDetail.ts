@@ -1,15 +1,20 @@
-import {useEffect, useState} from 'react';
+import {useContext, useEffect, useState} from 'react';
 
+import {TenantContext} from '../../../core/tenant/TenantProvider';
 import {connectionsService} from '../../connections/services/connections.service';
 import {connectService} from '../services/connect.service';
 import {ROLE_API_FRAGMENT} from '../types';
-import type {ConnectionState, ConnectRoleKey, DirectoryUser} from '../types';
+import type {
+  ConnectionStatusDetail,
+  ConnectRoleKey,
+  DirectoryUser,
+} from '../types';
 
 export type ProfileDetailState = {
   profile: Record<string, any>;
   isLoading: boolean;
-  connState: ConnectionState;
-  setConnState: (s: ConnectionState) => void;
+  connDetail: ConnectionStatusDetail | null;
+  setConnDetail: (d: ConnectionStatusDetail) => void;
   resolvedUuid: string;
 };
 
@@ -17,12 +22,17 @@ export function useProfileDetail(
   token: string,
   role: ConnectRoleKey,
   user: DirectoryUser,
-  currentUserId?: string,
+  currentUserNumericId?: string,
 ): ProfileDetailState {
+  const {globalSetting} = useContext(TenantContext);
   const [profile, setProfile] = useState<Record<string, any>>(user.raw);
   const [isLoading, setIsLoading] = useState(true);
-  const [connState, setConnState] = useState<ConnectionState>('none');
+  const [connDetail, setConnDetail] = useState<ConnectionStatusDetail | null>(null);
   const [resolvedUuid, setResolvedUuid] = useState(user.uuid);
+
+  // Explicit false only — tenants that haven't populated this flag yet keep
+  // working exactly as before.
+  const connectionsEnabled = globalSetting?.features?.connections !== false;
 
   useEffect(() => {
     let cancelled = false;
@@ -30,6 +40,7 @@ export function useProfileDetail(
 
     (async () => {
       let uuid = user.uuid;
+      let reducedDtoConnectionStatus: string | undefined;
       try {
         const full = await connectService.getPublicProfile(token, role, user.profileUuid);
         if (cancelled) return;
@@ -37,7 +48,8 @@ export function useProfileDetail(
           setProfile(prev => ({...prev, ...full}));
           // Try every known shape across all roles. Partners and service
           // providers may return `user` as a plain object (not an array),
-          // or surface the UUID directly on the root response.
+          // or surface the UUID directly on the root response. otherUserUUID
+          // is the reduced-DTO fallback (viewer hasn't got full access yet).
           const fromProfile =
             full?.user?.[0]?.uuid ||
             full?.user?.[0]?.userUUID ||
@@ -45,10 +57,13 @@ export function useProfileDetail(
             full?.user?.userUUID ||
             full?.users?.[0]?.uuid ||
             full?.userUUID ||
-            full?.userUuid;
+            full?.userUuid ||
+            full?.otherUserUUID;
           if (fromProfile) {
             uuid = fromProfile;
             setResolvedUuid(fromProfile);
+          } else {
+            reducedDtoConnectionStatus = full?.connectionStatus;
           }
         }
       } catch {
@@ -62,29 +77,38 @@ export function useProfileDetail(
       }
       connectionsService.listActive(token, {page: 1, limit: 500}).catch(() => undefined);
 
-      if (currentUserId) {
+      if (currentUserNumericId) {
         connectService.incrementProfileViews(
           token,
           user.profileUuid,
           ROLE_API_FRAGMENT[role].singular,
-          currentUserId,
+          currentUserNumericId,
         );
+      }
+
+      if (!connectionsEnabled) {
+        return;
       }
 
       if (uuid) {
         connectService
           .checkConnectionState(token, uuid)
-          .then(state => {
-            if (!cancelled) setConnState(state);
+          .then(detail => {
+            if (!cancelled) setConnDetail(detail);
           })
           .catch(() => {});
+      } else if (reducedDtoConnectionStatus === 'pending') {
+        // Reduced DTO with no resolvable uuid at all — mirror the web's
+        // fallback so a pending request still shows instead of reverting to
+        // "Connect".
+        setConnDetail({state: 'pending'});
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [token, role, user.profileUuid, user.uuid, currentUserId]);
+  }, [token, role, user.profileUuid, user.uuid, currentUserNumericId, connectionsEnabled]);
 
-  return {profile, isLoading, connState, setConnState, resolvedUuid};
+  return {profile, isLoading, connDetail, setConnDetail, resolvedUuid};
 }

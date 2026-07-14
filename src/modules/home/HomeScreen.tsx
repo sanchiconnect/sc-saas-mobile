@@ -797,7 +797,13 @@ export function HomeScreen({
             onActiveProfileChange={setConnectProfileActive}
             isApproved={Boolean(summary?.isApproved)}
             currentUserId={summary?.userUuid || session.user.uuid || session.user.id}
+            currentUserNumericId={session.user.id}
+            currentUserAccountType={summary?.accountType}
             onEditProfile={() => setSelectedMenu({section: 'edit-profile'})}
+            onOpenChat={conversation => {
+              setActiveConversation(conversation);
+              setSelectedMenu({section: 'chat'});
+            }}
           />
         )}
       </View>

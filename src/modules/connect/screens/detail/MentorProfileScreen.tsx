@@ -41,10 +41,13 @@ export function MentorProfileScreen({
   onBack,
   isApproved,
   currentUserId,
+  currentUserNumericId,
+  currentUserAccountType,
   onEditProfile,
+  onOpenChat,
 }: Props) {
-  const {profile, isLoading, connState, setConnState, resolvedUuid} =
-    useProfileDetail(token, 'mentors', user, currentUserId);
+  const {profile, isLoading, connDetail, setConnDetail, resolvedUuid} =
+    useProfileDetail(token, 'mentors', user, currentUserNumericId);
 
   const name = resolveName(profile);
 
@@ -98,16 +101,20 @@ export function MentorProfileScreen({
     <ProfileShell
       name={name}
       token={token}
+      role="mentors"
       user={user}
       resolvedUuid={resolvedUuid}
-      connState={connState}
-      setConnState={setConnState}
+      connDetail={connDetail}
+      setConnDetail={setConnDetail}
       primaryColor={primaryColor}
       isApproved={isApproved}
       isLoading={isLoading}
       onBack={onBack}
       currentUserId={currentUserId}
-      onEditProfile={onEditProfile}>
+      currentUserNumericId={currentUserNumericId}
+      currentUserAccountType={currentUserAccountType}
+      onEditProfile={onEditProfile}
+      onOpenChat={onOpenChat}>
 
       {/* Hero — designation + currentOrganization as children (below location) */}
       <ProfileHero profile={profile} primaryColor={primaryColor} logoBaseUrl={logoBaseUrl}>

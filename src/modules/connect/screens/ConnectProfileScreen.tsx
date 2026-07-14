@@ -1,5 +1,6 @@
 import React from 'react';
 
+import type {Conversation} from '../../chat/types';
 import type {ConnectRoleKey, DirectoryUser} from '../types';
 import {CorporateProfileScreen} from './detail/CorporateProfileScreen';
 import {IndividualProfileScreen} from './detail/IndividualProfileScreen';
@@ -19,7 +20,10 @@ type Props = {
   onBack: () => void;
   isApproved?: boolean;
   currentUserId?: string;
+  currentUserNumericId?: string;
+  currentUserAccountType?: string;
   onEditProfile?: () => void;
+  onOpenChat?: (conversation: Conversation) => void;
 };
 
 export function ConnectProfileScreen({role, ...rest}: Props) {
