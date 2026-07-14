@@ -2,6 +2,9 @@ import React, {useCallback, useEffect, useState} from 'react';
 import {
   ActivityIndicator,
   FlatList,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
   RefreshControl,
   StyleSheet,
   Text,
@@ -68,6 +71,19 @@ export function CommunityPostsList({
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // windowSoftInputMode is "adjustNothing" (android/app/src/main/AndroidManifest.xml),
+  // so Android needs the same manual keyboard-avoidance iOS always requires —
+  // mirrors the pattern already used in ConversationDetailScreen.tsx.
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', () => setKeyboardOpen(true));
+    const hide = Keyboard.addListener('keyboardDidHide', () => setKeyboardOpen(false));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
 
   const loadPage = useCallback(
     async (targetPage: number, mode: 'initial' | 'refresh' | 'more') => {
@@ -144,52 +160,61 @@ export function CommunityPostsList({
   }
 
   return (
-    <FlatList
-      data={posts}
-      keyExtractor={item => item.uuid}
-      renderItem={({item}) => (
-        <CommunityPostCard
-          post={item}
-          token={token}
-          logoBaseUrl={logoBaseUrl}
-          canInteract={canInteract}
-          onReacted={onReacted}
-          currentUserUuid={currentUserUuid}
-          onDeleted={handleDeleted}
-          onUserPress={onUserPress}
-        />
-      )}
-      contentContainerStyle={styles.listContent}
-      showsVerticalScrollIndicator={false}
-      ListHeaderComponent={ListHeaderComponent}
-      refreshControl={
-        <RefreshControl
-          refreshing={isRefreshing}
-          onRefresh={handleRefresh}
-          colors={[primaryColor]}
-        />
-      }
-      onEndReached={handleEndReached}
-      onEndReachedThreshold={0.4}
-      ListEmptyComponent={
-        <View style={styles.centered}>
-          <Icon name={emptyIcon} size={40} color="#94a3b8" />
-          <Text style={styles.emptyTitle}>{emptyTitle}</Text>
-          <Text style={styles.emptySubtitle}>{emptySubtitle}</Text>
-        </View>
-      }
-      ListFooterComponent={
-        isLoadingMore ? (
-          <View style={styles.footerLoader}>
-            <ActivityIndicator color={primaryColor} />
+    <KeyboardAvoidingView
+      style={styles.flex}
+      behavior={Platform.OS === 'ios' ? 'padding' : (keyboardOpen ? 'padding' : undefined)}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 30}>
+      <FlatList
+        data={posts}
+        keyExtractor={item => item.uuid}
+        renderItem={({item}) => (
+          <CommunityPostCard
+            post={item}
+            token={token}
+            logoBaseUrl={logoBaseUrl}
+            canInteract={canInteract}
+            onReacted={onReacted}
+            currentUserUuid={currentUserUuid}
+            onDeleted={handleDeleted}
+            onUserPress={onUserPress}
+          />
+        )}
+        contentContainerStyle={styles.listContent}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        ListHeaderComponent={ListHeaderComponent}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={handleRefresh}
+            colors={[primaryColor]}
+          />
+        }
+        onEndReached={handleEndReached}
+        onEndReachedThreshold={0.4}
+        ListEmptyComponent={
+          <View style={styles.centered}>
+            <Icon name={emptyIcon} size={40} color="#94a3b8" />
+            <Text style={styles.emptyTitle}>{emptyTitle}</Text>
+            <Text style={styles.emptySubtitle}>{emptySubtitle}</Text>
           </View>
-        ) : null
-      }
-    />
+        }
+        ListFooterComponent={
+          isLoadingMore ? (
+            <View style={styles.footerLoader}>
+              <ActivityIndicator color={primaryColor} />
+            </View>
+          ) : null
+        }
+      />
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
+  flex: {
+    flex: 1,
+  },
   listContent: {
     paddingTop: spacing.md,
     paddingBottom: spacing.xxl,
