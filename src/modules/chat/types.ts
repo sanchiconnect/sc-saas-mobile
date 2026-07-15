@@ -56,6 +56,11 @@ export type Message = {
   // Server-counted child replies. Drives the "Reply (N)" indicator under each
   // bubble and bumps optimistically after the user posts in the thread sheet.
   replyCount?: number;
+  // Structured payload for non-text message types. Confirmed shape for
+  // messageType 'meeting' (GET /api/v1/chat/message):
+  //   {date, timeFrom, timeTo, meetingUUID, meetingTitle} — the `message`
+  // field itself is just a plain label ("Meeting scheduled"), not JSON.
+  metadata?: Record<string, any> | null;
 };
 
 export type PaginationMeta = {
