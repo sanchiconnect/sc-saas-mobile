@@ -188,11 +188,18 @@ export function CreatePostModal({
               placeholder="What’s in your mind today?"
               initialHeight={180}
               onChange={setHtml}
-              editorInitializedCallback={() =>
+              editorInitializedCallback={() => {
                 richText.current?.registerToolbar(items =>
                   setActive(items.map(i => (typeof i === 'string' ? i : i.type))),
-                )
-              }
+                );
+                // The library never wires a `spellcheck` prop through to the
+                // WebView, so disable it directly — Android's IME suggestion
+                // bar racing the editor's own DOM rewriting is what drops
+                // characters mid-word while typing.
+                richText.current?.injectJavascript(
+                  "document.getElementById('content').setAttribute('spellcheck','false');true;",
+                );
+              }}
               editorStyle={{
                 color: '#0f172a',
                 placeholderColor: '#94a3b8',

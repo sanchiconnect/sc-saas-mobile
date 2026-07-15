@@ -88,12 +88,23 @@ const buildPostHtml = (html: string, screenWidth: number) => `<!DOCTYPE html>
 </head><body>${html}<script>
 (function(){
   function sendHeight(){
-    var h=document.body.scrollHeight||document.documentElement.scrollHeight;
-    window.ReactNativeWebView.postMessage(JSON.stringify({t:'h',h:h}));
+    var h=Math.ceil(document.body.scrollHeight||document.documentElement.scrollHeight);
+    if (h>0) window.ReactNativeWebView.postMessage(JSON.stringify({t:'h',h:h}));
   }
-  // Send immediately and again after a short delay to catch late reflows
+  // A single fixed-delay read can land before late reflows (web fonts,
+  // wrapped bold/underline runs, the trailing link) finish settling, which
+  // locks the WebView's height too short and clips whatever falls below it.
+  // Re-check on load and keep watching the body's box for as long as it
+  // keeps changing size instead of trusting one guessed delay.
   sendHeight();
-  setTimeout(sendHeight,150);
+  window.addEventListener('load', sendHeight);
+  if (typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(sendHeight).observe(document.body);
+  } else {
+    setTimeout(sendHeight,150);
+    setTimeout(sendHeight,400);
+    setTimeout(sendHeight,800);
+  }
   document.querySelectorAll('a').forEach(function(a){
     a.addEventListener('click',function(e){
       e.preventDefault();
@@ -127,7 +138,7 @@ function PostBodyWebView({html}: {html: string}) {
       onMessage={e => {
         try {
           const msg = JSON.parse(e.nativeEvent.data);
-          if (msg.t === 'h' && msg.h > 0) setHeight(msg.h);
+          if (msg.t === 'h' && msg.h > 0) setHeight(msg.h + 4);
           else if (msg.t === 'l') Linking.openURL(msg.u).catch(() => {});
         } catch {}
       }}
