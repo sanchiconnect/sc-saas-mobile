@@ -14,6 +14,7 @@ import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {Icon} from '../../../core/components/Icon';
 import {TenantContext} from '../../../core/tenant/TenantProvider';
 import {useToast} from '../../../core/toast/ToastProvider';
+import type {Conversation} from '../../chat/types';
 import {meetingsService} from '../../connections/services/meetings.service';
 import type {MeetingRow} from '../../connections/services/meetings.service';
 
@@ -50,6 +51,30 @@ const counterpartyOrg = (m: MeetingRow): string => {
   return r?.companyName || r?.organizationName || '';
 };
 
+// GET /api/v1/meetings/{uuid} doesn't have a confirmed chat-id field
+// (MeetingRow is loosely typed) — try the likely names, then fall back to
+// the counterparty's user uuid, same defensive pattern + fallback chain as
+// ConnectionsScreen.handleOpenChat.
+const resolveChatTarget = (
+  m: MeetingRow,
+): {uuid: string; name: string; avatar?: string | null; accountType?: string} | null => {
+  const r = (m.receiver || m.otherUser) as
+    | {uuid?: string; avatar?: string | null; accountType?: string}
+    | null;
+  const convUuid =
+    (m.groupChatUUID as string | undefined) ||
+    (m.conversationUUID as string | undefined) ||
+    (m.chatUUID as string | undefined) ||
+    r?.uuid;
+  if (!convUuid) return null;
+  return {
+    uuid: convUuid,
+    name: counterpartyName(m),
+    avatar: r?.avatar ?? null,
+    accountType: r?.accountType,
+  };
+};
+
 type StatusMeta = {label: string; bg: string; fg: string};
 
 const resolveStatus = (m: MeetingRow): StatusMeta => {
@@ -65,8 +90,13 @@ type Props = {
   onClose: () => void;
   // Called after accept/reject so the parent list can refresh.
   onStatusChanged?: () => void;
-  // Called when user wants to propose a new time — parent opens ScheduleMeetingModal.
+  // Called when user wants to propose a new time / schedule a followup —
+  // parent opens ScheduleMeetingModal preset to this counterparty.
   onProposeNewTime?: (counterparty: {uuid: string; name: string}) => void;
+  // Called when the user taps "Chat" — parent navigates to the chat
+  // detail screen with a synthesized Conversation (same flow as
+  // ConnectionsScreen's Chat button).
+  onOpenChat?: (conversation: Conversation) => void;
 };
 
 export function MeetingDetailModal({
@@ -75,6 +105,7 @@ export function MeetingDetailModal({
   onClose,
   onStatusChanged,
   onProposeNewTime,
+  onOpenChat,
 }: Props) {
   const {theme} = useContext(TenantContext);
   const primaryColor = theme?.primary || '#0b0aa3';
@@ -135,6 +166,28 @@ export function MeetingDetailModal({
     onProposeNewTime?.({uuid, name});
   };
 
+  const handleChatPress = () => {
+    const target = resolveChatTarget(meeting);
+    if (!target) {
+      toast.error('Chat is not available for this meeting yet.');
+      return;
+    }
+    if (!onOpenChat) {
+      toast.info('Chat will open from here once wiring is complete.');
+      return;
+    }
+    onOpenChat({
+      uuid: target.uuid,
+      name: target.name,
+      otherUser: {
+        uuid: target.uuid,
+        name: target.name,
+        avatar: target.avatar || null,
+        accountType: target.accountType,
+      },
+    });
+  };
+
   const handleSaveNotes = () => {
     setSavedNotes(notesText);
     setEditingNotes(false);
@@ -166,6 +219,10 @@ export function MeetingDetailModal({
     !meeting.isAccepted &&
     String(meeting.acceptanceStatus || '').toLowerCase() !== 'accepted' &&
     String(meeting.acceptanceStatus || '').toLowerCase() !== 'rejected';
+
+  // "Create Followup Meeting" is always available (not RSVP-gated) as long
+  // as there's a counterparty to schedule with.
+  const counterpartyUuid = (meeting.receiver || meeting.otherUser)?.uuid;
 
   return (
     <Modal
@@ -204,7 +261,7 @@ export function MeetingDetailModal({
                 <Text style={styles.meetingTitle} numberOfLines={2}>{title}</Text>
                 <Text style={[styles.otherName, {color: primaryColor}]} numberOfLines={1}>
                   {other}
-                  {orgName ? <Text style={styles.orgName}>{` (${orgName})`}</Text> : null}
+                  {orgName ? <Text style={styles.orgName}>{`(${orgName})`}</Text> : null}
                 </Text>
                 <View style={styles.timeStatusRow}>
                   {(timeFrom || timeTo) ? (
@@ -219,6 +276,16 @@ export function MeetingDetailModal({
                   </View>
                 </View>
               </View>
+
+              {/* Chat button */}
+              <Pressable
+                style={styles.chatBtn}
+                onPress={handleChatPress}
+                accessibilityRole="button"
+                accessibilityLabel="Open chat">
+                <Icon name="chat-processing-outline" size={16} color="#334155" />
+                <Text style={styles.chatBtnText}>Chat</Text>
+              </Pressable>
             </View>
 
             {/* Meeting details */}
@@ -234,6 +301,16 @@ export function MeetingDetailModal({
                 <Text style={styles.detailLabel}>Agenda:</Text>
                 <Text style={styles.detailValue}>{agenda}</Text>
               </View>
+            ) : null}
+
+            {/* Always-available action to schedule a new meeting with the
+                same counterparty — not gated on RSVP state. */}
+            {counterpartyUuid ? (
+              <Pressable
+                style={[styles.followupBtn, {backgroundColor: primaryColor}]}
+                onPress={handleProposeNewTime}>
+                <Text style={styles.followupBtnText}>CREATE FOLLOWUP MEETING</Text>
+              </Pressable>
             ) : null}
 
             <View style={styles.divider} />
@@ -263,13 +340,6 @@ export function MeetingDetailModal({
                     ) : (
                       <Text style={styles.rsvpBtnText}>REJECT</Text>
                     )}
-                  </Pressable>
-
-                  <Pressable
-                    style={[styles.rsvpBtn, styles.rsvpPropose]}
-                    onPress={handleProposeNewTime}
-                    disabled={accepting || rejecting}>
-                    <Text style={styles.rsvpBtnText}>PROPOSE NEW TIME</Text>
                   </Pressable>
                 </View>
               </View>
@@ -390,6 +460,33 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 3,
   },
+  chatBtn: {
+    alignItems: 'center',
+    backgroundColor: '#f1f5f9',
+    borderRadius: 8,
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  chatBtnText: {
+    color: '#334155',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  followupBtn: {
+    alignItems: 'center',
+    borderRadius: 12,
+    justifyContent: 'center',
+    marginBottom: 16,
+    paddingVertical: 14,
+  },
+  followupBtnText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
   meetingTitle: {
     color: '#0f172a',
     fontSize: 17,
@@ -474,12 +571,10 @@ const styles = StyleSheet.create({
   },
   rsvpAccept: {
     backgroundColor: '#16a34a',
+    flex: 1,
   },
   rsvpReject: {
     backgroundColor: '#e11d48',
-  },
-  rsvpPropose: {
-    backgroundColor: '#0f172a',
     flex: 1,
   },
   rsvpBtnText: {

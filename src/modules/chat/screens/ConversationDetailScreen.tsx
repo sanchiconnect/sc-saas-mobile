@@ -512,6 +512,10 @@ export function ConversationDetailScreen({
   const [meetingDetail, setMeetingDetail] = useState<MeetingRow | null>(null);
   const [loadingMeetingUuid, setLoadingMeetingUuid] = useState<string | null>(null);
 
+  // There's no single-meeting GET endpoint — the web app itself just loads
+  // the full list and matches by uuid client-side (confirmed via its own
+  // network tab: GET /api/v1/meetings/ → {data: [...]}, then find by
+  // ?meetingId= uuid), so mirror that instead of a per-uuid fetch.
   const handleViewMeetingDetails = async (meetingUUID?: string) => {
     if (!meetingUUID) {
       toast.error('Meeting details are not available for this message.');
@@ -519,7 +523,12 @@ export function ConversationDetailScreen({
     }
     setLoadingMeetingUuid(meetingUUID);
     try {
-      const meeting = await meetingsService.getMeeting(token, meetingUUID);
+      const meetings = await meetingsService.listMeetings(token);
+      const meeting = meetings.find(m => m.uuid === meetingUUID);
+      if (!meeting) {
+        toast.error('Could not find this meeting.');
+        return;
+      }
       setMeetingDetail(meeting);
     } catch (err) {
       toast.error(
@@ -1523,10 +1532,15 @@ export function ConversationDetailScreen({
           onStatusChanged={() => {
             if (!meetingDetail.uuid) return;
             meetingsService
-              .getMeeting(token, meetingDetail.uuid)
-              .then(setMeetingDetail)
+              .listMeetings(token)
+              .then(meetings => {
+                const updated = meetings.find(m => m.uuid === meetingDetail.uuid);
+                if (updated) setMeetingDetail(updated);
+              })
               .catch(() => {});
           }}
+          onOpenChat={() => setMeetingDetail(null)}
+          onProposeNewTime={() => setScheduleVisible(true)}
         />
       ) : null}
     </KeyboardAvoidingView>

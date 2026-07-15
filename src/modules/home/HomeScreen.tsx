@@ -571,6 +571,10 @@ export function HomeScreen({
             summary?.userUuid || session.user.uuid || session.user.id
           }
           currentUserName={session.user.fullName}
+          onOpenChat={conversation => {
+            setActiveConversation(conversation);
+            setSelectedMenu({section: 'chat'});
+          }}
           onBack={() => setSelectedMenu({section: 'dashboard'})}
         />
       </View>

@@ -369,18 +369,6 @@ export const meetingsService = {
     );
   },
 
-  // Fetch full meeting detail (includes meetingDescription, locationType, etc.)
-  async getMeeting(token: string, meetingUuid: string): Promise<MeetingRow> {
-    const baseUrl = await resolveBaseUrl();
-    const res = await requestJson<unknown>(
-      `api/v1/meetings/${meetingUuid}`,
-      {method: 'GET', headers: getAuthHeader(token)},
-      baseUrl,
-    );
-    const r = res as Record<string, unknown>;
-    return ((r?.data as MeetingRow) || (r as MeetingRow)) ?? {};
-  },
-
   // Schedule a meeting. Called after the connection accept PATCH so the
   // chat thread starts with a server-emitted "meeting" message.
   async createMeeting(
