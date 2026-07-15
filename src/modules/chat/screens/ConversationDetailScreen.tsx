@@ -558,6 +558,9 @@ export function ConversationDetailScreen({
     canScheduleMeeting &&
     !globalSetting?.features?.meeting_moderation_enabled;
   const [isCreatingInstant, setIsCreatingInstant] = useState(false);
+  // Confirmation gate before firing the instant meeting — matches the web
+  // app's "Before proceeding..." SweetAlert prompt.
+  const [instantConfirmOpen, setInstantConfirmOpen] = useState(false);
   // Drives the ScheduleMeetingModal — same component the Meetings
   // screen uses, but locked to the other chat participant via the
   // `presetUser` prop so the reviewer dropdown is skipped.
@@ -581,21 +584,24 @@ export function ConversationDetailScreen({
       const pad = (n: number) => String(n).padStart(2, '0');
       const date = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
       const startMins = now.getHours() * 60 + now.getMinutes();
-      const myName = currentUserName?.trim() || 'You';
       const otherName = otherMember.name || headerName;
+      const title = `Meeting with ${otherName}`;
       let timeZone = 'UTC';
       try {
         timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
       } catch {
         // Older RN engines may not expose Intl — fall back to UTC.
       }
+      // Field shape + 2-hour window confirmed from the web app's own
+      // instant-meeting request — no `duration` field, title/description
+      // both "Meeting with {name}".
       await meetingsService.createMeeting(token, {
         date,
         timeFrom: toHhmm(startMins),
-        timeTo: toHhmm(startMins + 30),
-        meetingTitle: `${myName} <> ${otherName}`,
+        timeTo: toHhmm(startMins + 120),
+        meetingTitle: title,
+        meetingDescription: title,
         otherUserUUID: otherMember.uuid,
-        duration: '30',
         meetingTimeType: 'instant',
         meetingLocationType: 'virtual',
         meetingToolType: 'inbuilt',
@@ -603,6 +609,9 @@ export function ConversationDetailScreen({
         timeZone,
       });
       toast.success('Instant meeting started.');
+      // Backend auto-emits a 'meeting' message into this thread once the
+      // meeting is created — refetch so it shows up without a manual pull.
+      await refreshAfterUpload();
     } catch (err) {
       toast.error(
         err instanceof Error ? err.message : 'Could not start meeting.',
@@ -1283,7 +1292,7 @@ export function ConversationDetailScreen({
         <View style={meetingActionStyles.row}>
           {canInstantMeeting ? (
             <Pressable
-              onPress={handleInstantMeeting}
+              onPress={() => setInstantConfirmOpen(true)}
               disabled={isCreatingInstant}
               style={({pressed}) => [
                 meetingActionStyles.btn,
@@ -1451,6 +1460,19 @@ export function ConversationDetailScreen({
         loading={isDeletingMessage}
         onConfirm={handleConfirmDelete}
         onCancel={() => setPendingDeleteMessage(null)}
+      />
+
+      <ConfirmModal
+        visible={instantConfirmOpen}
+        title="Setup Instant Meeting"
+        message="Before proceeding to schedule an instant meeting, please confirm that the other party is prepared and available for it. Once confirmed, an email notification will be sent to them to inform them of the meeting details."
+        confirmLabel="OK"
+        cancelLabel="Cancel"
+        onConfirm={() => {
+          setInstantConfirmOpen(false);
+          handleInstantMeeting();
+        }}
+        onCancel={() => setInstantConfirmOpen(false)}
       />
 
       <MediaViewerModal

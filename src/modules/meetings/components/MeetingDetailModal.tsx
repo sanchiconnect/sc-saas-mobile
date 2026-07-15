@@ -224,6 +224,19 @@ export function MeetingDetailModal({
   // as there's a counterparty to schedule with.
   const counterpartyUuid = (meeting.receiver || meeting.otherUser)?.uuid;
 
+  // Confirmed from GET /api/v1/meetings/ — the backend already computes
+  // these per-viewer, so trust them directly rather than guessing from
+  // title/type (which turned out unreliable — e.g. an "X <> Y"-titled row
+  // can still have canJoinMeeting: true).
+  const canJoin = meeting.canJoinMeeting === true;
+  const canFollowup = meeting.canCreateFollowupMeeting === true;
+  const handleGoToMeeting = () => {
+    toast.info('Working on this feature.');
+  };
+  const handleAddToCalendar = () => {
+    toast.info('Working on this feature.');
+  };
+
   return (
     <Modal
       visible={true}
@@ -303,9 +316,21 @@ export function MeetingDetailModal({
               </View>
             ) : null}
 
-            {/* Always-available action to schedule a new meeting with the
-                same counterparty — not gated on RSVP state. */}
-            {counterpartyUuid ? (
+            {canJoin ? (
+              <View style={styles.instantActionsRow}>
+                <Pressable style={styles.calendarBtn} onPress={handleAddToCalendar}>
+                  <Icon name="calendar-plus" size={16} color="#0f172a" />
+                  <Text style={styles.calendarBtnText}>Add to calender</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.followupBtn, styles.goToMeetingBtn, {backgroundColor: primaryColor}]}
+                  onPress={handleGoToMeeting}>
+                  <Text style={styles.followupBtnText}>GO TO MEETING</Text>
+                </Pressable>
+              </View>
+            ) : null}
+
+            {canFollowup && counterpartyUuid ? (
               <Pressable
                 style={[styles.followupBtn, {backgroundColor: primaryColor}]}
                 onPress={handleProposeNewTime}>
@@ -486,6 +511,30 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '800',
     letterSpacing: 0.5,
+  },
+  instantActionsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 16,
+  },
+  calendarBtn: {
+    alignItems: 'center',
+    backgroundColor: '#f1f5f9',
+    borderRadius: 12,
+    flex: 1,
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'center',
+    paddingVertical: 14,
+  },
+  calendarBtnText: {
+    color: '#0f172a',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  goToMeetingBtn: {
+    flex: 1,
+    marginBottom: 0,
   },
   meetingTitle: {
     color: '#0f172a',

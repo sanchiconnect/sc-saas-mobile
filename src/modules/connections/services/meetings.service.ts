@@ -53,8 +53,9 @@ export type CreateMeetingPayload = {
   // it under the same key).
   meetingDescription?: string;
   otherUserUUID: string;
-  // String — backend stores as text. The web also sends a string.
-  duration: string;
+  // String — backend stores as text. The web also sends a string for the
+  // schedule_later flow, but omits it entirely for instant meetings.
+  duration?: string;
   // Mirror of the meetingToolType radio — web ships this bool alongside
   // for legacy reasons. true → external URL, false → inbuilt.
   useExternalTool?: boolean;
@@ -167,6 +168,12 @@ export type MeetingRow = {
   // incoming). `false` means it was sent by the user (= Sent Request /
   // outgoing).
   canReceiverAcceptReject?: boolean;
+  // Confirmed from GET /api/v1/meetings/ — the backend computes these
+  // per-meeting per-viewer, so they drive the detail popup's action
+  // buttons directly instead of inferring from title/type. Not mutually
+  // exclusive in principle, though observed data never has both true.
+  canJoinMeeting?: boolean;
+  canCreateFollowupMeeting?: boolean;
   // Counterparty info
   receiver?: {
     uuid?: string;
