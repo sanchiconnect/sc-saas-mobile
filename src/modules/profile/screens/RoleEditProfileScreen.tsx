@@ -198,6 +198,9 @@ export function RoleEditProfileScreen({
   const [investorInvestmentsValid, setInvestorInvestmentsValid] = useState(false);
   const [investorRepresentativeValid, setInvestorRepresentativeValid] = useState(false);
 
+  // ── corporate engagement tab local validity (drives dot colour in real-time) ──
+  const [corporateEngagementValid, setCorporateEngagementValid] = useState(false);
+
   // ── secondary tab refs ────────────────────────────────────────────────────
   const mentorTabRef = useRef<SecondaryTabHandle>(null);
   const corporateTabRef = useRef<SecondaryTabHandle>(null);
@@ -514,6 +517,9 @@ export function RoleEditProfileScreen({
     if (accountType === 'investor') {
       if (key === 'investment_details') return investorInvestmentsValid;
       if (key === 'representative') return investorRepresentativeValid;
+    }
+    if (accountType === 'corporate' && key === 'engagement' && corporateEngagementValid) {
+      return true;
     }
     const d = profileData;
     if (!d) return false;
@@ -972,6 +978,7 @@ export function RoleEditProfileScreen({
             primaryColor={primaryColor}
             initialData={profileData}
             onSaveSuccess={onSecondaryTabSaveSuccess}
+            onValidChange={setCorporateEngagementValid}
           />
         ) : activeTab === 'industry' ? (
           accountType === 'service_provider' ? (

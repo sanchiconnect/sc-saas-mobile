@@ -6,6 +6,7 @@ import {
 import {resolveNumericId, resolveProfileUuid, resolveUserUuid} from '../utils';
 import {
   ConnectionState,
+  ConnectionStatusDetail,
   ConnectRoleKey,
   DirectoryResponse,
   DirectoryUser,
@@ -264,12 +265,13 @@ export const connectService = {
   },
 
   // Relationship status with a member, keyed on the USER uuid. Drives the
-  // Connect button (Connect / Request Sent / Connected).
+  // Connect button (Connect / Request Sent / Connected / Rejected) plus the
+  // accept/reject affordance and the investor-connect auto-chat branch.
   //   POST api/v1/connections/check/request/{userUuid}
   async checkConnectionState(
     token: string,
     userUuid: string,
-  ): Promise<ConnectionState> {
+  ): Promise<ConnectionStatusDetail> {
     const baseUrl = await resolveBaseUrl();
     const res = await requestJson<any>(
       `${CONNECTIONS}/check/request/${userUuid}`,
@@ -284,15 +286,18 @@ export const connectService = {
     const status = String(
       d?.connectionStatus || d?.status || d?.requestStatus || '',
     ).toLowerCase();
+
+    let state: ConnectionState = 'none';
     if (
       d?.isConnected === true ||
       d?.connected === true ||
       status === 'accepted' ||
       status === 'connected'
     ) {
-      return 'connected';
-    }
-    if (
+      state = 'connected';
+    } else if (status === 'rejected') {
+      state = 'rejected';
+    } else if (
       d?.requestExist === true ||
       d?.requestSent === true ||
       d?.alreadyRequested === true ||
@@ -301,9 +306,24 @@ export const connectService = {
       status === 'sent' ||
       status === 'received'
     ) {
-      return 'pending';
+      state = 'pending';
     }
-    return 'none';
+
+    return {
+      state,
+      connectionUUID: d?.connectionUUID || d?.connectionUuid || undefined,
+      canConnect: typeof d?.canConnect === 'boolean' ? d.canConnect : undefined,
+      isInvestor: d?.isInvestor === true,
+      message: d?.message || d?.connectionMessage || undefined,
+      profileCompletenessPercent:
+        typeof d?.profileCompletenessPercent === 'number'
+          ? d.profileCompletenessPercent
+          : undefined,
+      toUserId: typeof d?.toUserId === 'number' ? d.toUserId : undefined,
+      acceptingUserIds: Array.isArray(d?.acceptingUserIds)
+        ? d.acceptingUserIds
+        : undefined,
+    };
   },
 
   // Profile-view tracking for the platform analytics dashboard.

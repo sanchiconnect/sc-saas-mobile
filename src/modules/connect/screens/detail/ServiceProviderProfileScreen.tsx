@@ -36,10 +36,13 @@ export function ServiceProviderProfileScreen({
   onBack,
   isApproved,
   currentUserId,
+  currentUserNumericId,
+  currentUserAccountType,
   onEditProfile,
+  onOpenChat,
 }: Props) {
-  const {profile, isLoading, connState, setConnState, resolvedUuid} =
-    useProfileDetail(token, 'service-providers', user, currentUserId);
+  const {profile, isLoading, connDetail, setConnDetail, resolvedUuid} =
+    useProfileDetail(token, 'service-providers', user, currentUserNumericId);
 
   const name = resolveName(profile);
 
@@ -70,16 +73,20 @@ export function ServiceProviderProfileScreen({
     <ProfileShell
       name={name}
       token={token}
+      role="service-providers"
       user={user}
       resolvedUuid={resolvedUuid}
-      connState={connState}
-      setConnState={setConnState}
+      connDetail={connDetail}
+      setConnDetail={setConnDetail}
       primaryColor={primaryColor}
       isApproved={isApproved}
       isLoading={isLoading}
       onBack={onBack}
       currentUserId={currentUserId}
-      onEditProfile={onEditProfile}>
+      currentUserNumericId={currentUserNumericId}
+      currentUserAccountType={currentUserAccountType}
+      onEditProfile={onEditProfile}
+      onOpenChat={onOpenChat}>
 
       {/* Hero — website shown as child since field is `website` not `displayWebsite` */}
       <ProfileHero profile={profile} primaryColor={primaryColor} logoBaseUrl={logoBaseUrl}>

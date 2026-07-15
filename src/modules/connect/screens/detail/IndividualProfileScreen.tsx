@@ -33,10 +33,13 @@ export function IndividualProfileScreen({
   onBack,
   isApproved,
   currentUserId,
+  currentUserNumericId,
+  currentUserAccountType,
   onEditProfile,
+  onOpenChat,
 }: Props) {
-  const {profile, isLoading, connState, setConnState, resolvedUuid} =
-    useProfileDetail(token, 'individuals', user, currentUserId);
+  const {profile, isLoading, connDetail, setConnDetail, resolvedUuid} =
+    useProfileDetail(token, 'individuals', user, currentUserNumericId);
 
   const name = resolveName(profile);
 
@@ -67,16 +70,20 @@ export function IndividualProfileScreen({
     <ProfileShell
       name={name}
       token={token}
+      role="individuals"
       user={user}
       resolvedUuid={resolvedUuid}
-      connState={connState}
-      setConnState={setConnState}
+      connDetail={connDetail}
+      setConnDetail={setConnDetail}
       primaryColor={primaryColor}
       isApproved={isApproved}
       isLoading={isLoading}
       onBack={onBack}
       currentUserId={currentUserId}
-      onEditProfile={onEditProfile}>
+      currentUserNumericId={currentUserNumericId}
+      currentUserAccountType={currentUserAccountType}
+      onEditProfile={onEditProfile}
+      onOpenChat={onOpenChat}>
 
       <ProfileHero profile={profile} primaryColor={primaryColor} logoBaseUrl={logoBaseUrl} />
 

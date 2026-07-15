@@ -20,6 +20,7 @@ import {connectService} from '../services/connect.service';
 import {DirectoryCard} from '../components/DirectoryCard';
 import {ConnectFilterSheet} from '../components/ConnectFilterSheet';
 import {ConnectProfileScreen} from './ConnectProfileScreen';
+import type {Conversation} from '../../chat/types';
 import type {
   ConnectRoleKey,
   DirectorySort,
@@ -41,7 +42,10 @@ type Props = {
   onActiveProfileChange?: (active: boolean) => void;
   isApproved?: boolean;
   currentUserId?: string;
+  currentUserNumericId?: string;
+  currentUserAccountType?: string;
   onEditProfile?: () => void;
+  onOpenChat?: (conversation: Conversation) => void;
 };
 
 const SORTS: DirectorySort[] = [
@@ -68,7 +72,10 @@ export function ConnectDirectoryScreen({
   onActiveProfileChange,
   isApproved,
   currentUserId,
+  currentUserNumericId,
+  currentUserAccountType,
   onEditProfile,
+  onOpenChat,
 }: Props) {
   useToast(); // keep provider happy; no wishlist toasts needed currently
 
@@ -237,7 +244,10 @@ export function ConnectDirectoryScreen({
         onBack={closeProfile}
         isApproved={isApproved}
         currentUserId={currentUserId}
+        currentUserNumericId={currentUserNumericId}
+        currentUserAccountType={currentUserAccountType}
         onEditProfile={onEditProfile}
+        onOpenChat={onOpenChat}
       />
     );
   }

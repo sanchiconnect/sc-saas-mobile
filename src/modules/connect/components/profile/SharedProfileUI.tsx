@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useContext, useState} from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -16,12 +16,16 @@ import {
 import Video from 'react-native-video';
 
 import {Icon} from '../../../../core/components/Icon';
+import {TenantContext} from '../../../../core/tenant/TenantProvider';
 import {colors, withAlpha} from '../../../../core/theme/colors';
 import {useToast} from '../../../../core/toast/ToastProvider';
+import type {Conversation} from '../../../chat/types';
+import {stripHtml} from '../../../chat/utils';
 import {PdfPagesCarousel, getPitchImages} from '../../../profile/components/PdfPagesCarousel';
+import {connectionsService} from '../../../connections/services/connections.service';
 import {connectService} from '../../services/connect.service';
 import {initials, resolveLogo, resolveName, resolveCity, resolveCountry} from '../../utils';
-import type {ConnectionState, DirectoryUser} from '../../types';
+import type {ConnectionState, ConnectionStatusDetail, ConnectRoleKey, DirectoryUser} from '../../types';
 
 // ─── prop type shared by every role detail screen ─────────────────────────────
 
@@ -33,6 +37,18 @@ export type DetailScreenProps = {
   onBack: () => void;
   isApproved?: boolean;
   currentUserId?: string;
+  // The logged-in user's real numeric id (not uuid) — for the
+  // profile-views/increment payload and the accept/reject ownership check
+  // (acceptingUserIds/toUserId), both of which the backend keys on userId.
+  currentUserNumericId?: string;
+  // The logged-in user's own account type (e.g. 'investor', 'startup') —
+  // drives the investor-connect auto-chat branch and the mentor connection
+  // questions in the connect modal.
+  currentUserAccountType?: string;
+  // Opens the chat detail screen for a conversation. Wired by HomeScreen the
+  // same way it's wired for ConnectionsScreen — used when an investor
+  // connects to a startup and the backend auto-creates a chat thread.
+  onOpenChat?: (conversation: Conversation) => void;
   onEditProfile?: () => void;
 };
 
@@ -352,59 +368,146 @@ const DEFAULT_MSG = "Hi, I'd love to connect.";
 export function ProfileShell({
   name,
   token,
+  role,
   user,
   resolvedUuid,
   currentUserId,
-  connState,
-  setConnState,
+  currentUserNumericId,
+  currentUserAccountType,
+  connDetail,
+  setConnDetail,
   primaryColor,
   isApproved,
   isLoading,
   onBack,
   onEditProfile,
+  onOpenChat,
   children,
 }: {
   name: string;
   token: string;
+  role: ConnectRoleKey;
   user: DirectoryUser;
   resolvedUuid: string;
   currentUserId?: string;
-  connState: ConnectionState;
-  setConnState: (s: ConnectionState) => void;
+  currentUserNumericId?: string;
+  currentUserAccountType?: string;
+  connDetail: ConnectionStatusDetail | null;
+  setConnDetail: (d: ConnectionStatusDetail) => void;
   primaryColor: string;
   isApproved?: boolean;
   isLoading?: boolean;
   onBack: () => void;
   onEditProfile?: () => void;
+  onOpenChat?: (conversation: Conversation) => void;
   children: React.ReactNode;
 }) {
+  const {globalSetting} = useContext(TenantContext);
+  // Explicit false only — tenants without this flag populated keep working
+  // exactly as before.
+  const connectionsEnabled = globalSetting?.features?.connections !== false;
+
   const isOwnProfile =
     !!currentUserId &&
     (currentUserId === resolvedUuid || currentUserId === user.uuid);
   const toast = useToast();
   const [connectOpen, setConnectOpen] = useState(false);
   const [connectMessage, setConnectMessage] = useState(DEFAULT_MSG);
+  const [mentorAnswers, setMentorAnswers] = useState<string[]>([]);
   const [isSending, setIsSending] = useState(false);
+  const [isActioning, setIsActioning] = useState(false);
+
+  const connState: ConnectionState = connDetail?.state ?? 'none';
+
+  const canAcceptReject =
+    connectionsEnabled &&
+    !!connDetail &&
+    !!currentUserNumericId &&
+    (connDetail.acceptingUserIds?.includes(Number(currentUserNumericId)) ||
+      String(connDetail.toUserId ?? '') === currentUserNumericId);
+
+  // Startups connecting to mentors can be asked a fixed set of tenant-configured
+  // questions instead of a free-text message — mirrors web's showMentorQuestions.
+  const mentorQuestions =
+    currentUserAccountType === 'startup' &&
+    role === 'mentors' &&
+    globalSetting?.features?.ask_startup_to_mentor_connection_question &&
+    globalSetting?.features?.startup_to_mentor_connection_questions
+      ? globalSetting.features.startup_to_mentor_connection_questions
+          .split(',')
+          .map(q => q.trim())
+          .filter(Boolean)
+      : [];
+  const showMentorQuestions = mentorQuestions.length > 0;
+
+  const refreshConnectionState = () => {
+    connectService
+      .checkConnectionState(token, resolvedUuid)
+      .then(setConnDetail)
+      .catch(() => undefined);
+  };
 
   const handleSend = async () => {
+    const message = showMentorQuestions
+      ? mentorQuestions
+          .map((q, i) => `<b>${q}:</b> ${mentorAnswers[i] || ''}<br />`)
+          .join('')
+      : connectMessage;
+
     setIsSending(true);
     try {
-      await connectService.sendConnectRequest(
+      const res: any = await connectService.sendConnectRequest(
         token,
         {...user, uuid: resolvedUuid},
-        connectMessage,
+        message,
       );
-      setConnState('pending');
+      setConnDetail({...(connDetail ?? {state: 'none'}), state: 'pending'});
       setConnectOpen(false);
-      toast.success(`Connection request sent to ${name}.`);
-      connectService
-        .checkConnectionState(token, resolvedUuid)
-        .then(setConnState)
-        .catch(() => undefined);
+
+      const groupChatUUID = res?.data?.groupChatUUID;
+      if (role === 'startups' && connDetail?.isInvestor && onOpenChat && groupChatUUID) {
+        toast.success(`You are connected with ${name}.`);
+        onOpenChat({
+          uuid: groupChatUUID,
+          name,
+          otherUser: {uuid: resolvedUuid, name, accountType: user.accountType},
+        });
+      } else {
+        toast.success(`Connection request sent to ${name}.`);
+      }
+      refreshConnectionState();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not send request.');
     } finally {
       setIsSending(false);
+    }
+  };
+
+  const handleAccept = async () => {
+    if (!connDetail?.connectionUUID) return;
+    setIsActioning(true);
+    try {
+      await connectionsService.accept(token, connDetail.connectionUUID);
+      toast.success(`You are now connected with ${name}.`);
+      refreshConnectionState();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not accept request.');
+    } finally {
+      setIsActioning(false);
+    }
+  };
+
+  const handleReject = async () => {
+    if (!connDetail?.connectionUUID) return;
+    setIsActioning(true);
+    try {
+      await connectionsService.reject(token, connDetail.connectionUUID);
+      toast.success('Connection request rejected.');
+      refreshConnectionState();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not reject request.');
+    } finally {
+      setIsActioning(false);
     }
   };
 
@@ -447,33 +550,8 @@ export function ProfileShell({
       </ScrollView>
 
       {/* Footer: connect button or status */}
+      {connectionsEnabled ? (
       <View style={shStyles.footer}>
-        {/* {isApproved === false ? (
-          <View style={shStyles.approvalNotice}>
-            <Text style={shStyles.approvalNoticeText}>
-              Prior to initiating connections, your profile must be approved by the admin.
-            </Text>
-          </View>
-        ) : connState === 'connected' ? (
-          <View style={[shStyles.connectedBadge, {backgroundColor: withAlpha(primaryColor, 0.12)}]}>
-            <Icon name="account-check" size={18} color={primaryColor} />
-            <Text style={[shStyles.connectedBadgeText, {color: primaryColor}]}>Connected</Text>
-          </View>
-        ) : (
-          <Pressable
-            disabled={connectDisabled}
-            onPress={() => {
-              setConnectMessage(DEFAULT_MSG);
-              setConnectOpen(true);
-            }}
-            style={[
-              shStyles.connectBtn,
-              {backgroundColor: connectDisabled ? colors.borderStrong : primaryColor},
-            ]}>
-            <Icon name={connectIcon} size={18} color="#ffffff" />
-            <Text style={shStyles.connectBtnText}>{connectLabel}</Text>
-          </Pressable>
-        )} */}
         {isOwnProfile ? (
   <Pressable
     onPress={onEditProfile}
@@ -488,6 +566,25 @@ export function ProfileShell({
     <Text style={shStyles.approvalNoticeText}>
       Prior to initiating connections, your profile must be approved by the admin.
     </Text>
+  </View>
+) : canAcceptReject ? (
+  <View style={shStyles.acceptRejectRow}>
+    <Pressable
+      disabled={isActioning}
+      onPress={handleReject}
+      style={[shStyles.rejectBtn, isActioning && {opacity: 0.7}]}>
+      <Text style={shStyles.rejectBtnText}>Reject</Text>
+    </Pressable>
+    <Pressable
+      disabled={isActioning}
+      onPress={handleAccept}
+      style={[shStyles.connectBtn, {backgroundColor: primaryColor, flex: 1}, isActioning && {opacity: 0.7}]}>
+      {isActioning ? (
+        <ActivityIndicator color="#fff" size="small" />
+      ) : (
+        <Text style={shStyles.connectBtnText}>Accept</Text>
+      )}
+    </Pressable>
   </View>
 ) : connState === 'connected' ? (
   <View
@@ -504,11 +601,46 @@ export function ProfileShell({
       Connected
     </Text>
   </View>
+) : connState === 'rejected' ? (
+  <View style={shStyles.approvalNotice}>
+    <Text style={shStyles.approvalNoticeText}>
+      {stripHtml(connDetail?.message || 'This connection request was declined.')}
+    </Text>
+    {typeof connDetail?.profileCompletenessPercent === 'number' &&
+    connDetail.profileCompletenessPercent < 100 &&
+    onEditProfile ? (
+      <Pressable
+        onPress={onEditProfile}
+        style={[shStyles.connectBtn, {backgroundColor: primaryColor, marginTop: 12}]}>
+        <Text style={shStyles.connectBtnText}>Complete Your Profile</Text>
+      </Pressable>
+    ) : null}
+  </View>
+) : connState === 'none' && connDetail?.canConnect === false ? (
+  <View style={shStyles.approvalNotice}>
+    <Text style={shStyles.approvalNoticeText}>
+      {stripHtml(connDetail?.message || 'Connecting is not available for this profile right now.')}
+    </Text>
+    {typeof connDetail?.profileCompletenessPercent === 'number' &&
+    connDetail.profileCompletenessPercent < 100 &&
+    onEditProfile ? (
+      <Pressable
+        onPress={onEditProfile}
+        style={[shStyles.connectBtn, {backgroundColor: primaryColor, marginTop: 12}]}>
+        <Text style={shStyles.connectBtnText}>Complete Your Profile</Text>
+      </Pressable>
+    ) : null}
+  </View>
+) : connState === 'pending' ? (
+  <View style={shStyles.pendingBadge}>
+    <Text style={shStyles.pendingBadgeText}>PENDING REQUEST</Text>
+  </View>
 ) : (
   <Pressable
     disabled={connectDisabled}
     onPress={() => {
       setConnectMessage(DEFAULT_MSG);
+      setMentorAnswers(mentorQuestions.map(() => ''));
       setConnectOpen(true);
     }}
     style={[
@@ -524,6 +656,7 @@ export function ProfileShell({
   </Pressable>
 )}
       </View>
+      ) : null}
 
       {/* Connect request modal */}
       <Modal
@@ -540,19 +673,45 @@ export function ProfileShell({
           />
           <View style={shStyles.modalCard}>
             <Text style={shStyles.modalTitle}>Connect with {name}</Text>
-            <Text style={shStyles.modalSubtitle}>
-              Add a short note to introduce yourself.
-            </Text>
-            <TextInput
-              style={shStyles.modalInput}
-              value={connectMessage}
-              onChangeText={setConnectMessage}
-              placeholder="Write a message…"
-              placeholderTextColor={colors.placeholder}
-              multiline
-              maxLength={500}
-              editable={!isSending}
-            />
+            {showMentorQuestions ? (
+              mentorQuestions.map((q, i) => (
+                <View key={q} style={{marginTop: 12}}>
+                  <Text style={shStyles.modalSubtitle}>{q}</Text>
+                  <TextInput
+                    style={shStyles.modalInput}
+                    value={mentorAnswers[i] || ''}
+                    onChangeText={text =>
+                      setMentorAnswers(prev => {
+                        const next = [...prev];
+                        next[i] = text;
+                        return next;
+                      })
+                    }
+                    placeholder="Enter message…"
+                    placeholderTextColor={colors.placeholder}
+                    multiline
+                    maxLength={300}
+                    editable={!isSending}
+                  />
+                </View>
+              ))
+            ) : (
+              <>
+                <Text style={shStyles.modalSubtitle}>
+                  Add a short note to introduce yourself.
+                </Text>
+                <TextInput
+                  style={shStyles.modalInput}
+                  value={connectMessage}
+                  onChangeText={setConnectMessage}
+                  placeholder="Write a message…"
+                  placeholderTextColor={colors.placeholder}
+                  multiline
+                  maxLength={500}
+                  editable={!isSending}
+                />
+              </>
+            )}
             <View style={shStyles.modalActions}>
               <Pressable
                 style={shStyles.modalCancelBtn}
@@ -566,7 +725,12 @@ export function ProfileShell({
                   {backgroundColor: primaryColor},
                   isSending && {opacity: 0.7},
                 ]}
-                disabled={isSending}
+                disabled={
+                  isSending ||
+                  (showMentorQuestions
+                    ? mentorQuestions.some((_, i) => (mentorAnswers[i] || '').trim().length < 10)
+                    : false)
+                }
                 onPress={handleSend}>
                 {isSending ? (
                   <ActivityIndicator color="#ffffff" size="small" />
@@ -653,6 +817,11 @@ const shStyles = StyleSheet.create({
   connectedBadgeText: {fontSize: 15, fontWeight: '700'},
   connectBtn: {alignItems: 'center', borderRadius: 14, flexDirection: 'row', gap: 8, justifyContent: 'center', paddingVertical: 14},
   connectBtnText: {color: '#ffffff', fontSize: 15, fontWeight: '800', letterSpacing: 0.3},
+  acceptRejectRow: {flexDirection: 'row', gap: 12},
+  rejectBtn: {alignItems: 'center', borderColor: colors.border, borderRadius: 14, borderWidth: 1, justifyContent: 'center', paddingHorizontal: 20, paddingVertical: 14},
+  rejectBtnText: {color: colors.textMuted, fontSize: 15, fontWeight: '800'},
+  pendingBadge: {alignItems: 'center', backgroundColor: '#e5e2f0', borderRadius: 14, justifyContent: 'center', paddingVertical: 14},
+  pendingBadgeText: {color: '#726f8c', fontSize: 13, fontWeight: '800', letterSpacing: 0.4},
   modalOverlay: {flex: 1, justifyContent: 'flex-end'},
   modalBackdrop: {...StyleSheet.absoluteFill, backgroundColor: colors.scrim},
   modalCard: {

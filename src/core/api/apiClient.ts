@@ -107,14 +107,12 @@ export const requestJson = async <T>(
     if (response.status === 401 && sessionInvalidHandler) {
       sessionInvalidHandler();
     }
-    // Surface failed payloads to Metro for in-the-loop debugging. Kept simple
-    // (no token, just method/path/status/body) to avoid leaking secrets.
-    // eslint-disable-next-line no-console
-    console.warn(
-      `[API ${response.status}] ${options.method || 'GET'} ${path} | request: ${
-        options.body ? String(options.body).slice(0, 500) : 'n/a'
-      } | response: ${raw.slice(0, 500)}`,
-    );
+    if (__DEV__) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[API ${response.status}] ${options.method || 'GET'} ${path} | response: ${raw.slice(0, 500)}`,
+      );
+    }
     throw new Error(
       getErrorMessage(data) || `Request failed with status ${response.status}.`,
     );

@@ -39,10 +39,13 @@ export function CorporateProfileScreen({
   onBack,
   isApproved,
   currentUserId,
+  currentUserNumericId,
+  currentUserAccountType,
   onEditProfile,
+  onOpenChat,
 }: Props) {
-  const {profile, isLoading, connState, setConnState, resolvedUuid} =
-    useProfileDetail(token, 'corporates', user, currentUserId);
+  const {profile, isLoading, connDetail, setConnDetail, resolvedUuid} =
+    useProfileDetail(token, 'corporates', user, currentUserNumericId);
 
   const name = resolveName(profile);
 
@@ -92,16 +95,20 @@ export function CorporateProfileScreen({
     <ProfileShell
       name={name}
       token={token}
+      role="corporates"
       user={user}
       resolvedUuid={resolvedUuid}
-      connState={connState}
-      setConnState={setConnState}
+      connDetail={connDetail}
+      setConnDetail={setConnDetail}
       primaryColor={primaryColor}
       isApproved={isApproved}
       isLoading={isLoading}
       onBack={onBack}
       currentUserId={currentUserId}
-      onEditProfile={onEditProfile}>
+      currentUserNumericId={currentUserNumericId}
+      currentUserAccountType={currentUserAccountType}
+      onEditProfile={onEditProfile}
+      onOpenChat={onOpenChat}>
 
       <ProfileHero profile={profile} primaryColor={primaryColor} logoBaseUrl={logoBaseUrl} />
 

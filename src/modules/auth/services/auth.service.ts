@@ -233,23 +233,13 @@ const isFailureResponse = (data: any) => {
   if (!data) {
     return false;
   }
-
   if (data.success === false || data.status === false) {
     return true;
   }
-
   if (typeof data.code === 'number' && data.code >= 400) {
     return true;
   }
-
-  const message = String(getErrorMessage(data) || '').toLowerCase();
-  return (
-    message.includes('already') ||
-    message.includes('exists') ||
-    message.includes('invalid') ||
-    message.includes('not found') ||
-    message.includes('not registered')
-  );
+  return false;
 };
 
 const normalizeRole = (role?: string) => {
@@ -401,8 +391,6 @@ const INVESTOR_INVESTMENTS_PATH = 'api/v1/investors/investments-information';
 const INVESTOR_REPRESENTATIVE_PATH =
   'api/v1/investors/representative-information';
 const CORPORATE_ENGAGEMENT_PATH = 'api/v1/corporates/engagement-information';
-const buildFormsListPath = (accountType?: string) =>
-  `api/v1/forms-management/list/${(accountType || 'startup').toLowerCase()}`;
 const buildFormSubmissionPath = (formUuid: string) =>
   `api/v1/forms-management/submission/${formUuid}`;
 
@@ -1071,7 +1059,7 @@ export const authService = {
   ): Promise<ApiResponse> {
     const baseUrl = await resolveBaseUrl();
     return requestJson<ApiResponse>(
-      buildFormsListPath(accountType),
+      buildFormListPath(accountType),
       {method: 'GET', headers: getAuthHeader(token)},
       baseUrl,
     );

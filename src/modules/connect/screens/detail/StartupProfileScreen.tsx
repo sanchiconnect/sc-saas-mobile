@@ -38,11 +38,15 @@ export function StartupProfileScreen({
   onBack,
   isApproved,
   currentUserId,
+  currentUserNumericId,
+  currentUserAccountType,
   onEditProfile,
+  onOpenChat,
 }: Props) {
   const {globalSetting, baseUrl: tenantBaseUrl} = useContext(TenantContext);
-  const {profile, isLoading, connState, setConnState, resolvedUuid} =
-    useProfileDetail(token, 'startups', user, currentUserId);
+  const {profile, isLoading, connDetail, setConnDetail, resolvedUuid} =
+    useProfileDetail(token, 'startups', user, currentUserNumericId);
+  const connState = connDetail?.state ?? 'none';
 
   const name = resolveName(profile);
 
@@ -96,16 +100,20 @@ export function StartupProfileScreen({
     <ProfileShell
       name={name}
       token={token}
+      role="startups"
       user={user}
       resolvedUuid={resolvedUuid}
-      connState={connState}
+      connDetail={connDetail}
       currentUserId={currentUserId}
-      setConnState={setConnState}
+      currentUserNumericId={currentUserNumericId}
+      currentUserAccountType={currentUserAccountType}
+      setConnDetail={setConnDetail}
       primaryColor={primaryColor}
       isApproved={isApproved}
       isLoading={isLoading}
       onBack={onBack}
-      onEditProfile={onEditProfile}>
+      onEditProfile={onEditProfile}
+      onOpenChat={onOpenChat}>
 
       {/* Hero */}
       <ProfileHero profile={profile} primaryColor={primaryColor} logoBaseUrl={logoBaseUrl} />

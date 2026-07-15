@@ -62,7 +62,25 @@ export const ROLE_API_FRAGMENT: Record<
 export type ConnectionState =
   | 'none' // can send a request
   | 'pending' // a request is already outstanding (sent or received)
-  | 'connected'; // already connected
+  | 'connected' // already connected
+  | 'rejected'; // a past request was rejected
+
+// Raw shape of the connections/check/request/{uuid} response, kept alongside
+// the normalized ConnectionState so the profile screen can drive
+// accept/reject, the rejected-request message, and the investor auto-chat
+// branch — mirrors the web's `connectionRequestStatus`. Every field is
+// best-effort: absent fields just mean the corresponding UI/behavior falls
+// back to the plain ConnectionState flow (see connect.service.ts).
+export type ConnectionStatusDetail = {
+  state: ConnectionState;
+  connectionUUID?: string;
+  canConnect?: boolean;
+  isInvestor?: boolean;
+  message?: string;
+  profileCompletenessPercent?: number;
+  toUserId?: number;
+  acceptingUserIds?: number[];
+};
 
 // A single directory entry. Field names vary a lot across roles and backend
 // versions (companyName vs organizationName vs name; companyLogo vs avatar; …)

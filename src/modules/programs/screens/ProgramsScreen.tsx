@@ -130,7 +130,7 @@ const normalizePrograms = (
   sourceType: ProgramItem['sourceType'],
 ): ProgramItem[] =>
   raw.map(item => ({
-    id: item?.id ?? item?.uuid ?? Math.random().toString(36),
+    id: item?.id ?? item?.uuid ?? `${String(item?.programTitle || '')}-${String(item?.programCode || '')}`,
     uuid: item?.uuid,
     programTitle: String(item?.programTitle || 'Untitled Program'),
     programCode: item?.programCode || undefined,
