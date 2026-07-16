@@ -12,6 +12,7 @@ import {
 import {Icon} from '../../../core/components/Icon';
 import {TenantContext} from '../../../core/tenant/TenantProvider';
 import {useToast} from '../../../core/toast/ToastProvider';
+import type {Conversation} from '../../chat/types';
 import {meetingsService} from '../../connections/services/meetings.service';
 import type {MeetingRow} from '../../connections/services/meetings.service';
 import {MeetingDetailModal} from '../components/MeetingDetailModal';
@@ -27,6 +28,10 @@ type Props = {
   // Display name used to compose the `meetingTitle` field in the
   // Schedule modal (`{me} <> {them}`).
   currentUserName?: string;
+  // Opens the chat detail screen for a conversation. Wired by HomeScreen the
+  // same way it's wired for ConnectionsScreen/ConnectDirectoryScreen — used
+  // by the meeting detail popup's "Chat" button.
+  onOpenChat?: (conversation: Conversation) => void;
   onBack: () => void;
 };
 
@@ -88,7 +93,7 @@ const counterpartyName = (m: MeetingRow): string => {
   return r?.name || (r as {fullName?: string})?.fullName || 'Member';
 };
 
-export function MyMeetingsScreen({token, currentUserName, onBack}: Props) {
+export function MyMeetingsScreen({token, currentUserName, onOpenChat, onBack}: Props) {
   const {theme} = useContext(TenantContext);
   const primaryColor = theme?.primary || '#0b0aa3';
   const toast = useToast();
@@ -572,6 +577,7 @@ export function MyMeetingsScreen({token, currentUserName, onBack}: Props) {
             setProposePreset(counterparty);
             setScheduleVisible(true);
           }}
+          onOpenChat={onOpenChat}
         />
       ) : null}
 

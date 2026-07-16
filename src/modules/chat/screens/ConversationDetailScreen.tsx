@@ -37,6 +37,8 @@ import {ReplyThreadSheet} from '../components/ReplyThreadSheet';
 import {chatService} from '../services/chat.service';
 import {chatSocket} from '../services/chat.socket';
 import {meetingsService} from '../../connections/services/meetings.service';
+import type {MeetingRow} from '../../connections/services/meetings.service';
+import {MeetingDetailModal} from '../../meetings/components/MeetingDetailModal';
 import {ScheduleMeetingModal} from '../../meetings/components/ScheduleMeetingModal';
 import {useToast} from '../../../core/toast/ToastProvider';
 import type {Conversation, ConversationParticipant, Message} from '../types';
@@ -121,12 +123,10 @@ const renderAttachment = (
   );
 };
 
-// Meeting card shown in place of the bubble's text when the message
-// starts with the `__MEETING__{json}__` marker. Mirrors the web layout:
-// title row with the proposing pair, Date row, Time row, then a full-
-// width "View Meeting Details" CTA. The CTA is currently a no-op
-// (toast acknowledgement) — wire a real navigation target once the
-// meeting details route exists.
+// Meeting card shown in place of the bubble's text when the message's
+// messageType is 'meeting'. Mirrors the web layout: title row, Date row,
+// Time row, then a full-width "View Meeting Details" CTA that opens the
+// same MeetingDetailModal the Meetings tab uses.
 // `2026-05-13` → `May 13, 2026`. Passes through anything that doesn't
 // parse cleanly (e.g. already-formatted strings from older clients).
 const formatMeetingDate = (raw?: string): string => {
@@ -137,65 +137,77 @@ const formatMeetingDate = (raw?: string): string => {
   const date = new Date(Number(y), Number(mo) - 1, Number(d));
   if (Number.isNaN(date.getTime())) return raw;
   return date.toLocaleDateString('en-US', {
-    month: 'long',
+    month: 'short',
     day: 'numeric',
     year: 'numeric',
   });
 };
 
+// `20:00:00` / `20:00` (24h, confirmed backend shape via metadata.timeFrom)
+// → `08:00 pm`. Passes through anything that doesn't parse cleanly.
+const formatMeetingTime = (raw?: string): string => {
+  if (!raw) return '';
+  const m = raw.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (!m) return raw;
+  const hour24 = Number(m[1]);
+  const minute = m[2];
+  if (hour24 > 23) return raw;
+  const period = hour24 >= 12 ? 'pm' : 'am';
+  const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
+  return `${String(hour12).padStart(2, '0')}:${minute} ${period}`;
+};
+
 const renderMeetingCard = (
   meeting: MeetingPayload,
   primaryColor: string,
-  own: boolean,
+  fallback: string | undefined,
+  onViewDetails: (meetingUUID?: string) => void,
+  isLoadingDetails: boolean,
 ) => {
   const formattedDate = formatMeetingDate(meeting.date);
+  const formattedTime = formatMeetingTime(meeting.time);
+  // When the backend's meeting message doesn't carry any recognizable
+  // title/date/time (unmapped field names, older payload shape, etc.), fall
+  // back to whatever plain text came with it so the card is never just a
+  // lone CTA button.
+  const showFallback = !meeting.title && !formattedDate && !formattedTime && fallback;
   return (
-    <View
-      style={[
-        meetingStyles.card,
-        own
-          ? {backgroundColor: 'rgba(255,255,255,0.12)'}
-          : {backgroundColor: '#eef3ff'},
-      ]}>
+    <View style={meetingStyles.card}>
       {meeting.title ? (
-        <Text
-          style={[
-            meetingStyles.title,
-            {color: own ? '#ffffff' : '#0f172a'},
-          ]}
-          numberOfLines={2}>
+        <Text style={meetingStyles.title} numberOfLines={2}>
           {meeting.title}
+        </Text>
+      ) : showFallback ? (
+        <Text style={meetingStyles.title} numberOfLines={2}>
+          {fallback}
         </Text>
       ) : null}
       {formattedDate ? (
-        <Text
-          style={[
-            meetingStyles.row,
-            {color: own ? 'rgba(255,255,255,0.85)' : '#334155'},
-          ]}>
-          Date:{' '}
-          <Text style={meetingStyles.rowValue}>{formattedDate}</Text>
+        <Text style={meetingStyles.row}>
+          Date: <Text style={meetingStyles.rowValue}>{formattedDate}</Text>
         </Text>
       ) : null}
-      {meeting.time ? (
-        <Text
-          style={[
-            meetingStyles.row,
-            {color: own ? 'rgba(255,255,255,0.85)' : '#334155'},
-          ]}>
-          Time:{' '}
-          <Text style={meetingStyles.rowValue}>{meeting.time}</Text>
+      {formattedTime ? (
+        <Text style={meetingStyles.row}>
+          Time: <Text style={meetingStyles.rowValue}>{formattedTime}</Text>
         </Text>
       ) : null}
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="View meeting details"
+        disabled={isLoadingDetails}
+        onPress={() => onViewDetails(meeting.meetingUUID)}
         style={({pressed}) => [
           meetingStyles.cta,
           {backgroundColor: primaryColor},
           pressed && {opacity: 0.85},
+          isLoadingDetails && {opacity: 0.7},
         ]}>
-        <Text style={meetingStyles.ctaText}>View Meeting Details</Text>
+        {isLoadingDetails ? (
+          <ActivityIndicator color="#ffffff" size="small" />
+        ) : (
+          <Text style={meetingStyles.ctaText}>View Meeting Details</Text>
+        )}
       </Pressable>
     </View>
   );
@@ -242,21 +254,32 @@ const meetingActionStyles = StyleSheet.create({
 
 const meetingStyles = StyleSheet.create({
   card: {
+    backgroundColor: '#ffffff',
+    borderColor: '#e2e8f0',
     borderRadius: 14,
+    borderWidth: 1,
     gap: 6,
     minWidth: 240,
     padding: 14,
+    shadowColor: '#0f172a',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 1,
   },
   title: {
+    color: '#0f172a',
     fontSize: 15,
     fontWeight: '800',
     marginBottom: 4,
   },
   row: {
+    color: '#334155',
     fontSize: 13,
     fontWeight: '500',
   },
   rowValue: {
+    color: '#0f172a',
     fontWeight: '800',
   },
   cta: {
@@ -482,6 +505,40 @@ export function ConversationDetailScreen({
   // viewer with a download action.
   const [mediaViewer, setMediaViewer] = useState<AttachmentInfo | null>(null);
 
+  // "View Meeting Details" on a meeting-card message — reuses the same
+  // MeetingDetailModal the Meetings tab uses, fetching the full row (agenda,
+  // location, RSVP state) by uuid since the chat message only carries the
+  // summary fields (title/date/time).
+  const [meetingDetail, setMeetingDetail] = useState<MeetingRow | null>(null);
+  const [loadingMeetingUuid, setLoadingMeetingUuid] = useState<string | null>(null);
+
+  // There's no single-meeting GET endpoint — the web app itself just loads
+  // the full list and matches by uuid client-side (confirmed via its own
+  // network tab: GET /api/v1/meetings/ → {data: [...]}, then find by
+  // ?meetingId= uuid), so mirror that instead of a per-uuid fetch.
+  const handleViewMeetingDetails = async (meetingUUID?: string) => {
+    if (!meetingUUID) {
+      toast.error('Meeting details are not available for this message.');
+      return;
+    }
+    setLoadingMeetingUuid(meetingUUID);
+    try {
+      const meetings = await meetingsService.listMeetings(token);
+      const meeting = meetings.find(m => m.uuid === meetingUUID);
+      if (!meeting) {
+        toast.error('Could not find this meeting.');
+        return;
+      }
+      setMeetingDetail(meeting);
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : 'Could not load meeting details.',
+      );
+    } finally {
+      setLoadingMeetingUuid(null);
+    }
+  };
+
 
   const headerName = resolveHeaderName(conversation, currentUserUuid);
   const headerAvatar = resolveHeaderAvatar(conversation, currentUserUuid);
@@ -501,6 +558,9 @@ export function ConversationDetailScreen({
     canScheduleMeeting &&
     !globalSetting?.features?.meeting_moderation_enabled;
   const [isCreatingInstant, setIsCreatingInstant] = useState(false);
+  // Confirmation gate before firing the instant meeting — matches the web
+  // app's "Before proceeding..." SweetAlert prompt.
+  const [instantConfirmOpen, setInstantConfirmOpen] = useState(false);
   // Drives the ScheduleMeetingModal — same component the Meetings
   // screen uses, but locked to the other chat participant via the
   // `presetUser` prop so the reviewer dropdown is skipped.
@@ -524,21 +584,24 @@ export function ConversationDetailScreen({
       const pad = (n: number) => String(n).padStart(2, '0');
       const date = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
       const startMins = now.getHours() * 60 + now.getMinutes();
-      const myName = currentUserName?.trim() || 'You';
       const otherName = otherMember.name || headerName;
+      const title = `Meeting with ${otherName}`;
       let timeZone = 'UTC';
       try {
         timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
       } catch {
         // Older RN engines may not expose Intl — fall back to UTC.
       }
+      // Field shape + 2-hour window confirmed from the web app's own
+      // instant-meeting request — no `duration` field, title/description
+      // both "Meeting with {name}".
       await meetingsService.createMeeting(token, {
         date,
         timeFrom: toHhmm(startMins),
-        timeTo: toHhmm(startMins + 30),
-        meetingTitle: `${myName} <> ${otherName}`,
+        timeTo: toHhmm(startMins + 120),
+        meetingTitle: title,
+        meetingDescription: title,
         otherUserUUID: otherMember.uuid,
-        duration: '30',
         meetingTimeType: 'instant',
         meetingLocationType: 'virtual',
         meetingToolType: 'inbuilt',
@@ -546,6 +609,9 @@ export function ConversationDetailScreen({
         timeZone,
       });
       toast.success('Instant meeting started.');
+      // Backend auto-emits a 'meeting' message into this thread once the
+      // meeting is created — refetch so it shows up without a manual pull.
+      await refreshAfterUpload();
     } catch (err) {
       toast.error(
         err instanceof Error ? err.message : 'Could not start meeting.',
@@ -988,7 +1054,7 @@ export function ConversationDetailScreen({
     // flow emits for backward compat.
     const meetingInfo =
       !deleted && !attachment
-        ? parseMeetingMarker(item.message, item.messageType)
+        ? parseMeetingMarker(item.message, item.messageType, item.metadata)
         : null;
     const body = deleted
       ? 'Message deleted'
@@ -1106,6 +1172,7 @@ export function ConversationDetailScreen({
                   ? [styles.bubbleOwn, {backgroundColor: primaryColor}]
                   : styles.bubbleOther,
                 attachment ? styles.bubbleMedia : null,
+                meetingInfo ? styles.bubbleMeeting : null,
               ]}>
               {attachment ? (
                 renderAttachment(
@@ -1118,7 +1185,16 @@ export function ConversationDetailScreen({
                     : undefined,
                 )
               ) : meetingInfo ? (
-                renderMeetingCard(meetingInfo.meeting, primaryColor, own)
+                renderMeetingCard(
+                  meetingInfo.meeting,
+                  primaryColor,
+                  meetingInfo.fallback,
+                  handleViewMeetingDetails,
+                  Boolean(
+                    meetingInfo.meeting.meetingUUID &&
+                      loadingMeetingUuid === meetingInfo.meeting.meetingUUID,
+                  ),
+                )
               ) : (
                 <Text
                   style={[
@@ -1131,8 +1207,9 @@ export function ConversationDetailScreen({
               <Text
                 style={[
                   styles.bubbleTime,
-                  own ? styles.bubbleTimeOwn : styles.bubbleTimeOther,
+                  own && !meetingInfo ? styles.bubbleTimeOwn : styles.bubbleTimeOther,
                   attachment ? styles.bubbleTimeMedia : null,
+                  meetingInfo ? styles.bubbleTimeMedia : null,
                 ]}>
                 {time}
               </Text>
@@ -1215,7 +1292,7 @@ export function ConversationDetailScreen({
         <View style={meetingActionStyles.row}>
           {canInstantMeeting ? (
             <Pressable
-              onPress={handleInstantMeeting}
+              onPress={() => setInstantConfirmOpen(true)}
               disabled={isCreatingInstant}
               style={({pressed}) => [
                 meetingActionStyles.btn,
@@ -1385,6 +1462,19 @@ export function ConversationDetailScreen({
         onCancel={() => setPendingDeleteMessage(null)}
       />
 
+      <ConfirmModal
+        visible={instantConfirmOpen}
+        title="Setup Instant Meeting"
+        message="Before proceeding to schedule an instant meeting, please confirm that the other party is prepared and available for it. Once confirmed, an email notification will be sent to them to inform them of the meeting details."
+        confirmLabel="OK"
+        cancelLabel="Cancel"
+        onConfirm={() => {
+          setInstantConfirmOpen(false);
+          handleInstantMeeting();
+        }}
+        onCancel={() => setInstantConfirmOpen(false)}
+      />
+
       <MediaViewerModal
         attachment={mediaViewer}
         onClose={() => setMediaViewer(null)}
@@ -1455,6 +1545,26 @@ export function ConversationDetailScreen({
         }
         onClose={() => setScheduleVisible(false)}
       />
+
+      {meetingDetail ? (
+        <MeetingDetailModal
+          meeting={meetingDetail}
+          token={token}
+          onClose={() => setMeetingDetail(null)}
+          onStatusChanged={() => {
+            if (!meetingDetail.uuid) return;
+            meetingsService
+              .listMeetings(token)
+              .then(meetings => {
+                const updated = meetings.find(m => m.uuid === meetingDetail.uuid);
+                if (updated) setMeetingDetail(updated);
+              })
+              .catch(() => {});
+          }}
+          onOpenChat={() => setMeetingDetail(null)}
+          onProposeNewTime={() => setScheduleVisible(true)}
+        />
+      ) : null}
     </KeyboardAvoidingView>
   );
 }
@@ -1643,6 +1753,15 @@ const styles = StyleSheet.create({
     paddingBottom: 4,
     paddingHorizontal: 4,
     paddingTop: 4,
+  },
+  // Meeting messages render their own white card (see meetingStyles.card) —
+  // strip the colored/white bubble surface and shadow so the card is the
+  // only visible surface, matching the standalone card design.
+  bubbleMeeting: {
+    backgroundColor: 'transparent',
+    padding: 0,
+    shadowOpacity: 0,
+    elevation: 0,
   },
   bubbleText: {
     fontSize: 14,

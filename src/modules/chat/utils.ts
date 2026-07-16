@@ -128,12 +128,41 @@ export type MeetingPayload = {
   date?: string;
   time?: string;
   title?: string;
+  meetingUUID?: string;
 };
 
 const MEETING_MARKER_RE =
   /^__MEETING__(\{[\s\S]*?\})__(?:\r?\n([\s\S]*))?$/;
 
+// The backend's auto-emitted meeting message may key date/time/title fields
+// the same way the create-meeting request does (`meetingTitle`, `timeFrom`)
+// rather than the card's plain `title`/`time` — try every known alias before
+// giving up, same defensive style as resolveUserUuid/resolveProfileUuid in
+// connect/utils.ts.
+const normalizeMeetingPayload = (parsed: Record<string, any>): MeetingPayload => ({
+  type: 'meeting',
+  title: parsed?.title || parsed?.meetingTitle || parsed?.name || undefined,
+  date:
+    parsed?.date ||
+    parsed?.meetingDate ||
+    parsed?.scheduledDate ||
+    parsed?.startDate ||
+    undefined,
+  time:
+    parsed?.time ||
+    parsed?.meetingTime ||
+    parsed?.startTime ||
+    parsed?.timeFrom ||
+    undefined,
+  duration: parsed?.duration,
+  meetingUUID: parsed?.meetingUUID || parsed?.meetingUuid || undefined,
+});
+
 // Extract meeting metadata from a message. Priority order:
+//   0. `messageType === 'meeting'` + a `metadata` object     →  use that.
+//      Confirmed shape (GET /api/v1/chat/message):
+//      {date, timeFrom, timeTo, meetingUUID, meetingTitle} — `message` is
+//      just a plain label ("Meeting scheduled"), never JSON.
 //   1. `messageType === 'meeting'` + a parseable JSON body  →  use that.
 //   2. `messageType === 'meeting'` + body without JSON      →  surface
 //      whatever fields can be inferred (often just the body as fallback
@@ -145,10 +174,18 @@ const MEETING_MARKER_RE =
 export const parseMeetingMarker = (
   rawMessage: string | null | undefined,
   messageType?: string | null,
+  metadata?: Record<string, any> | null,
 ): {meeting: MeetingPayload; fallback: string} | null => {
   const isMeetingType =
     typeof messageType === 'string' &&
     messageType.toLowerCase() === 'meeting';
+
+  if (isMeetingType && metadata && typeof metadata === 'object') {
+    return {
+      meeting: normalizeMeetingPayload(metadata),
+      fallback: stripHtml(rawMessage).trim(),
+    };
+  }
 
   // Case 1 & 2: messageType says it's a meeting. Try to parse JSON out of
   // the body (whole body, then marker-wrapped, then give up gracefully).
@@ -158,9 +195,9 @@ export const parseMeetingMarker = (
     const trimmed = plain.trim();
     if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
       try {
-        const parsed = JSON.parse(trimmed) as Partial<MeetingPayload>;
+        const parsed = JSON.parse(trimmed);
         return {
-          meeting: {type: 'meeting', ...parsed},
+          meeting: normalizeMeetingPayload(parsed),
           fallback: '',
         };
       } catch {
@@ -171,9 +208,9 @@ export const parseMeetingMarker = (
     const marker = plain.match(MEETING_MARKER_RE);
     if (marker) {
       try {
-        const parsed = JSON.parse(marker[1]) as Partial<MeetingPayload>;
+        const parsed = JSON.parse(marker[1]);
         return {
-          meeting: {type: 'meeting', ...parsed},
+          meeting: normalizeMeetingPayload(parsed),
           fallback: (marker[2] || '').trim(),
         };
       } catch {
@@ -195,9 +232,9 @@ export const parseMeetingMarker = (
   const match = plain.match(MEETING_MARKER_RE);
   if (!match) return null;
   try {
-    const meeting = JSON.parse(match[1]) as MeetingPayload;
-    if (meeting?.type !== 'meeting') return null;
-    return {meeting, fallback: (match[2] || '').trim()};
+    const parsed = JSON.parse(match[1]);
+    if (parsed?.type !== 'meeting') return null;
+    return {meeting: normalizeMeetingPayload(parsed), fallback: (match[2] || '').trim()};
   } catch {
     return null;
   }
