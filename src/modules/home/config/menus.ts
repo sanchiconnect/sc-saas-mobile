@@ -100,7 +100,6 @@ export const actionItems: MenuItem[] = [
     key: 'mentor-hours',
     label: 'Mentor Hours',
     icon: 'clock-outline',
-    featureKey: 'mentor_hours',
     accountTypes: ['startup', 'mentor'],
   },
 ];
