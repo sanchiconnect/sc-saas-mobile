@@ -182,7 +182,7 @@ export function MilestonesScreen({token, onBack}: Props) {
           token={token}
           uuid={detailUuid}
           primaryColor={primaryColor}
-          onBack={() => setDetailUuid(null)}
+          onBack={() => { setDetailUuid(null); load(); }}
           onAddMilestone={() => setAddVisible(true)}
         />
         {addVisible ? (
