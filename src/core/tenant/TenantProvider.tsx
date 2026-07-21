@@ -2,7 +2,7 @@ import React, {createContext, ReactNode, useEffect, useState} from 'react';
 
 import {fetchSettingStyle, fetchTenantsSetting} from './tenant.service';
 import {saveBaseUrl} from '../storage/tenantStorage';
-import type {IGlobalSetting} from './tenantTypes';
+import type {IFeatures, IFeatureUsers, IGlobalSetting} from './tenantTypes';
 
 type ThemeType = {
   primary: string;
@@ -50,6 +50,8 @@ export const TenantProvider = ({children}: Props) => {
       active?: boolean;
       subscription_active?: boolean;
       customDomain?: string | null;
+      features?: Partial<IFeatures>;
+      users?: Partial<IFeatureUsers>;
     },
   ) => {
     try {
@@ -70,9 +72,13 @@ export const TenantProvider = ({children}: Props) => {
         imgKitUrl: settingsData?.imgKitUrl,
         s3Url: settingsData?.s3Url,
 
-        // Feature flags (fully typed, cast from raw API object)
-        users: settingsData?.users ?? undefined,
-        features: settingsData?.features ?? undefined,
+        // Feature flags (fully typed, cast from raw API object).
+        // /settings is the primary source, but some tenants' /settings
+        // response omits `features`/`users` entirely — fall back to the
+        // copy verify_tenant already returned so menu gating doesn't
+        // silently treat every flag as disabled.
+        users: settingsData?.users ?? verifyData?.users ?? undefined,
+        features: settingsData?.features ?? verifyData?.features ?? undefined,
 
         // Maintenance window
         maintenance_mode: settingsData?.maintenance_mode ?? null,
@@ -139,6 +145,8 @@ export const TenantProvider = ({children}: Props) => {
             active: res?.data?.active,
             subscription_active: res?.data?.subscription_active,
             customDomain: res?.data?.customDomain,
+            features: res?.data?.features,
+            users: res?.data?.users,
           });
         } else {
           if (active) setTenantError(true);

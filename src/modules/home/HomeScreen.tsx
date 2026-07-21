@@ -231,6 +231,15 @@ export function HomeScreen({
   const userFirstName = session.user.fullName.split(' ')[0] || 'User';
   const primaryColor = theme?.primary || '#0b0aa3';
 
+  // Same gating the drawer (SideMenu) and Connect tabs already apply — without
+  // this, a section screen would show every item regardless of the tenant's
+  // featureKey/userKey flags or the account's accountTypes restriction.
+  const sectionFilterCtx = {
+    features: globalSetting?.features,
+    users: globalSetting?.users,
+    accountType: summary?.accountType,
+  };
+
   const sectionConfigs: Partial<
     Record<
       AppSection,
@@ -245,55 +254,55 @@ export function HomeScreen({
       title: 'Programs',
       subtitle:
         'Track applications, certificates, and program activity from a dedicated reusable program component.',
-      items: programItems,
+      items: filterMenuItems(programItems, sectionFilterCtx),
     },
     community: {
       title: 'Community Wall',
       subtitle:
         'Follow community conversations, highlights, and updates from one central collaboration space.',
-      items: communityItems,
+      items: filterMenuItems(communityItems, sectionFilterCtx),
     },
     'business-challenges': {
       title: 'Business Challenges',
       subtitle:
         'Browse challenge opportunities, manage responses, and keep your innovation pipeline active.',
-      items: businessChallengeItems,
+      items: filterMenuItems(businessChallengeItems, sectionFilterCtx),
     },
     actions: {
       title: 'My Actions',
       subtitle:
         'Track your pending tasks, follow-ups, and important action items in one place.',
-      items: actionItems,
+      items: filterMenuItems(actionItems, sectionFilterCtx),
     },
     events: {
       title: 'Events',
       subtitle:
         'See upcoming events, registrations, and participation details from this reusable events view.',
-      items: eventItems,
+      items: filterMenuItems(eventItems, sectionFilterCtx),
     },
     'startup-booster-kit': {
       title: 'Startup Booster Kit',
       subtitle:
         'Access startup support tools, curated kits, and practical growth resources from one screen.',
-      items: startupBoosterKitItems,
+      items: filterMenuItems(startupBoosterKitItems, sectionFilterCtx),
     },
     resources: {
       title: 'Resources',
       subtitle:
         'Open resource collections, guides, and support material from a single resource hub.',
-      items: resourceItems,
+      items: filterMenuItems(resourceItems, sectionFilterCtx),
     },
     tickets: {
       title: 'Tickets',
       subtitle:
         'Review support tickets, issue history, and request status from this shared ticket area.',
-      items: ticketItems,
+      items: filterMenuItems(ticketItems, sectionFilterCtx),
     },
     'account-settings': {
       title: 'Account Settings',
       subtitle:
         'Manage personal account preferences, profile settings, and account-level controls here.',
-      items: accountSettingItems,
+      items: filterMenuItems(accountSettingItems, sectionFilterCtx),
     },
   };
 
